@@ -1,134 +1,95 @@
 # krita-mcp
 
-Let any MCP-capable AI agent (Claude, ChatGPT, Gemini, Cursor, …) see, edit and generate art **inside a running Krita**.
+[![CI](https://github.com/jowinjohnchemban/krita-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jowinjohnchemban/krita-mcp/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/jowinjohnchemban/krita-mcp?sort=semver)](https://github.com/jowinjohnchemban/krita-mcp/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/jowinjohnchemban/krita-mcp/total)](https://github.com/jowinjohnchemban/krita-mcp/releases)
+[![Krita](https://img.shields.io/badge/Krita-5.2%20%7C%205.3%20%7C%206-3daee9?logo=krita&logoColor=white)](https://krita.org)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)](pyproject.toml)
+[![MCP](https://img.shields.io/badge/MCP-server-6b4fbb)](https://modelcontextprotocol.io)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+**Let AI agents create and edit art, photos, animation and video inside a running [Krita](https://krita.org).**
+It works with any MCP client: Claude, ChatGPT, Gemini, Cursor, VS Code Copilot, Codex and others.
 
 ```
- AI agent ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
+AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
 ```
 
-Two small pieces:
+## What the AI can do (71 tools)
 
-| Piece | Where it runs | What it does |
-|---|---|---|
-| `plugin/pykrita/krita_mcp_bridge` | inside Krita (Python plugin) | Local socket server. Executes commands on Krita's GUI thread. |
-| `src/krita_mcp` | a normal Python process | The MCP server. Turns tool calls into bridge commands. |
+- **Paint like an artist.** It uses Krita's real brush engine with any preset, pressure and eraser,
+  plus crisp shapes and gradients, editable SVG vectors and text, procedural SeExpr textures,
+  screentones, and colourising line art with Krita's Colourise Mask.
+- **See and measure.** Snapshots (zoomed in, a single layer, any animation frame, or a labelled
+  coordinate grid), plus `analyze_image` (palette, light, contrast, sharpness, layout), exact
+  `read_pixels`, and `find_color`.
+- **Edit photos.** Exact levels, curves, exposure and temperature; hue/saturation, colour balance,
+  sharpen, denoise, blur and about 25 more; auto-enhance; vignette; non-destructive filter masks;
+  16-bit colour spaces.
+- **Work with generative models.** Colour-range and magic-wand selections, export a region plus its
+  mask, then composite the generated result back through a soft selection. Images can also be
+  imported from files or URLs.
+- **Animate and edit video.** Keyframes, onion skin, frame contact sheets, importing video from
+  mp4/mov/webm/gif, grading every frame (`for_each_frame`), and rendering to mp4/webm/gif/ProRes with
+  Krita's bundled ffmpeg.
+- **Full layer control.** Paint, vector, group, fill, filter, clone and file layers; masks;
+  clipping; blend modes; arranging; merging; transforms. About 70 of Krita's own commands via
+  `krita_action`.
+- **Real undo for AI edits,** even for edits Krita itself doesn't record. It never overwrites your
+  own work.
+- **`batch` and `for_each_frame`** let the AI do many steps in one call.
 
-## Install
+An **AI Bridge (MCP)** panel inside Krita shows the status and a live activity log. From it you can
+make the AI read-only or pause it, undo AI edits, set the workspace and token, and copy a ready-made
+config for your AI client.
 
-**1. Plugin** (Krita 5.2+ or 6):
+## Quick start
+
+1. **Plugin.** Download `krita-mcp-bridge-*.zip` from
+   [Releases](https://github.com/jowinjohnchemban/krita-mcp/releases). In Krita choose
+   *Tools ▸ Scripts ▸ Import Python Plugin from File…*, enable the plugin and restart Krita.
+2. **Server.** Run `pip install krita-mcp`, or install the `.whl` from the release, or use
+   `uvx --from git+https://github.com/jowinjohnchemban/krita-mcp krita-mcp`.
+3. **Connect.** Open *Settings ▸ Dockers ▸ AI Bridge (MCP)*, pick your client and copy the snippet.
+   For example, in Claude Code:
+   ```bash
+   claude mcp add krita -- krita-mcp
+   ```
+4. Ask: *"Create a 1200×800 canvas, paint a sunset over mountains with real brushes, look at it and
+   improve it."*
+
+Details: [installation](docs/installation.md) · [clients](docs/clients.md) · [the panel](docs/krita-panel.md)
+
+## Documentation
+
+| | |
+|---|---|
+| [Workflows](docs/workflows.md) | Painting, photo retouching, inpainting, line art, animation, video |
+| [Tool reference](docs/tools.md) | All 71 tools and their parameters |
+| [Undo, safety and limits](docs/undo-and-safety.md) | How undo works, the security model, access modes |
+| [Development](docs/development.md) | Architecture, tests, real-Krita smoke test, adding tools |
+| [Releasing](docs/releasing.md) | How plugin zips, wheels and GitHub/PyPI releases are published |
+
+## Safety in one paragraph
+
+The bridge listens on loopback only and requires a secret token. The AI can read and write files only
+in one workspace folder (`~/KritaMCP` by default). There is no code-execution tool. You can switch
+the AI to read-only or pause it from the panel at any time. Full details:
+[security model](docs/undo-and-safety.md#security-model).
+
+## Status
+
+The project is tested against **Krita 5.3.4 on Windows**. `scripts/smoke_krita.py` runs 53 end-to-end
+checks against a running Krita, including an undo matrix over every kind of edit. Unit tests run on
+Linux and Windows with PyQt5 and PyQt6 in CI. Krita 6 is covered by the PyQt6 unit tests but has not
+yet been run end to end.
+
+## Develop
+
 ```bash
-python scripts/install_plugin.py        # copies into Krita's pykrita folder
-```
-Restart Krita → *Settings ▸ Configure Krita ▸ Python Plugin Manager* → tick **Krita MCP Bridge** → restart Krita again.
-(Manual route: *Settings ▸ Manage Resources ▸ Open Resource Folder*, copy the contents of `plugin/pykrita/` into its `pykrita/` folder.)
-On start-up it creates `~/.krita-mcp/token` (mode 0600) and listens on `127.0.0.1:5679`.
-
-**2. MCP server** (Python ≥ 3.10):
-```bash
-pip install .            # or:  uvx --from . krita-mcp
+pip install -e .[test] PyQt6
+QT_QPA_PLATFORM=offscreen pytest
+python scripts/smoke_krita.py        # against a real running Krita with the plugin enabled
 ```
 
-## Connect an agent
-
-**Claude Code** — `claude mcp add krita -- krita-mcp`
-
-**Claude Desktop / Cursor / Gemini CLI / any stdio client** — add to the client's MCP config
-(`claude_desktop_config.json`, `~/.gemini/settings.json`, …):
-```json
-{ "mcpServers": { "krita": { "command": "krita-mcp" } } }
-```
-
-**Clients that only accept a remote URL (e.g. ChatGPT connectors)** — run the HTTP transport:
-```bash
-KRITA_MCP_HTTP_TOKEN=<long-random-secret> krita-mcp --transport http --port 8765
-# endpoint: http://127.0.0.1:8765/mcp   header: Authorization: Bearer <secret>
-```
-Such clients need a public HTTPS URL, so you would put a tunnel/reverse proxy in front. Think before you do:
-whoever can reach that URL can draw on your canvas and write files in your workspace. Only expose it if your
-client can send the bearer header (or you add your own auth proxy). I have not tested any particular hosted client.
-
-Then ask your agent: *"Create a 1200×800 canvas, paint a sunset gradient with a sun and mountains, look at it, and improve it."*
-
-## Tools (55)
-
-**Documents** — `krita_status` · `document_new/open/activate/info/close` · `save_document` · `export_image`
-(whole image, one layer, or a region; jpg/webp quality) · `resize_canvas` · `scale_image` · `crop_image` ·
-`rotate_image` · `flip` (image or layer) · `flatten_image` · `set_guides`
-
-**Seeing and reading the image** — the model can *look* and also *measure*:
-- `canvas_snapshot` — the picture (or a zoomed region, or a single layer); `grid=100` overlays labelled
-  canvas coordinates so the model can read off exact positions.
-- `analyze_image` — dominant palette with shares, brightness, contrast, sharpness, coverage, content bounds,
-  and a coarse layout grid of mean colours.
-- `read_pixels` (exact colours of a small block) · `sample_color` (one pixel) ·
-  `find_color` (where a colour occurs: regions with bbox / centroid / share).
-- `view_image` / `list_workspace` — look at reference images or generated files without importing them.
-
-**Layers** — `list/create/update/delete/duplicate/transform_layer` · `arrange_layer` · `merge_down`.
-`create_layer` makes paint, vector, group, **fill** (colour/pattern), **filter** (non-destructive
-adjustment), **clone**, **file** layers and **filter / transparency masks**. `update_layer` covers opacity,
-blend mode, visibility, lock, alpha lock, clipping ("inherit alpha"), colour label and position.
-
-**Painting** —
-- `brush_stroke` — Krita's **real brush engine** with any preset (`list_brush_presets`), size, colour,
-  opacity, flow, pressure per point, eraser, smoothing, closed/filled paths.
-- `draw_shapes` — crisp anti-aliased geometry: line, polyline, bezier, rect, ellipse, polygon, text,
-  linear/radial gradients.
-- `add_svg` / `list_vector_shapes` / `remove_vector_shapes` — **editable vector shapes and text** from SVG.
-- `apply_filter` (any of Krita's ~50 filters; `list_filters`, `describe_filter`) · `fill_selection`.
-
-**Selections** — `set_selection`: rect, ellipse, polygon, a layer's opaque pixels, **colour range** or
-**magic wand** (`contiguous=true`); add / subtract / intersect · `modify_selection` (grow, shrink, feather,
-border, smooth, invert) · `export_selection_mask`.
-
-**Generative-AI round trip (inpainting)** — select the area → `export_image(x, y, width, height)` +
-`export_selection_mask` → run any inpainting / image model → `import_image(fit="selection")` composites
-the result back through the (soft) selection. `import_image` / `import_image_from_url` also bring in
-whole generated images as layers.
-
-**History** — `undo` / `redo` revert whole AI edits (pixels, properties, layers, selection, vectors; see
-below) · `history`.
-
-**Resources and animation** — `list_resources` (presets, patterns, gradients, palettes…) · `palette_colors` ·
-`animation_info` · `animation_set` (fps, range, current frame) · `add_keyframe` · `export_animation_frames`.
-
-**`batch`** — run many tool calls in one request (`[{"tool": "...", "args": {...}}, ...]`), with images
-returned at the end. Fewer round trips for the model.
-
-## Security model
-
-- Bridge binds **loopback only** (it refuses anything else) and every request needs the secret token; compared in constant time.
-- File access is confined to a **workspace folder** (`~/KritaMCP`, override with `KRITA_MCP_WORKSPACE`). Paths are resolved (symlinks, `..`) before the check, and extensions are allow-listed. The agent cannot read or write elsewhere.
-- No generic "run any Krita action" or "run Python" tool exists — only the commands above.
-- `add_svg` rejects DOCTYPE/ENTITY declarations and external references (`href`/`url()` must point to `#ids`; images only as `data:` URIs), so SVG cannot pull in local files.
-- `import_image_from_url` fetches public hosts only, no redirects, 25 MB cap. (DNS-rebinding between check and fetch is not fully closed.)
-- Input limits: canvas ≤ 16384 px / 100 MP, ≤ 5000 shapes per call, 64 MB per bridge message.
-- HTTP transport requires a bearer token and refuses non-loopback binds without one.
-
-Env vars: `KRITA_MCP_HOME` (token dir), `KRITA_MCP_PORT`, `KRITA_MCP_WORKSPACE`, `KRITA_MCP_AUTOSTART=0` (don't auto-start the bridge; use *Tools ▸ Scripts ▸ Krita MCP Bridge: start / stop*).
-
-## Undo
-
-Krita's scripting API puts only some edits on Krita's undo stack (adding/removing layers, brush
-strokes, transforms, blend-mode changes, selections). Pixel writes, filters, opacity and moves are
-**not** recorded. So the bridge keeps its own history: before each edit it backs up what Krita will not
-record (pixels, layer properties, selection), and it measures which steps Krita did record. `undo`
-then reverts exactly one AI edit, and `redo` re-applies it.
-
-If you edit the document in Krita between AI edits, `undo` refuses rather than overwrite your work.
-`undo(native=true)` steps through Krita's own history instead. History is kept in memory (last 100
-edits / 256 MB compressed) and is per document.
-
-## Status & limitations
-
-- **Tested against Krita 5.3.4 on Windows** with `scripts/smoke_krita.py` (47 checks, including an undo
-  matrix that verifies every kind of edit is restored exactly). Krita 6 / PyQt6 is covered by the unit tests
-  only.
-- Raster edits require **RGBA 8-bit** layers (documents from `document_new` are). Other modes return a clear error.
-- `brush_stroke` uses the brush settings of the view showing the document. It temporarily sets preset,
-  size, colour, opacity and flow, then restores yours. Strokes with per-point pressure are drawn segment by
-  segment.
-- Commands run on Krita's GUI thread; a long filter blocks the UI for its duration. If a modal dialog is
-  open, calls time out until it is closed.
-- Vector bounding boxes include Krita's stroke/miter padding.
-
+See [development](docs/development.md).
