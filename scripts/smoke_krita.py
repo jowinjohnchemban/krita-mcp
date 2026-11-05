@@ -286,30 +286,6 @@ def undo_redo():
 
 
 @step
-def history_probe():
-    """Which operations does Krita record as undo steps?"""
-    def top():
-        h = call("history.list", limit=3)
-        return h["steps"][-1]["name"] if h["steps"] else None, h["next_undo"]
-    seen = {}
-    lay = call("layer.create", name="Probe")["id"]
-    seen["layer.create"] = top()
-    call("draw.shapes", layer=lay, shapes=[{"type": "rect", "x": 0, "y": 0, "width": 9, "height": 9}])
-    seen["draw.shapes"] = top()
-    call("filter.apply", name="invert", layer=lay)
-    seen["filter.apply"] = top()
-    call("layer.update", layer=lay, opacity=0.4)
-    seen["layer.update"] = top()
-    call("layer.update", layer=lay, dx=3)
-    seen["layer.move"] = top()
-    call("layer.delete", layer=lay)
-    seen["layer.delete"] = top()
-    for k, v in seen.items():
-        print("     %-14s -> %s" % (k, v))
-    return "see above"
-
-
-@step
 def layer_snapshot_and_sample():
     r = call("canvas.snapshot", layer=STATE["shapes"], max_size=200)
     (OUT / "08_layer_only.png").write_bytes(base64.b64decode(r["png_base64"]))
@@ -436,13 +412,223 @@ def flip_layer_and_image():
 
 
 @step
-def undo_reports_names():
-    lay = call("layer.create", name="UndoNames")["id"]
+def history_probe():
+    """Which operations does Krita itself record? (informational)"""
+    def top():
+        h = call("history.list", limit=3)
+        ks = h["krita_steps"] or []
+        return ks[-1]["name"] if ks else None
+    seen = {}
+    lay = call("layer.create", name="Probe")["id"]
+    seen["layer.create"] = top()
+    for name, fn in [
+        ("draw.shapes", lambda: call("draw.shapes", layer=lay, shapes=[{"type": "rect", "x": 0, "y": 0,
+                                                                         "width": 9, "height": 9}])),
+        ("filter.apply", lambda: call("filter.apply", name="invert", layer=lay)),
+        ("layer.update", lambda: call("layer.update", layer=lay, opacity=0.4)),
+        ("brush.stroke", lambda: call("brush.stroke", layer=lay, points=[[10, 10], [60, 40]], size=5)),
+        ("layer.transform", lambda: call("layer.transform", layer=lay, rotate_degrees=10)),
+        ("selection.set", lambda: call("selection.set", kind="rect", x=1, y=1, width=5, height=5)),
+        ("selection.none", lambda: call("selection.set", kind="none")),
+        ("layer.delete", lambda: call("layer.delete", layer=lay)),
+    ]:
+        before = top()
+        fn()
+        after = top()
+        seen[name] = after if after != before else "(not recorded by Krita)"
+    for k, v in seen.items():
+        print("     %-16s -> %s" % (k, v))
+    return "see above"
+
+
+def state(layer_props=True):
+    snapshot = call("canvas.snapshot", max_size=160)["png_base64"]
+    def flat(ls):
+        out = []
+        for l in ls:
+            out.append((l["name"], l["type"], l["visible"], l["opacity"], l["blend_mode"], tuple(l["bounds"])
+                        if layer_props else None))
+            out.extend(flat(l.get("children", [])))
+        return out
+    return snapshot, flat(call("layer.list")["layers"])
+
+
+def undo_check(label, edit, prep=None):
+    if prep:
+        prep()
+    before = state()
+    edit()
+    after = state()
+    expect(after != before, "%s changed nothing" % label)
     r = call("history.undo")
-    redo = call("history.redo")
-    expect(r["undone"] and redo["redone"], (r, redo))
+    undone = state()
+    expect(undone == before, "%s: undo did not restore the previous state (%r)" % (label, r))
+    call("history.redo")
+    expect(state() == after, "%s: redo did not re-apply the edit" % label)
+    return r["undone"][0]
+
+
+@step
+def undo_matrix():
+    lay = call("layer.create", name="UndoTarget")["id"]
+    call("draw.shapes", layer=lay, shapes=[{"type": "rect", "x": 20, "y": 20, "width": 80, "height": 60,
+                                             "fill": "#884422"}])
+    rect = {"type": "ellipse", "cx": 150, "cy": 150, "rx": 40, "ry": 30, "fill": "#22cc88"}
+    cases = [
+        ("draw.shapes", lambda: call("draw.shapes", layer=lay, shapes=[rect])),
+        ("filter.apply", lambda: call("filter.apply", name="invert", layer=lay)),
+        ("layer.update", lambda: call("layer.update", layer=lay, opacity=0.3, blend_mode="multiply", dx=15)),
+        ("selection.fill", lambda: call("selection.fill", color="#0000ff", layer=lay),
+         lambda: call("selection.set", kind="ellipse", x=30, y=30, width=50, height=40)),
+        ("brush.stroke", lambda: call("brush.stroke", layer=lay, size=25, color="#ff0000",
+                                      points=[[200, 50], [260, 120], [320, 60]])),
+        ("layer.transform", lambda: call("layer.transform", layer=lay, rotate_degrees=30)),
+        ("layer.create", lambda: call("layer.create", name="Tmp", fill="#00000040")),
+        ("layer.delete", lambda: call("layer.delete", layer="Tmp")),
+        ("layer.arrange", lambda: call("layer.arrange", layer=lay, to="bottom")),
+        ("flip layer", lambda: call("document.flip", target="layer", layer=lay)),
+        ("import", lambda: call("layer.import_image", data_base64=call("canvas.snapshot", max_size=64)[
+            "png_base64"], fit="none", x=300, y=200)),
+    ]
+    out = {}
+    for label, edit, *prep in cases:
+        call("selection.set", kind="none")
+        out[label] = undo_check(label, edit, *prep)["krita_steps"]
+    print("     krita steps per undone edit:", out)
     call("layer.delete", layer=lay)
-    return r, redo
+    return "all restored"
+
+
+@step
+def undo_refuses_after_outside_edit():
+    call("layer.create", name="Outside")
+    call("history.undo", native=True)  # stands in for the user pressing Ctrl+Z in Krita
+    try:
+        call("history.undo")
+    except KritaError as e:
+        expect("changed in Krita" in str(e), e)
+        call("history.redo", native=True)
+        call("layer.delete", layer="Outside")
+        return "refused: " + str(e)[:60]
+    raise AssertionError("AI undo ran although Krita's history changed underneath it")
+
+
+@step
+def read_image_tools():
+    a = call("image.analyze", grid=3)
+    expect(len(a["palette"]) >= 3 and len(a["layout"]) == 3, a)
+    px = call("image.read_pixels", x=0, y=0, width=4, height=2)
+    expect(len(px["rows"]) == 2 and len(px["rows"][0]) == 4, px)
+    lay = call("layer.create", name="Finder")["id"]
+    call("draw.shapes", layer=lay, shapes=[{"type": "rect", "x": 300, "y": 220, "width": 40, "height": 30,
+                                             "fill": "#00ff7f"}])
+    f = call("image.find_color", color="#00ff7f", tolerance=8)
+    expect(f["matches"] and abs(f["matches"][0]["bbox"][0] - 300) <= 3, f)
+    STATE["finder"] = lay
+    g = call("canvas.snapshot", grid=100)
+    (OUT / "11_grid.png").write_bytes(base64.b64decode(g["png_base64"]))
+    return {"palette": [c["hex"] for c in a["palette"][:4]], "found": f["matches"][0]["bbox"]}
+
+
+@step
+def color_selection_and_inpaint():
+    r = call("selection.set", kind="color", x=310, y=230, contiguous=True, tolerance=8)
+    expect(abs(r["selection"][2] - 40) <= 2, r)
+    call("selection.modify", operation="grow", amount=6)
+    call("selection.modify", operation="feather", amount=4)
+    e1 = call("document.export", path="inpaint_region.png", x=280, y=200, width=80, height=70)
+    e2 = call("selection.export_mask", path="inpaint_mask.png")
+    patch = base64.b64encode((OUT / "11_grid.png").read_bytes()).decode()
+    lay = call("layer.import_image", data_base64=patch, fit="selection", name="Inpainted")
+    expect(abs(lay["bounds"][0] - r["selection"][0] + 6) <= 8, (lay, r))
+    call("selection.set", kind="none")
+    snap("12_inpaint")
+    return [e1["bytes"], e2["path"], lay["bounds"]]
+
+
+@step
+def workspace_files():
+    files = call("file.list")
+    names = [f["path"] for f in files["files"]]
+    expect("inpaint_mask.png" in names, names[:20])
+    v = call("file.view", path="inpaint_mask.png", max_size=64)
+    expect(v["png_base64"] and v["width"] == 400, v)
+    return len(names)
+
+
+@step
+def vector_svg():
+    r = call("vector.add_svg", name="Vec2", svg=(
+        '<rect id="box" x="20" y="200" width="120" height="60" rx="10" fill="#3366ff" stroke="#ffffff" '
+        'stroke-width="4"/><circle id="dot" cx="200" cy="230" r="25" fill="#ffcc00"/>'
+        '<text id="label" x="240" y="240" font-size="24" fill="#ffffff">Hello</text>'))
+    expect(len(r["added"]) >= 2, r)
+    dot = [s for s in r["added"] if s["name"] == "dot"]  # unstroked: Krita pads stroked bboxes
+    expect(dot and [round(v) for v in dot[0]["bbox"]] == [175, 205, 50, 50], r["added"])
+    lst = call("vector.list", layer="Vec2", include_svg=True)
+    try:
+        call("vector.add_svg", layer="Vec2", svg='<image href="file:///C:/Windows/win.ini"/>')
+        raise AssertionError("external href accepted")
+    except KritaError:
+        pass
+    snap("13_vector")
+    call("vector.remove", layer="Vec2", names=[lst["shapes"][0]["name"]])
+    n_after = len(call("vector.list", layer="Vec2")["shapes"])
+    call("history.undo")
+    n_undo = len(call("vector.list", layer="Vec2")["shapes"])
+    expect(n_undo == n_after + 1, (n_after, n_undo))
+    return [s["name"] for s in lst["shapes"]], [s["bbox"] for s in lst["shapes"]]
+
+
+@step
+def resources_palettes_guides():
+    pats = call("resources.list", type="pattern", limit=5)
+    pals = call("resources.list", type="palette", limit=50)
+    cols = call("palette.colors", name=pals["names"][0]) if pals["names"] else {"colors": []}
+    g = call("document.guides", horizontal=[100, 200], vertical=[133.3], visible=True)
+    expect(len(g["horizontal"]) == 2, g)
+    call("document.guides", clear=True)
+    fl = call("layer.create", name="Pat", type="filllayer", pattern=pats["names"][0]) if pats["names"] else None
+    if fl:
+        call("layer.delete", layer="Pat")
+    fil = call("layer.create", name="FileL", type="filelayer", path="inpaint_mask.png")
+    call("layer.delete", layer="FileL")
+    return {"patterns": pats["count"], "palette": pals["names"][:1], "colors": cols["colors"][:3],
+            "file_layer": fil["type"]}
+
+
+@step
+def animation():
+    lay = call("layer.create", name="Anim")["id"]
+    call("animation.set", fps=12, start=0, end=3)
+    call("animation.keyframe", layer=lay, frame=0)
+    call("draw.shapes", layer=lay, shapes=[{"type": "ellipse", "cx": 50, "cy": 50, "rx": 20, "ry": 20,
+                                             "fill": "#ff0000"}])
+    call("animation.keyframe", layer=lay, frame=2)
+    call("draw.shapes", layer=lay, shapes=[{"type": "ellipse", "cx": 150, "cy": 50, "rx": 20, "ry": 20,
+                                             "fill": "#ff0000"}])
+    info = call("animation.info")
+    ex = call("animation.export_frames", folder="frames", start=0, end=3, prefix="smoke")
+    call("animation.set", frame=0)
+    a0 = sample(50, 50, layer=lay)
+    call("animation.set", frame=2)
+    a2 = sample(50, 50, layer=lay)
+    call("animation.set", frame=0)
+    expect(a0[3] == 255 and a2[3] == 0, "frame 0 %r / frame 2 %r" % (a0, a2))
+    call("layer.delete", layer=lay)
+    return {"fps": info["fps"], "frames": ex["frames"]}
+
+
+@step
+def undo_reports_names():
+    call("layer.create", name="UndoNames")
+    r = call("history.undo")
+    expect(r["undone"][0]["command"] == "layer.create", r)
+    redo = call("history.redo")
+    expect(redo["redone"][0]["command"] == "layer.create", redo)
+    call("layer.delete", layer="UndoNames")
+    h = call("history.list", limit=5)
+    return r, [e["command"] for e in h["ai_edits"]]
 
 
 @step
@@ -481,14 +667,16 @@ def document_open_activate():
     expect((r["width"], r["height"]) == (250, 175), r)
     info = call("app.info")
     expect(len(info["documents"]) == STATE["ndocs"] + 2, info)
-    idx = [d["index"] for d in info["documents"] if d["name"] == "smoke" or (d["file"] or "").endswith("smoke.kra")]
+    idx = [d["index"] for d in info["documents"] if (d["file"] or "").endswith("smoke.kra")]
     r = call("document.activate", index=idx[0])
     return r["name"]
 
 
 @step
 def layer_delete():
-    before = len(call("layer.list")["layers"])
+    names = [l["name"] for l in call("layer.list")["layers"]]
+    expect("UndoMe" in names, "active document %r has layers %s" % (call("document.info")["name"], names))
+    before = len(names)
     call("layer.delete", layer="UndoMe")
     after = len(call("layer.list")["layers"])
     expect(after == before - 1, (before, after))

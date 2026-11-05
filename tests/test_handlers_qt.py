@@ -16,11 +16,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 if os.environ.get("KRITA_TEST_QT") == "5":
     sys.modules["PyQt6"] = None  # force the Krita-5 code path
     pytest.importorskip("PyQt5.QtGui", reason="PyQt5 not installed")
-    from PyQt5.QtCore import QBuffer, QIODevice  # noqa: E402
+    from PyQt5.QtCore import QBuffer, QIODevice, QRect  # noqa: E402
     from PyQt5.QtGui import QColor, QGuiApplication, QImage, QPainter  # noqa: E402
 else:
     pytest.importorskip("PyQt6.QtGui", reason="PyQt6 not installed")
-    from PyQt6.QtCore import QBuffer, QIODevice  # noqa: E402
+    from PyQt6.QtCore import QBuffer, QIODevice, QRect  # noqa: E402
     from PyQt6.QtGui import QColor, QGuiApplication, QImage, QPainter  # noqa: E402
 
 
@@ -72,8 +72,11 @@ class FakeNode:
 
     def bounds(self):  # content box (layer-local) shifted by the layer offset, like Krita
         cx, cy, cw, ch = self.content
-        return types.SimpleNamespace(x=lambda: cx + self.pos[0], y=lambda: cy + self.pos[1],
-                                     width=lambda: cw, height=lambda: ch)
+        return QRect(cx + self.pos[0], cy + self.pos[1], cw, ch)
+
+    def projectionPixelData(self, x, y, w, h): return self.pixelData(x, y, w, h)
+    def colorLabel(self): return 0
+    def setColorLabel(self, v): pass
 
     def childNodes(self): return list(self.children)
 
@@ -128,6 +131,7 @@ class FakeDoc:
     def waitForDone(self): pass
     def selection(self): return self._sel
     def setSelection(self, s): self._sel = s
+    def setBatchmode(self, v): pass
 
     def projection(self, x, y, w, h):  # composite = just stack nodes bottom->top
         out = QImage(w, h, ARGB32)
@@ -149,6 +153,12 @@ class FakeSelection:
     N = 1000
 
     def __init__(self): self.mask = bytearray(self.N * self.N)
+    def duplicate(self):
+        d = FakeSelection()
+        d.mask[:] = self.mask
+        return d
+    def pixelData(self, x, y, w, h):
+        return b"".join(bytes(self.mask[(y + r) * self.N + x:(y + r) * self.N + x + w]) for r in range(h))
     def select(self, x, y, w, h, v):
         for r in range(y, y + h):
             self.mask[r * self.N + x:r * self.N + x + w] = bytes([v]) * w
@@ -183,6 +193,7 @@ class FakeKrita:
     def activeDocument(self): return self.doc
     def documents(self): return [self.doc] if self.doc else []
     def version(self): return "fake"
+    def dockers(self): return []  # no History docker: Krita-side steps count as 0
     def addExtension(self, ext): self.ext = ext
 
 
@@ -357,3 +368,117 @@ def test_smooth_path_passes_through_points(H):
     path = H._smooth_path(pts)
     ends = [(path.elementAt(i).x, path.elementAt(i).y) for i in range(0, path.elementCount(), 3)]
     assert ends == pts
+
+
+# ------------------------------------------------------------------ undo / redo
+def test_undo_redo_pixel_edits(H):
+    H.dispatch("document.new", {"width": 30, "height": 30, "background": "white"})
+    H.dispatch("layer.create", {"name": "ink"})
+    rect = {"type": "rect", "x": 0, "y": 0, "width": 10, "height": 10, "fill": "#ff0000"}
+    H.dispatch("draw.shapes", {"shapes": [rect], "layer": "ink"})
+    H.dispatch("draw.shapes", {"shapes": [dict(rect, x=15, fill="#0000ff")], "layer": "ink"})
+    doc = H.app().activeDocument()
+    assert px(doc, 20, 5) == (0, 0, 255, 255)
+    r = H.dispatch("history.undo", {})
+    assert r["undone"][0]["command"] == "draw.shapes"
+    assert px(doc, 20, 5) == (255, 255, 255, 255) and px(doc, 5, 5) == (255, 0, 0, 255)
+    H.dispatch("history.redo", {})
+    assert px(doc, 20, 5) == (0, 0, 255, 255)
+    H.dispatch("history.undo", {"steps": 2})
+    assert px(doc, 5, 5) == (255, 255, 255, 255)
+    H.dispatch("history.redo", {"steps": 5})  # only 2 available
+    assert px(doc, 5, 5) == (255, 0, 0, 255) and px(doc, 20, 5) == (0, 0, 255, 255)
+
+
+def test_undo_props_move_and_selection(H):
+    H.dispatch("document.new", {"width": 30, "height": 30})
+    H.dispatch("layer.create", {"name": "p"})
+    H.dispatch("layer.update", {"layer": "p", "opacity": 0.25, "name": "q", "dx": 4})
+    n = H.find_layer(H.active_doc(), "q")
+    H.dispatch("history.undo", {})
+    assert n.name() == "p" and n.opacity() == 255 and n.pos == (0, 0)
+    H.dispatch("selection.set", {"kind": "rect", "x": 1, "y": 1, "width": 5, "height": 5})
+    H.dispatch("selection.set", {"kind": "rect", "x": 10, "y": 10, "width": 5, "height": 5})
+    H.dispatch("history.undo", {})
+    sel = H.active_doc().selection()
+    assert (sel.x(), sel.y()) == (1, 1)
+    with pytest.raises(H.BridgeError):
+        H.dispatch("document.new", {"width": 5, "height": 5}) and H.dispatch("history.undo", {})
+
+
+def test_new_edit_clears_redo(H):
+    H.dispatch("document.new", {"width": 10, "height": 10, "background": "white"})
+    H.dispatch("draw.shapes", {"shapes": [{"type": "rect", "x": 0, "y": 0, "width": 3, "height": 3}]})
+    H.dispatch("history.undo", {})
+    H.dispatch("draw.shapes", {"shapes": [{"type": "rect", "x": 5, "y": 5, "width": 3, "height": 3}]})
+    with pytest.raises(H.BridgeError):
+        H.dispatch("history.redo", {})
+
+
+# ------------------------------------------------------- reading / generative
+def _doc_with_shapes(H):
+    H.dispatch("document.new", {"width": 60, "height": 40, "background": "#ffffff"})
+    H.dispatch("layer.create", {"name": "art"})
+    H.dispatch("draw.shapes", {"shapes": [
+        {"type": "rect", "x": 0, "y": 0, "width": 20, "height": 20, "fill": "#ff0000"},
+        {"type": "rect", "x": 40, "y": 20, "width": 20, "height": 20, "fill": "#ff0000"},
+        {"type": "rect", "x": 25, "y": 5, "width": 10, "height": 10, "fill": "#0000ff"}]})
+
+
+def test_analyze_and_read_pixels(H):
+    _doc_with_shapes(H)
+    a = H.dispatch("image.analyze", {"grid": 2})
+    hexes = [c["hex"] for c in a["palette"]]
+    assert hexes[0] == "#ffffff" and "#ff0000" in hexes and "#0000ff" in hexes
+    assert a["layout"][0][0]["hex"] != a["layout"][0][1]["hex"]
+    assert a["coverage"] == 1.0 and 0 < a["contrast"] < 1
+    r = H.dispatch("image.read_pixels", {"x": 18, "y": 0, "width": 4, "height": 1})
+    assert r["rows"] == [["#ff0000", "#ff0000", "#ffffff", "#ffffff"]]
+    with pytest.raises(H.BridgeError):
+        H.dispatch("image.read_pixels", {"width": 40, "height": 40})
+    lay = H.dispatch("image.analyze", {"layer": "art"})
+    assert lay["content_bounds"] == [0, 0, 60, 40] and lay["coverage"] < 1
+
+
+def test_find_color(H):
+    _doc_with_shapes(H)
+    r = H.dispatch("image.find_color", {"color": "#ff0000", "tolerance": 10})
+    assert r["regions_found"] == 2
+    assert sorted(m["bbox"] for m in r["matches"]) == [[0, 0, 20, 20], [40, 20, 20, 20]]
+
+
+def test_color_and_magic_wand_selection(H):
+    _doc_with_shapes(H)
+    r = H.dispatch("selection.set", {"kind": "color", "color": "#ff0000", "tolerance": 5})
+    assert r["selection"] == [0, 0, 60, 40]  # both red squares
+    r = H.dispatch("selection.set", {"kind": "color", "x": 45, "y": 25, "contiguous": True, "tolerance": 5})
+    assert r["selection"] == [40, 20, 20, 20]  # only the square under the seed
+    with pytest.raises(H.BridgeError):
+        H.dispatch("selection.set", {"kind": "color", "color": "#00ff00", "tolerance": 0})
+
+
+def test_import_into_selection_and_mask_export(H, tmp_path):
+    H.dispatch("document.new", {"width": 40, "height": 40, "background": "white"})
+    H.dispatch("selection.set", {"kind": "rect", "x": 10, "y": 10, "width": 10, "height": 10})
+    patch = QImage(5, 5, ARGB32)
+    patch.fill(QColor(0, 255, 0))
+    buf = QBuffer(); buf.open(WRITE_ONLY); patch.save(buf, "PNG")
+    info = H.dispatch("layer.import_image", {"data_base64": base64.b64encode(bytes(buf.data())).decode(),
+                                             "fit": "selection"})
+    assert info["name"] == "Inpainted"
+    doc = H.app().activeDocument()
+    assert px(doc, 15, 15) == (0, 255, 0, 255) and px(doc, 25, 25) == (255, 255, 255, 255)
+    out = H.dispatch("selection.export_mask", {"path": "mask.png"})
+    m = QImage(out["path"])
+    assert m.pixelColor(15, 15).red() == 255 and m.pixelColor(2, 2).red() == 0
+    r = H.dispatch("document.export", {"path": "crop.png", "x": 10, "y": 10, "width": 10, "height": 10})
+    c = QImage(r["path"])
+    assert (c.width(), c.height()) == (10, 10) and c.pixelColor(5, 5).getRgb() == (0, 255, 0, 255)
+
+
+def test_snapshot_grid_overlay(H):
+    H.dispatch("document.new", {"width": 200, "height": 100, "background": "white"})
+    r = H.dispatch("canvas.snapshot", {"grid": 50})
+    img = QImage.fromData(base64.b64decode(r["png_base64"]))
+    assert img.pixelColor(50, 60).getRgb() != (255, 255, 255, 255)  # vertical line at x=50
+    assert img.pixelColor(30, 30).getRgb() == (255, 255, 255, 255)

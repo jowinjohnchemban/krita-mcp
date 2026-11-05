@@ -6,6 +6,7 @@ must be RGBA / 8-bit integer. Documents created by `document.new` always are.
 """
 import base64
 import math
+import os
 
 from krita import InfoObject, Krita, ManagedColor, Selection
 
@@ -13,13 +14,12 @@ try:  # Krita 6
     from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QPoint, QPointF, QRectF, Qt
     from PyQt6.QtGui import (QBrush, QColor, QFont, QImage, QLinearGradient, QPainter,
                              QPainterPath, QPen, QPolygonF, QRadialGradient)
-    from PyQt6.QtWidgets import QAbstractItemView
 except ImportError:  # Krita 5
     from PyQt5.QtCore import QBuffer, QByteArray, QIODevice, QPoint, QPointF, QRectF, Qt
     from PyQt5.QtGui import (QBrush, QColor, QFont, QImage, QLinearGradient, QPainter,
                              QPainterPath, QPen, QPolygonF, QRadialGradient)
-    from PyQt5.QtWidgets import QAbstractItemView
 
+from . import history, pixels
 from .util import DOC_EXTS, IMAGE_EXTS, OPEN_EXTS, BridgeError, parse_color, safe_path, workspace_root
 
 BRIDGE_VERSION = "0.1.0"
@@ -39,6 +39,7 @@ def _enum(owner, group, member):
 
 FMT_ARGB32 = _enum(QImage, "Format", "Format_ARGB32")
 FMT_ALPHA8 = _enum(QImage, "Format", "Format_Alpha8")
+FMT_GRAY8 = _enum(QImage, "Format", "Format_Grayscale8")
 AA = _enum(QPainter, "RenderHint", "Antialiasing")
 AA_TEXT = _enum(QPainter, "RenderHint", "TextAntialiasing")
 AA_PIX = _enum(QPainter, "RenderHint", "SmoothPixmapTransform")
@@ -54,11 +55,14 @@ WRITE_ONLY = _enum(QIODevice, "OpenModeFlag", "WriteOnly")
 TRANSPARENT = _enum(Qt, "GlobalColor", "transparent")
 
 HANDLERS = {}
+EDITS = set()  # commands that change a document: recorded for undo
 
 
-def handler(name):
+def handler(name, edit=False):
     def deco(fn):
         HANDLERS[name] = fn
+        if edit:
+            EDITS.add(name)
         return fn
     return deco
 
@@ -67,6 +71,8 @@ def dispatch(method, params):
     fn = HANDLERS.get(method)
     if fn is None:
         raise BridgeError("Unknown method %r" % method)
+    if method in EDITS:
+        return history.run(method, fn, params, app().activeDocument())
     return fn(params)
 
 
@@ -150,9 +156,15 @@ def node_info(n, deep=False):
     return d
 
 
+def layer_tree(doc):
+    """Top-level layers, bottom to top, without Krita's global-selection mask (see document_info)."""
+    return [node_info(c, True) for c in doc.rootNode().childNodes() if c.type() != "selectionmask"]
+
+
 def doc_info(doc):
     return {
-        "name": doc.name(), "file": doc.fileName() or None, "width": doc.width(),
+        "name": doc.name() or os.path.basename(doc.fileName() or ""), "file": doc.fileName() or None,
+        "width": doc.width(),
         "height": doc.height(), "resolution_ppi": doc.xRes(), "color_model": doc.colorModel(),
         "color_depth": doc.colorDepth(), "modified": doc.modified(),
     }
@@ -332,6 +344,8 @@ def document_activate(p):
     if not docs:
         raise BridgeError("No open documents")
     app().setActiveDocument(docs[i])
+    if app().activeWindow() is not None:
+        _active_view(docs[i])  # activeDocument() follows the active view, so switch the view too
     return doc_info(docs[i])
 
 
@@ -339,7 +353,7 @@ def document_activate(p):
 def document_get_info(p):
     doc = active_doc()
     info = doc_info(doc)
-    info["layers"] = [node_info(c, True) for c in doc.rootNode().childNodes()]
+    info["layers"] = layer_tree(doc)
     sel = doc.selection()
     info["selection"] = None if sel is None else [sel.x(), sel.y(), sel.width(), sel.height()]
     return info
@@ -372,12 +386,26 @@ def document_export(p):
         cfg.setProperty("quality", _num(p, "quality", None, 0, 100, True))
     doc.setBatchmode(True)
     _refresh(doc)
-    if p.get("layer"):  # one layer only, cropped to its content unless the whole canvas is asked for
+    if any(k in p for k in ("x", "y", "width", "height")):  # a crop of the image (or of one layer)
+        W, H = doc.width(), doc.height()
+        x, y = _num(p, "x", 0, 0, W - 1, True), _num(p, "y", 0, 0, H - 1, True)
+        w = min(_num(p, "width", W - x, 1, None, True), W - x)
+        h = min(_num(p, "height", H - y, 1, None, True), H - y)
+        img = (_rgba_image(find_layer(doc, p["layer"]).projectionPixelData(x, y, w, h), w, h)
+               if p.get("layer") else doc.projection(x, y, w, h))
+        if not img.save(str(path), None, _num(p, "quality", -1, -1, 100, True)):
+            raise BridgeError("could not write %s" % path)
+    elif p.get("layer"):  # one layer only, cropped to its content unless the whole canvas is asked for
         n = find_layer(doc, p["layer"])
         b = n.bounds()
         rect = doc.bounds() if p.get("full_canvas") or b.width() <= 0 else b
         before = path.stat().st_mtime_ns if path.exists() else None
-        n.save(str(path), doc.xRes(), doc.yRes(), cfg, rect)  # returns nothing; check the file instead
+        batch = app().batchmode()
+        app().setBatchmode(True)  # Node.save ignores the document's batch flag and opens a dialog
+        try:
+            n.save(str(path), doc.xRes(), doc.yRes(), cfg, rect)  # returns nothing; check the file
+        finally:
+            app().setBatchmode(batch)
         if not path.exists() or path.stat().st_mtime_ns == before:
             raise BridgeError("Krita failed to export layer %r to %s" % (n.name(), path))
     elif not doc.exportImage(str(path), cfg):
@@ -393,11 +421,12 @@ def document_close(p):
         saved = document_save({})["path"]
     doc.setModified(False)
     doc.setBatchmode(True)
+    history.forget(doc)
     doc.close()
     return {"saved": saved}
 
 
-@handler("document.resize_canvas")
+@handler("document.resize_canvas", edit=True)
 def document_resize_canvas(p):
     doc = active_doc()
     w = _num(p, "width", None, 1, MAX_DIM, True)
@@ -409,7 +438,7 @@ def document_resize_canvas(p):
     return doc_info(doc)
 
 
-@handler("document.scale")
+@handler("document.scale", edit=True)
 def document_scale(p):
     doc = active_doc()
     w = _num(p, "width", None, 1, MAX_DIM, True)
@@ -421,7 +450,7 @@ def document_scale(p):
     return doc_info(doc)
 
 
-@handler("document.crop")
+@handler("document.crop", edit=True)
 def document_crop(p):
     """Crop the canvas to a rectangle, or to the selection bounds when no rectangle is given."""
     doc = active_doc()
@@ -438,7 +467,7 @@ def document_crop(p):
     return doc_info(doc)
 
 
-@handler("document.rotate")
+@handler("document.rotate", edit=True)
 def document_rotate(p):
     """Rotate the whole image clockwise; the canvas grows to fit."""
     doc = active_doc()
@@ -447,7 +476,7 @@ def document_rotate(p):
     return doc_info(doc)
 
 
-@handler("document.flatten")
+@handler("document.flatten", edit=True)
 def document_flatten(p):
     doc = active_doc()
     doc.flatten()
@@ -461,7 +490,7 @@ _MIRROR_ACTIONS = {
 }
 
 
-@handler("document.flip")
+@handler("document.flip", edit=True)
 def document_flip(p):
     """Mirror the whole image or one layer, through Krita's own (undoable) actions."""
     doc = active_doc()
@@ -503,8 +532,43 @@ def canvas_snapshot(p):
     m = _num(p, "max_size", 1024, 64, 4096, True)
     if max(img.width(), img.height()) > m:
         img = img.scaled(m, m, KEEP_AR, SMOOTH)
+    if p.get("grid"):
+        img = _grid_overlay(img.convertToFormat(FMT_ARGB32), x, y, w / float(img.width()),
+                            _num(p, "grid", None, 8, 4096, True))
     return {"png_base64": _b64png(img), "width": img.width(), "height": img.height(),
             "region": [x, y, w, h]}
+
+
+def _grid_overlay(img, ox, oy, scale, step):
+    """Draw canvas-coordinate grid lines + labels so a model can read off exact positions."""
+    pt = QPainter(img)
+    try:
+        pt.setRenderHint(AA_TEXT, True)
+        f = QFont("Sans Serif")
+        f.setPixelSize(10)
+        pt.setFont(f)
+        right, bottom = ox + int(img.width() * scale), oy + int(img.height() * scale)
+        for cx in range((ox // step + 1) * step, right + 1, step):
+            px = (cx - ox) / scale
+            pt.setPen(QPen(QColor(255, 0, 255, 150), 1))
+            pt.drawLine(QPointF(px, 0), QPointF(px, img.height()))
+            _label(pt, px + 2, 11, str(cx))
+        for cy in range((oy // step + 1) * step, bottom + 1, step):
+            py = (cy - oy) / scale
+            pt.setPen(QPen(QColor(0, 255, 255, 150), 1))
+            pt.drawLine(QPointF(0, py), QPointF(img.width(), py))
+            _label(pt, 2, py - 2, str(cy))
+    finally:
+        pt.end()
+    return img
+
+
+def _label(pt, x, y, text):
+    pt.setPen(QPen(QColor(0, 0, 0, 220)))
+    for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        pt.drawText(QPointF(x + dx, y + dy), text)
+    pt.setPen(QPen(QColor(255, 255, 255)))
+    pt.drawText(QPointF(x, y), text)
 
 
 @handler("canvas.sample")
@@ -531,10 +595,11 @@ def layer_list(p):
     active = doc.activeNode()
     return {"active": None if active is None else _uid(active),
             "note": "children are listed bottom-to-top",
-            "layers": [node_info(c, True) for c in doc.rootNode().childNodes()]}
+            "layers": layer_tree(doc)}
 
 
-LAYER_TYPES = ("paintlayer", "vectorlayer", "grouplayer", "filllayer", "filterlayer", "clonelayer")
+LAYER_TYPES = ("paintlayer", "vectorlayer", "grouplayer", "filllayer", "filterlayer", "clonelayer",
+               "filelayer")
 MASK_TYPES = ("filtermask", "transparencymask")
 
 
@@ -559,6 +624,10 @@ def _create_node(doc, kind, name, p):
         if not p.get("source"):
             raise BridgeError("a clonelayer needs 'source' (layer id or name)")
         return doc.createCloneLayer(name, find_layer(doc, p["source"]))
+    if kind == "filelayer":  # live link to an image file in the workspace
+        if not p.get("path"):
+            raise BridgeError("a filelayer needs 'path' (an image in the workspace)")
+        return doc.createFileLayer(name, str(safe_path(p["path"], OPEN_EXTS)), p.get("scaling") or "None")
     if kind == "filtermask":
         if not p.get("filter"):
             raise BridgeError("a filtermask needs 'filter' (see list_filters)")
@@ -571,7 +640,7 @@ def _create_node(doc, kind, name, p):
     raise BridgeError("type must be one of %s" % ", ".join(LAYER_TYPES + MASK_TYPES))
 
 
-@handler("layer.create")
+@handler("layer.create", edit=True)
 def layer_create(p):
     doc = active_doc()
     kind = p.get("type", "paintlayer")
@@ -596,6 +665,7 @@ def layer_create(p):
         raise BridgeError("Krita could not create a %s with these settings" % kind)
     parent.addChildNode(node, above)
     if kind == "paintlayer" and p.get("fill"):
+        history.backup_layer(node, doc)
         img = QImage(doc.width(), doc.height(), FMT_ARGB32)
         img.fill(_qcolor(p["fill"]))
         write_image(node, img, 0, 0)
@@ -604,10 +674,11 @@ def layer_create(p):
     return node_info(node)
 
 
-@handler("layer.update")
+@handler("layer.update", edit=True)
 def layer_update(p):
     doc = active_doc()
     n = find_layer(doc, p.get("layer"))
+    history.backup_props(n)
     if "name" in p:
         n.setName(str(p["name"])[:120])
     if "visible" in p:
@@ -638,7 +709,7 @@ def layer_update(p):
     return node_info(n)
 
 
-@handler("layer.delete")
+@handler("layer.delete", edit=True)
 def layer_delete(p):
     doc = active_doc()
     n = find_layer(doc, p.get("layer"))
@@ -647,7 +718,7 @@ def layer_delete(p):
     return {}
 
 
-@handler("layer.duplicate")
+@handler("layer.duplicate", edit=True)
 def layer_duplicate(p):
     doc = active_doc()
     n = find_layer(doc, p.get("layer"))
@@ -660,7 +731,7 @@ def layer_duplicate(p):
     return node_info(dup)
 
 
-@handler("layer.arrange")
+@handler("layer.arrange", edit=True)
 def layer_arrange(p):
     """Restack a layer: to top/bottom/up/down within its group, above a sibling, or into another group."""
     doc = active_doc()
@@ -709,7 +780,7 @@ def layer_arrange(p):
     return {"layer": node_info(n), "order": [c.name() for c in parent.childNodes()]}
 
 
-@handler("layer.merge_down")
+@handler("layer.merge_down", edit=True)
 def layer_merge_down(p):
     doc = active_doc()
     n = find_layer(doc, p.get("layer"))
@@ -724,12 +795,14 @@ def layer_merge_down(p):
     return node_info(merged)
 
 
-@handler("layer.transform")
+@handler("layer.transform", edit=True)
 def layer_transform(p):
     doc = active_doc()
     n = find_layer(doc, p.get("layer"))
     if n.locked():
         raise BridgeError("Layer is locked")
+    if n.type() == "paintlayer":
+        history.backup_layer(n, doc)
     if "scale_x" in p or "scale_y" in p:
         sx, sy = _num(p, "scale_x", 1, 0.01, 50), _num(p, "scale_y", 1, 0.01, 50)
         b = n.bounds()
@@ -745,7 +818,7 @@ def layer_transform(p):
     return node_info(n)
 
 
-@handler("layer.import_image")
+@handler("layer.import_image", edit=True)
 def layer_import_image(p):
     """Place a raster image (from the workspace or base64) on a NEW paint layer."""
     doc = active_doc()
@@ -753,6 +826,8 @@ def layer_import_image(p):
     W, H, iw, ih = doc.width(), doc.height(), img.width(), img.height()
     explicit = any(k in p for k in ("x", "y", "width", "height"))
     fit = p.get("fit") or ("none" if explicit else "contain")
+    if fit == "selection":
+        return _import_into_selection(doc, img, p)
     if fit == "contain":
         s = min(W / float(iw), H / float(ih)); nw, nh = int(iw * s), int(ih * s)
     elif fit == "cover":
@@ -762,7 +837,7 @@ def layer_import_image(p):
     elif fit == "none":
         nw, nh = iw, ih
     else:
-        raise BridgeError("fit must be contain, cover, stretch or none")
+        raise BridgeError("fit must be contain, cover, stretch, none or selection")
     if "width" in p or "height" in p:
         nw = _num(p, "width", nw, 1, MAX_DIM, True)
         nh = _num(p, "height", nh, 1, MAX_DIM, True)
@@ -775,6 +850,28 @@ def layer_import_image(p):
     y = _num(p, "y", (H - nh) // 2, integer=True)
     parent = doc.rootNode() if not p.get("parent") else find_layer(doc, p["parent"])
     node = doc.createNode(str(p.get("name") or "Imported image")[:120], "paintlayer")
+    parent.addChildNode(node, None)
+    write_image(node, img, x, y)
+    doc.setActiveNode(node)
+    _refresh(doc)
+    return node_info(node)
+
+
+def _import_into_selection(doc, img, p):
+    """Stretch the image over the selection's bounding box and keep it only where the selection is
+    (soft edges included) - the compositing half of an inpainting round trip."""
+    sel = doc.selection()
+    if sel is None or sel.width() <= 0:
+        raise BridgeError("fit=selection needs a selection")
+    x, y, w, h = sel.x(), sel.y(), sel.width(), sel.height()
+    img = img.scaled(w, h, _enum(Qt, "AspectRatioMode", "IgnoreAspectRatio"), SMOOTH)
+    mask = QImage(bytes(sel.pixelData(x, y, w, h)), w, h, w, FMT_ALPHA8).copy()
+    pt = QPainter(img)
+    pt.setCompositionMode(CM_IN)
+    pt.drawImage(0, 0, mask)
+    pt.end()
+    parent = doc.rootNode() if not p.get("parent") else find_layer(doc, p["parent"])
+    node = doc.createNode(str(p.get("name") or "Inpainted")[:120], "paintlayer")
     parent.addChildNode(node, None)
     write_image(node, img, x, y)
     doc.setActiveNode(node)
@@ -880,7 +977,7 @@ def _draw_shape(pt, s):
         pt.restore()
 
 
-@handler("draw.shapes")
+@handler("draw.shapes", edit=True)
 def draw_shapes(p):
     doc = active_doc()
     shapes = p.get("shapes")
@@ -890,6 +987,7 @@ def draw_shapes(p):
         raise BridgeError("too many shapes (max %d per call)" % MAX_SHAPES)
     node = paint_layer(doc, p.get("layer"))
     W, H = doc.width(), doc.height()
+    history.backup_layer(node, doc)
     img = read_image(node, 0, 0, W, H)
     pt = QPainter(img)
     try:
@@ -904,9 +1002,10 @@ def draw_shapes(p):
 
 
 # -------------------------------------------------------------- selection
-@handler("selection.set")
+@handler("selection.set", edit=True)
 def selection_set(p):
     doc = active_doc()
+    history.backup_selection(doc)
     kind, mode = p.get("kind", "rect"), p.get("mode", "replace")
     if kind == "none":
         doc.setSelection(None)
@@ -937,8 +1036,30 @@ def selection_set(p):
         n = paint_layer(doc, p.get("layer"), need_unlocked=False)
         raw = bytes(n.pixelData(0, 0, doc.width(), doc.height()))
         sel.setPixelData(QByteArray(raw[3::4]), 0, 0, doc.width(), doc.height())
+    elif kind == "color":  # colour range; contiguous=true is a magic wand from (x, y)
+        W, H = doc.width(), doc.height()
+        if p.get("layer"):
+            raw = bytes(find_layer(doc, p["layer"]).projectionPixelData(0, 0, W, H))
+        else:
+            _refresh(doc)
+            raw = bytes(doc.pixelData(0, 0, W, H))
+        contiguous = bool(p.get("contiguous"))
+        if contiguous or p.get("color") is None:
+            sx, sy = _num(p, "x", None, 0, W - 1, True), _num(p, "y", None, 0, H - 1, True)
+        if p.get("color") is not None:
+            target = parse_color(p["color"])
+        else:  # the colour under (x, y)
+            o = (sy * W + sx) * 4
+            b, g, r, a = raw[o:o + 4]
+            target = (r, g, b, a)
+        mask = pixels.color_mask(raw, target, _num(p, "tolerance", 24, 0, 255, True))
+        if contiguous:
+            mask = pixels.flood_region(mask, W, H, sx, sy)
+        if not mask.strip(b"\x00"):
+            raise BridgeError("no pixels match that colour (try a higher tolerance)")
+        sel.setPixelData(QByteArray(mask), 0, 0, W, H)
     else:
-        raise BridgeError("kind must be rect, ellipse, polygon, layer, all or none")
+        raise BridgeError("kind must be rect, ellipse, polygon, layer, color, all or none")
     cur = doc.selection()
     if cur is not None and mode != "replace":
         if mode not in ("add", "subtract", "intersect"):
@@ -949,9 +1070,10 @@ def selection_set(p):
     return {"selection": [sel.x(), sel.y(), sel.width(), sel.height()]}
 
 
-@handler("selection.modify")
+@handler("selection.modify", edit=True)
 def selection_modify(p):
     doc = active_doc()
+    history.backup_selection(doc)
     sel = doc.selection()
     if sel is None:
         raise BridgeError("There is no selection")
@@ -974,7 +1096,24 @@ def selection_modify(p):
     return {"selection": [sel.x(), sel.y(), sel.width(), sel.height()]}
 
 
-@handler("selection.fill")
+@handler("selection.export_mask")
+def selection_export_mask(p):
+    """Save the selection as a greyscale PNG (white = selected), e.g. as an inpainting mask."""
+    doc = active_doc()
+    path = safe_path(p.get("path"), {".png"})
+    sel = doc.selection()
+    if sel is None:
+        raise BridgeError("There is no selection")
+    W, H = doc.width(), doc.height()
+    img = QImage(bytes(sel.pixelData(0, 0, W, H)), W, H, W, FMT_GRAY8).copy()
+    if p.get("invert"):
+        img.invertPixels()
+    if not img.save(str(path), "PNG"):
+        raise BridgeError("could not write %s" % path)
+    return {"path": str(path), "selection": [sel.x(), sel.y(), sel.width(), sel.height()]}
+
+
+@handler("selection.fill", edit=True)
 def selection_fill(p):
     """Fill the selection with a colour, or erase it when 'color' is omitted/null."""
     doc = active_doc()
@@ -986,6 +1125,7 @@ def selection_fill(p):
     if w <= 0 or h <= 0:
         raise BridgeError("selection is empty")
     mask = QImage(bytes(sel.pixelData(x, y, w, h)), w, h, w, FMT_ALPHA8).copy()
+    history.backup_layer(node, doc)
     layer_img = read_image(node, x, y, w, h)
     pt = QPainter(layer_img)
     try:
@@ -1026,7 +1166,7 @@ def filter_describe(p):
     return {"name": f.name(), "default_properties": {k: _plain(v) for k, v in props.items()}}
 
 
-@handler("filter.apply")
+@handler("filter.apply", edit=True)
 def filter_apply(p):
     doc = active_doc()
     f = _configured_filter(p.get("name"), p.get("params"))
@@ -1040,6 +1180,7 @@ def filter_apply(p):
         x, y, w, h = sel.x(), sel.y(), sel.width(), sel.height()
     else:
         x, y, w, h = 0, 0, doc.width(), doc.height()
+    history.backup_layer(node, doc)
     f.apply(node, x, y, w, h)
     _refresh(doc)
     return node_info(node)
@@ -1088,7 +1229,7 @@ def _smooth_path(pts):
     return path
 
 
-@handler("brush.stroke")
+@handler("brush.stroke", edit=True)
 def brush_stroke(p):
     """Paint with Krita's real brush engine (presets, texture, pressure) onto a paint layer.
 
@@ -1110,6 +1251,7 @@ def brush_stroke(p):
         raise BridgeError("each point must be [x, y] or [x, y, pressure 0..1]")
     closed, fill = bool(p.get("closed")), bool(p.get("fill"))
     view = _active_view(doc)
+    history.backup_layer(node, doc)
     doc.setActiveNode(node)
     saved = (view.currentBrushPreset(), view.brushSize(), view.foregroundColor(), view.paintingOpacity(),
              view.paintingFlow(), view.eraserMode())
@@ -1155,27 +1297,6 @@ def brush_stroke(p):
 
 
 # ------------------------------------------------------------ undo / redo
-def _history_view():
-    """The History docker's list view (its model mirrors the active document's undo stack)."""
-    for d in app().dockers():
-        if d.objectName() == "History":
-            for v in d.findChildren(QAbstractItemView):
-                if v.model() is not None:
-                    return v
-    return None
-
-
-def _history(limit=30):
-    v = _history_view()
-    if v is None:
-        return None
-    m = v.model()
-    names = [str(m.data(m.index(i, 0))) for i in range(m.rowCount())]
-    cur = v.selectionModel().currentIndex().row() if v.selectionModel() else len(names) - 1
-    steps = [{"index": i, "name": n, "done": i <= cur} for i, n in enumerate(names) if i > 0]
-    return steps[-limit:]
-
-
 def _action_text(name):
     a = app().action(name)
     return a.text().replace("&", "") if a is not None else None
@@ -1183,31 +1304,49 @@ def _action_text(name):
 
 @handler("history.list")
 def history_list(p):
-    active_doc()
-    steps = _history(_num(p, "limit", 30, 1, 500, True))
-    if steps is None:
-        raise BridgeError("Krita's History docker is not available")
-    return {"steps": steps, "next_undo": _action_text("edit_undo"), "next_redo": _action_text("edit_redo")}
+    doc = active_doc()
+    limit = _num(p, "limit", 30, 1, 500, True)
+    out = history.listing(doc, limit)
+    state = history.krita_state()
+    out["krita_steps"] = None if state is None else [
+        {"name": n, "done": i <= state[0]} for i, n in enumerate(state[1]) if i > 0][-limit:]
+    out["next_native_undo"] = _action_text("edit_undo")
+    return out
 
 
-def _replay(action, steps):
-    _active_view(active_doc())  # undo works on the document in the active view
+def _step(p, ai, native_action):
+    doc = active_doc()
+    if app().activeWindow() is not None:
+        _active_view(doc)  # Krita's undo acts on the document in the active view
+    steps = _num(p, "steps", 1, 1, 50, True)
     done = []
     for _ in range(steps):
-        a = app().action(action)
-        if a is None or not a.isEnabled():
-            break
-        done.append(a.text().replace("&", ""))
-        a.trigger()
-    _refresh(active_doc())
+        if p.get("native"):
+            a = app().action(native_action)
+            if a is None or not a.isEnabled():
+                break
+            done.append(a.text().replace("&", ""))
+            a.trigger()
+            history._settle(doc, _refresh)
+        else:
+            r = ai(doc, _refresh)
+            if r is None:
+                break
+            done.append(r)
+    if not done and not p.get("native"):
+        raise BridgeError("No AI edits to %s in this document. Pass native=true to use Krita's own history "
+                          "(which also covers edits made by hand)." % native_action.split("_")[1])
     return done
 
 
 @handler("history.undo")
 def history_undo(p):
-    return {"undone": _replay("edit_undo", _num(p, "steps", 1, 1, 50, True))}
+    return {"undone": _step(p, history.undo_one, "edit_undo")}
 
 
 @handler("history.redo")
 def history_redo(p):
-    return {"redone": _replay("edit_redo", _num(p, "steps", 1, 1, 50, True))}
+    return {"redone": _step(p, history.redo_one, "edit_redo")}
+
+
+from . import analysis, extras  # noqa: E402,F401  (register their handlers)

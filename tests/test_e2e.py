@@ -190,3 +190,30 @@ def test_mcp_krita_not_running_gives_clear_error(tmp_path):
 
     res = run_mcp(env, go)
     assert is_err(res) and "Cannot reach Krita" in res.content[0].text
+
+
+def test_mcp_batch(bridge):
+    _, port, home = bridge
+    env = {"KRITA_MCP_HOME": str(home), "KRITA_MCP_PORT": str(port)}
+    line = {"type": "line", "x1": 0, "y1": 0, "x2": 5, "y2": 5}
+
+    async def go(session):
+        ok = await session.call_tool("batch", {"operations": [
+            {"tool": "draw_shapes", "args": {"shapes": [line]}},
+            {"tool": "canvas_snapshot", "args": {"max_size": 64}},
+            {"tool": "krita_status"}]})
+        stop = await session.call_tool("batch", {"operations": [
+            {"tool": "document_open", "args": {"path": "x.kra"}},  # fails on the fake backend
+            {"tool": "krita_status"}]})
+        bad = await session.call_tool("batch", {"operations": [
+            {"tool": "nope"}, {"tool": "draw_shapes", "args": {"wrong": 1}}], "stop_on_error": False})
+        return ok, stop, bad
+
+    ok, stop, bad = run_mcp(env, go)
+    summary = json.loads(ok.content[0].text)
+    assert summary["completed"] == 3 and summary["results"][1]["result"] == {"image": 1}
+    assert ok.content[1].type == "image"
+    s2 = json.loads(stop.content[0].text)
+    assert s2["completed"] == 0 and len(s2["results"]) == 1  # stopped at the first failure
+    s3 = json.loads(bad.content[0].text)
+    assert [r["ok"] for r in s3["results"]] == [False, False] and "bad arguments" in s3["results"][1]["error"]

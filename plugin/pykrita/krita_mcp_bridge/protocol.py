@@ -76,6 +76,7 @@ class BridgeServer:
         self._thread = None
         self._stop = threading.Event()
         self._slots = threading.BoundedSemaphore(8)
+        self._pumping = False
 
     @property
     def running(self):
@@ -112,6 +113,16 @@ class BridgeServer:
 
     # -- main thread ------------------------------------------------------
     def pump(self, budget=0.05):
+        # A handler may spin the Qt event loop (which fires the pump timer again); run jobs one at a time.
+        if self._pumping:
+            return
+        self._pumping = True
+        try:
+            self._pump(budget)
+        finally:
+            self._pumping = False
+
+    def _pump(self, budget):
         end = time.monotonic() + budget
         while time.monotonic() < end:
             try:
