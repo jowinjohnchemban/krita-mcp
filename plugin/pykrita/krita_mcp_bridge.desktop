@@ -5,3 +5,4 @@ X-KDE-Library=krita_mcp_bridge
 X-Python-2-Compatible=false
 Name=Krita MCP Bridge
 Comment=Local, token-authenticated bridge that lets an MCP server (Claude, ChatGPT, Gemini, ...) edit documents in Krita.
+X-Krita-Manual=Manual.html

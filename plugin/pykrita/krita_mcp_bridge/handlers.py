@@ -5,8 +5,10 @@ byte-identical to Krita's BGRA 8-bit layout) and Node.setPixelData, so layers
 must be RGBA / 8-bit integer. Documents created by `document.new` always are.
 """
 import base64
+import collections
 import math
 import os
+import time
 
 from krita import InfoObject, Krita, ManagedColor, Selection
 
@@ -22,7 +24,7 @@ except ImportError:  # Krita 5
 from . import history, pixels
 from .util import DOC_EXTS, IMAGE_EXTS, OPEN_EXTS, BridgeError, parse_color, safe_path, workspace_root
 
-BRIDGE_VERSION = "0.1.0"
+BRIDGE_VERSION = "0.2.0"
 MAX_DIM = 16384
 MAX_PIXELS = 100_000_000
 MAX_SHAPES = 5000
@@ -56,6 +58,15 @@ TRANSPARENT = _enum(Qt, "GlobalColor", "transparent")
 
 HANDLERS = {}
 EDITS = set()  # commands that change a document: recorded for undo
+# commands that only look (allowed in read-only mode)
+READS = {"app.info", "app.actions", "document.info", "canvas.snapshot", "canvas.sample", "layer.list",
+         "filter.list", "filter.describe", "brush.presets", "history.list", "image.analyze", "image.read_pixels",
+         "image.find_color", "file.list", "file.view", "vector.list", "resources.list", "palette.colors",
+         "animation.info", "animation.keyframes", "animation.contact_sheet", "video.info", "krita.action_list",
+         "generator.describe"}
+
+ACCESS = {"mode": "full"}  # full | read_only | paused - set from the MCP docker
+ACTIVITY = collections.deque(maxlen=300)  # (time, method, ok, ms, detail) for the docker's log
 
 
 def handler(name, edit=False):
@@ -71,9 +82,25 @@ def dispatch(method, params):
     fn = HANDLERS.get(method)
     if fn is None:
         raise BridgeError("Unknown method %r" % method)
-    if method in EDITS:
-        return history.run(method, fn, params, app().activeDocument())
-    return fn(params)
+    t0 = time.monotonic()
+    ok, detail = False, ""
+    try:
+        mode = ACCESS["mode"]
+        if mode == "paused":
+            raise BridgeError("The user has paused AI access in Krita (MCP docker). Ask them to resume it.")
+        if mode == "read_only" and method not in READS:
+            raise BridgeError("Krita is in read-only mode for AI (MCP docker): looking is allowed, editing is not.")
+        if method in EDITS:
+            result = history.run(method, fn, params, app().activeDocument())
+        else:
+            result = fn(params)
+        ok = True
+        return result
+    except Exception as e:  # noqa: BLE001 - logged, then reported to the caller by the protocol layer
+        detail = str(e)[:200]
+        raise
+    finally:
+        ACTIVITY.append((time.time(), method, ok, int((time.monotonic() - t0) * 1000), detail))
 
 
 # ---------------------------------------------------------------- helpers
@@ -267,12 +294,27 @@ def _configured_filter(name, params):
     if f is None:
         raise BridgeError("Unknown filter %r. Call filter_list." % name)
     cfg = f.configuration()
+    defaults = cfg.properties()
     for k, v in (params or {}).items():
         if not isinstance(v, (str, int, float, bool)):
             raise BridgeError("filter param %r must be a string, number or boolean" % k)
+        if isinstance(defaults.get(k), QColor) and isinstance(v, str):
+            v = _qcolor(v)  # colour-valued settings (e.g. colortoalpha's targetcolor)
         cfg.setProperty(str(k), v)
     f.setConfiguration(cfg)
     return f
+
+
+def _info_object(props):
+    """InfoObject for generator settings; '#rrggbb' strings for *color keys become colours."""
+    cfg = InfoObject()
+    for k, v in (props or {}).items():
+        if not isinstance(v, (str, int, float, bool)):
+            raise BridgeError("setting %r must be a string, number or boolean" % k)
+        if isinstance(v, str) and k.endswith("color") and v.startswith("#"):
+            v = _qcolor(v)
+        cfg.setProperty(str(k), v)
+    return cfg
 
 
 # -------------------------------------------------------------------- app
@@ -380,7 +422,7 @@ def document_save(p):
 @handler("document.export")
 def document_export(p):
     doc = active_doc()
-    path = safe_path(p.get("path"), IMAGE_EXTS)
+    path = safe_path(p.get("path"), IMAGE_EXTS | {".psd", ".ora"})
     cfg = InfoObject()
     if p.get("quality") is not None:  # jpeg/webp quality 0..100
         cfg.setProperty("quality", _num(p, "quality", None, 0, 100, True))
@@ -422,7 +464,16 @@ def document_close(p):
     doc.setModified(False)
     doc.setBatchmode(True)
     history.forget(doc)
+    # Krita's Layers docker refreshes its "current node" filter on a timer; if that fires after the
+    # document is gone it crashes (seen after adding colourise masks). Park the active layer on a plain
+    # top-level layer and let the timers run out before closing.
+    tops = [n for n in doc.rootNode().childNodes() if n.type() != "selectionmask"]
+    if tops:
+        doc.setActiveNode(tops[0])
+    _refresh(doc)
+    history.pump_for(0.5)
     doc.close()
+    history.pump_for(0.3)
     return {"saved": saved}
 
 
@@ -445,7 +496,10 @@ def document_scale(p):
     h = _num(p, "height", None, 1, MAX_DIM, True)
     if w * h > MAX_PIXELS:
         raise BridgeError("image too large")
-    doc.scaleImage(w, h, int(doc.xRes()), int(doc.yRes()), "Bicubic")
+    method = str(p.get("method") or "Bicubic")
+    if method not in app().filterStrategies():
+        raise BridgeError("method must be one of %s" % ", ".join(app().filterStrategies()))
+    doc.scaleImage(w, h, int(doc.xRes()), int(doc.yRes()), method)
     _refresh(doc)
     return doc_info(doc)
 
@@ -516,6 +570,14 @@ def document_flip(p):
 @handler("canvas.snapshot")
 def canvas_snapshot(p):
     doc = active_doc()
+    if p.get("frame") is not None:  # look at another animation frame, then come back
+        keep = doc.currentTime()
+        doc.setCurrentTime(_num(p, "frame", None, 0, 100000, True))
+        try:
+            return canvas_snapshot(dict(p, frame=None))
+        finally:
+            doc.setCurrentTime(keep)
+            _refresh(doc)
     _refresh(doc)
     W, H = doc.width(), doc.height()
     x = _num(p, "x", 0, 0, W - 1, True)
@@ -607,12 +669,13 @@ def _create_node(doc, kind, name, p):
     if kind in ("paintlayer", "vectorlayer", "grouplayer"):
         return doc.createNode(name, kind)
     if kind == "filllayer":
-        cfg = InfoObject()
-        if p.get("pattern"):
-            gen = "pattern"
-            cfg.setProperty("pattern", str(p["pattern"]))
+        if p.get("generator"):  # seexpr, screentone, gradient, multigrid, ... with their own settings
+            gen, cfg = str(p["generator"]), _info_object(p.get("generator_config"))
+        elif p.get("pattern"):
+            gen, cfg = "pattern", _info_object({"pattern": str(p["pattern"])})
         else:
             gen = "color"
+            cfg = InfoObject()
             cfg.setProperty("color", _qcolor(p.get("fill") or p.get("color") or "#000000"))
         return doc.createFillLayer(name, gen, cfg, _canvas_selection(doc))
     if kind == "filterlayer":
@@ -1261,7 +1324,7 @@ def brush_stroke(p):
         if p.get("size") is not None:
             view.setBrushSize(_num(p, "size", None, 0.5, 1000))
         if p.get("color") is not None:
-            view.setForeGroundColor(ManagedColor.fromQColor(_qcolor(p["color"])))
+            view.setForeGroundColor(ManagedColor.fromQColor(_qcolor(p["color"]), view.canvas()))
         if p.get("opacity") is not None:
             view.setPaintingOpacity(_num(p, "opacity", None, 0, 1))
         if p.get("flow") is not None:
@@ -1349,4 +1412,6 @@ def history_redo(p):
     return {"redone": _step(p, history.redo_one, "edit_redo")}
 
 
-from . import analysis, extras  # noqa: E402,F401  (register their handlers)
+from . import analysis, controls, extras, media  # noqa: E402  (importing registers their handlers)
+
+FEATURE_MODULES = (analysis, controls, extras, media)

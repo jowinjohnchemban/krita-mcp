@@ -285,10 +285,23 @@ def _trim():
         total -= _undo.pop(0).size()
 
 
+def flush_events(rounds=3):
+    for _ in range(rounds):
+        QCoreApplication.processEvents(_NO_INPUT)
+
+
+def pump_for(seconds):
+    """Keep Krita's event loop (incl. timers) running for a moment, without user input."""
+    import time
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        QCoreApplication.processEvents(_NO_INPUT, 20)
+        time.sleep(0.01)
+
+
 def _settle(doc, refresh):
     refresh(doc)
-    for _ in range(3):
-        QCoreApplication.processEvents(_NO_INPUT)
+    flush_events()
 
 
 def _krita(action, steps, doc, refresh):
@@ -349,10 +362,9 @@ def redo_one(doc, refresh):
 
 
 def listing(doc, limit):
-    return {
-        "ai_edits": [o.describe() for o in _undo if o.doc == doc][-limit:],
-        "redoable": [o.describe() for o in _redo if o.doc == doc][-limit:],
-    }
+    mine = [o.describe() for o in _undo if o.doc == doc]
+    redo = [o.describe() for o in _redo if o.doc == doc]
+    return {"ai_edits": mine[-limit:], "redoable": redo[-limit:], "undo_count": len(mine), "redo_count": len(redo)}
 
 
 def forget(doc):

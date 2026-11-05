@@ -15,9 +15,12 @@ DOC_EXTS = {".kra", ".ora"}
 OPEN_EXTS = IMAGE_EXTS | DOC_EXTS | {".psd"}
 
 
+WORKSPACE_OVERRIDE = None  # set from the MCP docker's settings; the env var still wins
+
+
 def workspace_root() -> Path:
     """Directory the bridge is allowed to read from / write to."""
-    root = Path(os.environ.get("KRITA_MCP_WORKSPACE") or (Path.home() / "KritaMCP"))
+    root = Path(os.environ.get("KRITA_MCP_WORKSPACE") or WORKSPACE_OVERRIDE or (Path.home() / "KritaMCP"))
     root = root.expanduser()
     root.mkdir(parents=True, exist_ok=True)
     return root.resolve()

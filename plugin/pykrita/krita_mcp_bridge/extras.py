@@ -139,7 +139,9 @@ def resources_list(p):
     return {"type": kind, "count": len(names), "names": names[:limit]}
 
 
-def _color_hex(mc):
+def _color_hex(mc, canvas=None):
+    if canvas is not None:  # display-referred conversion; raw components may be linear
+        return mc.colorForCanvas(canvas).name()
     comps = mc.componentsOrdered()
     if mc.colorModel() in ("RGBA", "GRAYA") and comps:
         vals = comps[:3] if mc.colorModel() == "RGBA" else comps[:1] * 3
@@ -162,6 +164,36 @@ def palette_colors(p):
         mc = sw.color()
         out.append({"name": sw.name(), "hex": _color_hex(mc), "model": mc.colorModel()})
     return {"name": res.name(), "colors": out}
+
+
+@handler("app.actions")
+def app_actions(p):
+    """Names of Krita's actions (read-only listing, used to discover what can be wired up)."""
+    q = str(p.get("filter") or "").lower()
+    out = []
+    for a in app().actions():
+        name, text = a.objectName(), a.text().replace("&", "")
+        if name and (not q or q in name.lower() or q in text.lower()):
+            out.append([name, text])
+    return {"actions": sorted(out)}
+
+
+def _plain(v):
+    return v if isinstance(v, (str, int, float, bool)) or v is None else str(v)
+
+
+@handler("generator.describe")
+def generator_describe(p):
+    """Default settings of a fill-layer generator (color, pattern, screentone, gradient, multigrid, seexpr, ...)."""
+    from krita import InfoObject
+    doc = active_doc()
+    from .handlers import _canvas_selection
+    n = doc.createFillLayer("probe", str(p.get("name")), InfoObject(), _canvas_selection(doc))
+    if n is None:
+        raise BridgeError("No fill-layer generator called %r" % p.get("name"))
+    cfg = n.filterConfig()
+    return {"name": n.generatorName(),
+            "default_properties": {k: _plain(v) for k, v in (cfg.properties() if cfg else {}).items()}}
 
 
 # ------------------------------------------------------------------ guides

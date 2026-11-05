@@ -203,6 +203,8 @@ def H(tmp_path_factory):
     mod = types.ModuleType("krita")
     mod.Krita, mod.InfoObject, mod.Selection, mod.ManagedColor = FakeKrita, object, FakeSelection, object
     mod.Extension = type('Extension', (), {'__init__': lambda self, parent=None: None})
+    mod.DockWidget = mod.DockWidgetFactory = type("Dock", (), {})
+    mod.DockWidgetFactoryBase = types.SimpleNamespace(DockRight=1)
     sys.modules["krita"] = mod
     global _QAPP
     _QAPP = QGuiApplication.instance() or QGuiApplication([])  # must stay referenced; text needs it
@@ -291,7 +293,7 @@ def test_canvas_snapshot_returns_valid_png(H):
 
 def test_layer_ops(H):
     H.dispatch("document.new", {"width": 10, "height": 10})
-    a = H.dispatch("layer.create", {"name": "A"})
+    H.dispatch("layer.create", {"name": "A"})
     H.dispatch("layer.update", {"layer": "A", "opacity": 0.5, "visible": False, "name": "A2"})
     tree = H.dispatch("layer.list", {})["layers"]
     assert [l["name"] for l in tree][-1] == "A2" and abs(tree[-1]["opacity"] - 0.5) < 0.01 and tree[-1]["visible"] is False
@@ -482,3 +484,51 @@ def test_snapshot_grid_overlay(H):
     img = QImage.fromData(base64.b64decode(r["png_base64"]))
     assert img.pixelColor(50, 60).getRgb() != (255, 255, 255, 255)  # vertical line at x=50
     assert img.pixelColor(30, 30).getRgb() == (255, 255, 255, 255)
+
+
+# ------------------------------------------------------- photo tools / access / docker
+def test_adjust_levels_and_curves_are_exact(H):
+    H.dispatch("document.new", {"width": 20, "height": 10, "background": "#808080"})
+    H.dispatch("photo.adjust", {"operation": "levels", "layer": "Background", "in_black": 128, "in_white": 255})
+    assert px(H.app().activeDocument(), 5, 5)[:3] == (0, 0, 0)
+    H.dispatch("history.undo", {})
+    H.dispatch("photo.adjust", {"operation": "curves", "points": [[0, 0], [128, 200], [255, 255]], "channel": "r"})
+    assert px(H.app().activeDocument(), 5, 5)[:3] == (200, 128, 128)
+    with pytest.raises(H.BridgeError):
+        H.dispatch("photo.adjust", {"operation": "nope"})
+
+
+def test_adjust_respects_selection(H):
+    H.dispatch("document.new", {"width": 20, "height": 10, "background": "#808080"})
+    H.dispatch("selection.set", {"kind": "rect", "x": 0, "y": 0, "width": 10, "height": 10})
+    H.dispatch("photo.adjust", {"operation": "exposure", "stops": 1, "layer": "Background"})
+    doc = H.app().activeDocument()
+    assert px(doc, 5, 5)[0] == 255 and px(doc, 15, 5)[0] == 128
+
+
+def test_access_modes_and_activity(H):
+    H.dispatch("document.new", {"width": 10, "height": 10})
+    try:
+        H.ACCESS["mode"] = "read_only"
+        assert H.dispatch("layer.list", {})["layers"]
+        with pytest.raises(H.BridgeError, match="read-only"):
+            H.dispatch("layer.create", {"name": "x"})
+        H.ACCESS["mode"] = "paused"
+        with pytest.raises(H.BridgeError, match="paused"):
+            H.dispatch("layer.list", {})
+    finally:
+        H.ACCESS["mode"] = "full"
+    t, method, ok, ms, detail = H.ACTIVITY[-1]
+    assert method == "layer.list" and ok is False and "paused" in detail
+    assert any(m == "layer.create" and not o for _, m, o, _, _ in H.ACTIVITY)
+
+
+def test_docker_client_snippets(H):
+    import importlib
+    dock = importlib.import_module("krita_mcp_bridge.dock")
+    assert dock.client_snippet("Claude Code", "krita-mcp", 5679) == "claude mcp add krita -- krita-mcp"
+    assert "-e KRITA_MCP_PORT=6000" in dock.client_snippet("Claude Code", "krita-mcp", 6000)
+    js = dock.client_snippet("Claude Desktop", '"C:/My Tools/krita-mcp.exe" --x', 5679)
+    assert '"command": "C:/My Tools/krita-mcp.exe"' in js and '"--x"' in js
+    assert "[mcp_servers.krita]" in dock.client_snippet("Codex CLI", "uvx krita-mcp", 5679)
+    assert '"type": "stdio"' in dock.client_snippet("VS Code (Copilot)", "krita-mcp", 5679)

@@ -254,8 +254,7 @@ def filters():
     names = call("filter.list")["filters"]
     expect("blur" in names, names[:10])
     d = call("filter.describe", name="blur")
-    r = call("filter.apply", name="blur", layer=STATE["shapes"],
-             params={"halfWidth": 6, "halfHeight": 6})
+    call("filter.apply", name="blur", layer=STATE["shapes"], params={"halfWidth": 6, "halfHeight": 6})
     snap("06_blur")
     return {"n": len(names), "blur_props": d["default_properties"]}
 
@@ -371,8 +370,8 @@ def brush_engine():
     STATE["brush"] = lay
     basic = [n for n in presets["presets"] if "basic" in n.lower()]
     preset = basic[0] if basic else None
-    r = call("brush.stroke", layer=lay, preset=preset, size=20, color="#ff00ff",
-             points=[[30, 220], [120, 180], [200, 240], [300, 200]])
+    call("brush.stroke", layer=lay, preset=preset, size=20, color="#ff00ff",
+         points=[[30, 220], [120, 180], [200, 240], [300, 200]])
     c = sample(30, 220, layer=lay)
     expect(c[3] > 0, "stroke start pixel empty: %r" % (c,))
     call("brush.stroke", layer=lay, size=30, color="#00ff00", points=[[50, 50, 0.1], [150, 60, 0.6], [250, 50, 1]])
@@ -632,6 +631,168 @@ def undo_reports_names():
 
 
 @step
+def photo_adjustments():
+    call("document.new", width=160, height=120, name="photo", background="#808080")
+    lay = call("layer.import_image", data_base64=call("canvas.snapshot")["png_base64"], name="Photo")["id"]
+    call("draw.shapes", layer=lay, shapes=[{"type": "rect", "x": 0, "y": 0, "width": 80, "height": 120,
+                                             "gradient": {"type": "linear", "x1": 0, "y1": 0, "x2": 80, "y2": 0,
+                                                          "stops": [[0, "#203040"], [1, "#d0a070"]]}}])
+    ops = {
+        "levels": {"in_black": 30, "in_white": 220}, "curves": {"points": [[0, 0], [128, 170], [255, 255]]},
+        "brightness_contrast": {"brightness": 20, "contrast": 30}, "exposure": {"stops": 0.5},
+        "gamma": {"gamma": 1.4}, "temperature": {"temperature": 40, "tint": -10},
+        "hue_saturation": {"hue": 40, "saturation": 30}, "color_balance": {"midtones_cyan_red": 40},
+        "sharpen": {"amount": 1.5, "radius": 2}, "blur": {"radius": 3}, "motion_blur": {"angle": 30, "length": 8},
+        "lens_blur": {"radius": 4}, "denoise": {"strength": 10}, "desaturate": {}, "auto_contrast": {},
+        "normalize": {}, "invert": {}, "posterize": {"steps": 4}, "threshold": {"level": 100},
+        "pixelize": {"size": 6}, "oil_paint": {"brush_size": 2}, "emboss": {}, "edge_detect": {},
+        "high_pass": {"radius": 3}, "noise": {"amount": 30}, "color_to_alpha": {"color": "#808080"},
+        "dodge": {"exposure": 0.6}, "burn": {"exposure": 0.6}, "wave": {"amplitude": 6},
+        "round_corners": {"radius": 20},
+    }
+    changed, same = [], []
+    for op, settings in ops.items():
+        before = call("canvas.snapshot", max_size=80)["png_base64"]
+        call("photo.adjust", operation=op, layer=lay, **settings)
+        after = call("canvas.snapshot", max_size=80)["png_base64"]
+        (changed if after != before else same).append(op)
+        call("history.undo")
+        expect(call("canvas.snapshot", max_size=80)["png_base64"] == before, "%s: undo did not restore" % op)
+    expect(len(same) <= 2, "no visible change from: %s" % same)
+    m = call("photo.adjust", operation="hue_saturation", layer=lay, non_destructive=True, saturation=-100)
+    expect(m["mask"]["type"] == "filtermask", m)
+    call("photo.auto_enhance", layer=lay)
+    v = call("photo.vignette", strength=0.7)
+    c = sample(2, 2)
+    expect(c[0] < 100, "vignette corner %r" % (c,))
+    snap("14_photo")
+    cs = call("document.color_space", depth="U16")
+    expect(cs["color_depth"] == "U16", cs)
+    cs = call("document.color_space", depth="U8")
+    expect(cs["color_depth"] == "U8", cs)
+    call("document.close")
+    return {"changed": len(changed), "unchanged": same, "vignette": v["name"]}
+
+
+@step
+def generators():
+    call("document.new", width=200, height=120, name="gen", background="white")
+    out = {}
+    for gen, cfg in [("seexpr", {"script": "$c = noise(8*$u, 8*$v); [$c, $c*0.5, 1-$c]"}),
+                     ("screentone", {"pattern": 0, "shape": 0, "size_mode": 1, "size_x": 8, "size_y": 8,
+                                     "foreground_color": "#ff0000", "background_color": "#ffffff"}),
+                     ("multigrid", {})]:
+        lay = call("layer.create", name=gen, type="filllayer", generator=gen, generator_config=cfg)
+        a = call("image.analyze", layer=lay["id"], palette_size=3)
+        out[gen] = [c["hex"] for c in a["palette"]]
+        expect(a["coverage"] > 0.5, "%s produced nothing: %r" % (gen, a))
+        snap("15_gen_" + gen)
+        call("layer.update", layer=lay["id"], visible=False)
+    call("document.close")
+    return out
+
+
+@step
+def curated_actions():
+    import socket
+    call("document.new", width=120, height=90, name="acts", background="white")
+    call("layer.create", name="L1", fill="#336699")
+    names = call("krita.action_list")["actions"]
+    skip = {"duplicate_image_as_new_document", "play_pause", "stop_playback", "toggle_canvas_only"}
+    fast = BridgeClient(timeout=20)
+    ok, unavailable = [], {}
+    for name in names:
+        if name in skip:
+            continue
+        if name.startswith(("fill_with", "clear_selection", "copy_selection", "cut_selection", "selection_to",
+                            "trim_to_selection")):
+            call("selection.set", kind="rect", x=10, y=10, width=40, height=30)
+        try:
+            fast.call("krita.action", {"name": name})
+            ok.append(name)
+        except KritaError as e:
+            if "Cannot reach" in str(e) or "timed out" in str(e).lower():
+                raise AssertionError("%s blocked Krita (dialog?)" % name)
+            unavailable[name] = str(e)[:80]
+        except socket.timeout:
+            raise AssertionError("%s blocked Krita (dialog?)" % name)
+    call("krita.action", name="duplicate_image_as_new_document")
+    expect(len(call("app.info")["documents"]) >= 2, "create_copy did not open a document")
+    call("document.close")
+    call("document.close")
+    return {"ran": len(ok), "unavailable": unavailable}
+
+
+@step
+def user_controls():
+    call("document.new", width=200, height=150, name="ctl", background="white")
+    st = call("user.tool_state")
+    new = call("user.tool_state", foreground="#ff8800", size=33)
+    expect(new["foreground"] == "#ff8800" and abs(new["size"] - 33) < 0.6, new)
+    call("user.tool_state", foreground=st["foreground"], size=st["size"])
+    v = call("view.control", zoom=2.0, rotation=15, mirror=True)
+    expect(abs(abs(v["rotation"]) - 15) < 0.5 and v["mirror"] is True, v)  # mirrored views report -angle
+    call("view.control", reset=True, fit=True)
+    call("user.notify", message="krita-mcp smoke test", seconds=2)
+    call("document.close")
+    return {"view": v}
+
+
+@step
+def keyframes_video_and_sheet():
+    call("document.new", width=160, height=90, name="anim", background="white")
+    lay = call("layer.create", name="Ball")["id"]
+    call("animation.set", fps=12, start=0, end=11)
+    for f in range(0, 12, 3):
+        call("animation.frame", layer=lay, frame=f, kind="blank")
+        call("draw.shapes", layer=lay, shapes=[{"type": "ellipse", "cx": 15 + f * 12, "cy": 45, "rx": 12, "ry": 12,
+                                                 "fill": "#e04040"}])
+    kf = call("animation.keyframes", layer=lay)["keyframes"]
+    expect(kf == [0, 3, 6, 9], kf)
+    call("animation.frame", layer=lay, frame=9, kind="duplicate")
+    call("animation.frame", layer=lay, frame=10, kind="remove")
+    s1 = call("canvas.snapshot", frame=6, max_size=80)
+    sheet = call("animation.contact_sheet", start=0, end=11, step=3, columns=4, cell_size=120)
+    (OUT / "16_contact_sheet.png").write_bytes(base64.b64decode(sheet["png_base64"]))
+    r = {}
+    for ext in ("mp4", "gif", "webm"):
+        out = call("video.render", path="smoke_anim.%s" % ext)
+        expect(out["bytes"] > 1000, out)
+        r[ext] = out["bytes"]
+    info = call("video.info", path="smoke_anim.mp4")
+    expect(info["width"] == 160 and info["frames"] >= 11, info)
+    call("document.close")
+    imp = call("video.import", path="smoke_anim.mp4", max_frames=20)
+    expect(imp["frames"] >= 11, imp)
+    doc = call("document.info")
+    # grade every frame the way for_each_frame does
+    for f in range(imp["range"][0], imp["range"][1] + 1):
+        call("animation.set", frame=f)
+        call("photo.adjust", operation="temperature", temperature=-60, layer=doc["layers"][-1]["id"])
+    call("video.render", path="smoke_graded.gif")
+    call("document.close")
+    return {"keyframes": kf, "rendered": r, "imported": imp["frames"], "snapshot_frame": s1["width"]}
+
+
+@step
+def colorize():
+    call("document.new", width=200, height=150, name="lineart", background="white")
+    line = call("layer.create", name="Lines")["id"]
+    call("draw.shapes", layer=line, shapes=[
+        {"type": "ellipse", "cx": 60, "cy": 75, "rx": 45, "ry": 45, "stroke": "#000000", "stroke_width": 4},
+        {"type": "rect", "x": 120, "y": 30, "width": 60, "height": 90, "stroke": "#000000", "stroke_width": 4}])
+    r = call("lineart.colorize", layer=line, regions=[
+        {"color": "#ff6040", "points": [[50, 70], [70, 80]]},
+        {"color": "#40a0ff", "rect": [140, 60, 20, 20]},
+        {"color": "#ffffff", "points": [[5, 5], [195, 5]]}])
+    snap("17_colorize")
+    c1, c2 = sample(60, 60), sample(150, 100)
+    call("document.close")
+    expect(c1[0] > 200 and c1[2] < 120 and c2[2] > 200, "fills %r %r" % (c1, c2))
+    return r["mask"]["type"], c1, c2
+
+
+@step
 def export_layer():
     r = call("document.export", path="layer_only.png", layer=STATE["shapes"])
     r2 = call("document.export", path="q.jpg", quality=40)
@@ -653,7 +814,7 @@ def resize_and_scale():
 def save_and_export():
     r1 = call("document.save", path="smoke.kra")
     expect(Path(r1["path"]).exists(), r1)
-    r2 = call("document.save")
+    call("document.save")  # re-save in place
     r3 = call("document.export", path="smoke.png")
     expect(Path(r3["path"]).exists() and r3["bytes"], r3)
     r4 = call("document.export", path="smoke.jpg")

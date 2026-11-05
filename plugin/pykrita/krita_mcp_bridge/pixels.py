@@ -167,3 +167,112 @@ def components(mask, w, h, limit=20):
                         "centroid": [sx / float(area), sy / float(area)]})
     regions.sort(key=lambda r: -r["area"])
     return regions[:limit], len(regions)
+
+
+# ---------------------------------------------------------------- tone curves
+# A LUT is 256 output values for the 256 input values of one channel. They are applied with
+# bytes.translate on the B, G, R planes of a BGRA buffer; alpha is never touched.
+
+def _clamp(v):
+    return 0 if v < 0 else 255 if v > 255 else int(round(v))
+
+
+def identity_lut():
+    return list(range(256))
+
+
+def levels_lut(in_black=0, in_white=255, gamma=1.0, out_black=0, out_white=255):
+    if in_white <= in_black:
+        raise BridgeError("in_white must be greater than in_black")
+    if gamma <= 0:
+        raise BridgeError("gamma must be > 0")
+    out = []
+    for v in range(256):
+        t = min(1.0, max(0.0, (v - in_black) / float(in_white - in_black)))
+        out.append(_clamp(out_black + (out_white - out_black) * t ** (1.0 / gamma)))
+    return out
+
+
+def brightness_contrast_lut(brightness=0, contrast=0):
+    """brightness and contrast in -100..100 (0 = unchanged)."""
+    c = max(-100.0, min(100.0, contrast)) * 2.55
+    f = (259.0 * (c + 255.0)) / (255.0 * (259.0 - c))
+    b = max(-100.0, min(100.0, brightness)) * 1.275
+    return [_clamp(f * (v - 128) + 128 + b) for v in range(256)]
+
+
+def exposure_lut(stops):
+    k = 2.0 ** stops
+    return [_clamp(v * k) for v in range(256)]
+
+
+def curve_lut(points):
+    """Monotone cubic (Fritsch-Carlson) curve through [[in, out], ...] points in 0..255."""
+    try:
+        pts = sorted((float(a), float(b)) for a, b in points)
+    except (TypeError, ValueError):
+        raise BridgeError("curve points must be [[in, out], ...] pairs")
+    if len(pts) < 2:
+        raise BridgeError("a curve needs at least 2 points")
+    xs, ys = [q[0] for q in pts], [q[1] for q in pts]
+    if len(set(xs)) != len(xs):
+        raise BridgeError("curve points need distinct input values")
+    n = len(pts)
+    d = [(ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]) for i in range(n - 1)]
+    m = [d[0]] + [0.0 if d[i - 1] * d[i] <= 0 else (d[i - 1] + d[i]) / 2.0 for i in range(1, n - 1)] + [d[-1]]
+    for i in range(n - 1):
+        if d[i] == 0:
+            m[i] = m[i + 1] = 0.0
+        else:
+            a, b = m[i] / d[i], m[i + 1] / d[i]
+            s = a * a + b * b
+            if s > 9:
+                t = 3.0 / math.sqrt(s)
+                m[i], m[i + 1] = t * a * d[i], t * b * d[i]
+    out = []
+    for v in range(256):
+        if v <= xs[0]:
+            out.append(_clamp(ys[0]))
+            continue
+        if v >= xs[-1]:
+            out.append(_clamp(ys[-1]))
+            continue
+        i = max(k for k in range(n - 1) if xs[k] <= v)
+        h = xs[i + 1] - xs[i]
+        t = (v - xs[i]) / h
+        h00, h10 = 2 * t ** 3 - 3 * t ** 2 + 1, t ** 3 - 2 * t ** 2 + t
+        h01, h11 = -2 * t ** 3 + 3 * t ** 2, t ** 3 - t ** 2
+        out.append(_clamp(h00 * ys[i] + h10 * h * m[i] + h01 * ys[i + 1] + h11 * h * m[i + 1]))
+    return out
+
+
+def apply_luts(raw, r=None, g=None, b=None):
+    """New BGRA bytes with per-channel LUTs applied (None = unchanged); alpha untouched."""
+    buf = bytearray(raw)
+    for offset, lut in ((0, b), (1, g), (2, r)):
+        if lut is not None:
+            buf[offset::4] = buf[offset::4].translate(bytes(lut))
+    return bytes(buf)
+
+
+def histogram(raw, offset):
+    plane = raw[offset::4]
+    return [plane.count(i) for i in range(256)]
+
+
+def percentile_bounds(hist, clip=0.005):
+    """(low, high) input levels that clip `clip` of the pixels at each end."""
+    total = float(sum(hist)) or 1.0
+    acc, low = 0, 0
+    for i, c in enumerate(hist):
+        acc += c
+        if acc / total > clip:
+            low = i
+            break
+    acc, high = 0, 255
+    for i in range(255, -1, -1):
+        acc += hist[i]
+        if acc / total > clip:
+            high = i
+            break
+    return low, max(high, low + 1)

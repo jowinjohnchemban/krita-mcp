@@ -32,6 +32,17 @@ def config_dir() -> Path:
     return Path(os.environ.get("KRITA_MCP_HOME") or (Path.home() / ".krita-mcp")).expanduser()
 
 
+def write_new_token() -> str:
+    """Replace the token (clients must re-read it)."""
+    p = config_dir() / "token"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    t = secrets.token_urlsafe(32)
+    fd = os.open(str(p), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(t)
+    return t
+
+
 def load_or_create_token() -> str:
     d = config_dir()
     d.mkdir(parents=True, exist_ok=True)
@@ -44,11 +55,7 @@ def load_or_create_token() -> str:
         t = p.read_text().strip()
         if len(t) >= 32:
             return t
-    t = secrets.token_urlsafe(32)
-    fd = os.open(str(p), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        f.write(t)
-    return t
+    return write_new_token()
 
 
 class _Job:

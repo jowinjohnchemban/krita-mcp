@@ -4,7 +4,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugin" / "pykrita"))
 
-from krita_mcp_bridge.pixels import analyze, color_mask, components, flood_region, mask_bounds  # noqa: E402
+from krita_mcp_bridge.pixels import (analyze, apply_luts, brightness_contrast_lut, color_mask, components,  # noqa: E402
+                                     curve_lut, flood_region, histogram, levels_lut, mask_bounds,
+                                     percentile_bounds)
 
 
 def bgra(rows):
@@ -48,3 +50,32 @@ def test_analyze_palette_and_layout():
     assert a["palette"][0]["share"] == 0.5
     assert a["layout"][0][0]["hex"] == "#ff0000" and a["layout"][0][1]["hex"] == "#ffffff"
     assert a["coverage"] == 1.0 and a["sharpness"] > 0
+
+
+def test_levels_and_brightness_contrast_luts():
+    lut = levels_lut(50, 200)
+    assert lut[50] == 0 and lut[200] == 255 and lut[125] in (127, 128) and lut[0] == 0 and lut[255] == 255
+    assert levels_lut(gamma=2.0)[64] > 64  # gamma > 1 brightens midtones
+    assert brightness_contrast_lut(0, 0) == list(range(256))
+    assert brightness_contrast_lut(50, 0)[100] > 100 and brightness_contrast_lut(0, 50)[200] > 200
+
+
+def test_curve_is_monotone_and_hits_points():
+    lut = curve_lut([[0, 0], [64, 40], [192, 220], [255, 255]])
+    assert lut[0] == 0 and lut[64] == 40 and lut[192] == 220 and lut[255] == 255
+    assert all(a <= b for a, b in zip(lut, lut[1:]))
+
+
+def test_apply_luts_keeps_alpha_and_targets_channels():
+    raw = bgra([[(10, 20, 30, 77)]])
+    out = apply_luts(raw, r=[255] * 256)
+    assert out == bgra([[(255, 20, 30, 77)]])
+
+
+def test_percentile_bounds_for_auto_levels():
+    hist = [0] * 256
+    hist[40], hist[120], hist[210] = 1, 998, 1
+    assert percentile_bounds(hist, 0.0) == (40, 210)
+    assert percentile_bounds(hist, 0.01) == (120, 121)  # one stray pixel each side is clipped away
+    raw = bgra([[R, W]])
+    assert histogram(raw, 2)[255] == 2 and histogram(raw, 1)[0] == 1

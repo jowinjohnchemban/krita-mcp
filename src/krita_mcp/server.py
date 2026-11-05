@@ -28,6 +28,9 @@ Controls a running Krita instance. Typical workflow:
    colour is). Iterate until it looks right.
 4. export_image / save_document to write files into the workspace.
 undo/redo revert whole AI edits (pixels, properties, layers). Use batch to run many steps in one call.
+Photos: adjust_image (levels, curves, hue/saturation, sharpen, denoise...), auto_enhance, add_vignette.
+Video/animation: import_video -> edit frames (animation_set frame=..., or for_each_frame) -> render_video;
+keyframe/list_keyframes, animation_contact_sheet to review motion. krita_action runs Krita's own commands.
 Inpainting with an external image model: set_selection -> export_image(x,y,width,height) +
 export_selection_mask -> generate -> import_image(fit="selection").
 Coordinates are pixels with the origin at the top-left. Colours are '#rrggbb' or '#rrggbbaa'.
@@ -96,7 +99,7 @@ async def save_document(path: Optional[str] = None) -> dict:
 async def export_image(path: str, layer: Optional[str] = None, quality: Optional[int] = None,
                        full_canvas: bool = False, x: Optional[int] = None, y: Optional[int] = None,
                        width: Optional[int] = None, height: Optional[int] = None) -> dict:
-    """Export the flattened image to png/jpg/webp/bmp/tiff in the workspace (format from extension).
+    """Export the flattened image to png/jpg/webp/bmp/tiff/psd/ora in the workspace (format from extension).
     layer = export only that layer (cropped to its content unless full_canvas). quality = 0-100 for jpg/webp.
     x/y/width/height = export just that region (e.g. the area to send to an inpainting model)."""
     return await _call("document.export", path=path, layer=layer, quality=quality,
@@ -116,9 +119,10 @@ async def resize_canvas(width: int, height: int, x_offset: int = 0, y_offset: in
 
 
 @tool
-async def scale_image(width: int, height: int) -> dict:
-    """Scale the whole image (all layers) to a new size."""
-    return await _call("document.scale", width=width, height=height)
+async def scale_image(width: int, height: int, method: str = "Bicubic") -> dict:
+    """Scale the whole image (all layers) to a new size. method: Bicubic, Bilinear, Lanczos3, Box,
+    Hermite, Mitchell, BSpline or NearestNeighbor (pixel art)."""
+    return await _call("document.scale", width=width, height=height, method=method)
 
 
 @tool
@@ -150,13 +154,15 @@ async def flatten_image() -> dict:
 @tool
 async def canvas_snapshot(max_size: int = 1024, x: Optional[int] = None, y: Optional[int] = None,
                           width: Optional[int] = None, height: Optional[int] = None,
-                          layer: Optional[str] = None, grid: Optional[int] = None) -> Image:
+                          layer: Optional[str] = None, grid: Optional[int] = None,
+                          frame: Optional[int] = None) -> Image:
     """Return the current composite image so you can SEE the canvas. Optionally zoom into a region
     (x, y, width, height in canvas pixels). max_size caps the longest side (64-4096).
     layer = show only that layer (transparent elsewhere).
-    grid = draw labelled canvas-coordinate lines every `grid` pixels, to read off exact positions."""
+    grid = draw labelled canvas-coordinate lines every `grid` pixels, to read off exact positions.
+    frame = look at another animation frame (the current frame is restored)."""
     r = await _call("canvas.snapshot", max_size=max_size, x=x, y=y, width=width, height=height, layer=layer,
-                    grid=grid)
+                    grid=grid, frame=frame)
     return Image(data=base64.b64decode(r["png_base64"]), format="png")
 
 
@@ -178,18 +184,26 @@ async def create_layer(name: str = "Layer", type: str = "paintlayer", parent: Op
                        above: Optional[str] = None, fill: Optional[str] = None,
                        filter: Optional[str] = None, filter_params: Optional[dict[str, Any]] = None,
                        source: Optional[str] = None, pattern: Optional[str] = None,
-                       path: Optional[str] = None) -> dict:
+                       path: Optional[str] = None, generator: Optional[str] = None,
+                       generator_config: Optional[dict[str, Any]] = None) -> dict:
     """Create a layer or mask; it becomes the active layer. type:
       paintlayer (fill = optional solid colour), vectorlayer, grouplayer,
       filllayer (fill = colour, or pattern = pattern resource name) - a non-destructive colour/pattern layer,
       filterlayer (filter + filter_params) - non-destructive adjustment of everything below,
       clonelayer (source = layer to mirror live),
       filelayer (path = image in the workspace, kept as a live link),
+      filllayer with generator = seexpr | screentone | gradient | multigrid and generator_config, e.g.
+        seexpr {"script": "$c = noise(10*$u, 10*$v); [$c, $c*0.8, 1-$c]"} (procedural textures),
+        screentone {"pattern": 0, "shape": 0, "frequency_x": 30, "rotation": 45,
+                    "foreground_color": "#000000", "background_color": "#ffffff"} (manga tones),
+        gradient {"shape": "radial", "start_position_x": 50, "start_position_y": 50,
+                  "end_position_x": 100, "end_position_y": 50} (uses the user's fg/bg colours),
       filtermask (filter + filter_params) / transparencymask - attached to `parent` (default: active layer),
       limited to the current selection if there is one.
     parent = group layer id/name (or the layer a mask attaches to); above = sibling to stack over."""
     return await _call("layer.create", name=name, type=type, parent=parent, above=above, fill=fill,
-                       filter=filter, filter_params=filter_params, source=source, pattern=pattern, path=path)
+                       filter=filter, filter_params=filter_params, source=source, pattern=pattern, path=path,
+                       generator=generator, generator_config=generator_config)
 
 
 @tool
@@ -491,10 +505,165 @@ async def animation_set(fps: Optional[int] = None, start: Optional[int] = None, 
 
 
 @tool
-async def add_keyframe(frame: int, layer: Optional[str] = None, kind: str = "blank") -> dict:
-    """Create a keyframe on a paint layer at `frame` (kind blank or duplicate of the previous one).
-    The layer becomes animated; draw on it while at that frame to fill the keyframe."""
-    return await _call("animation.keyframe", frame=frame, layer=layer, kind=kind)
+async def keyframe(frame: int, kind: str = "blank", layer: Optional[str] = None) -> dict:
+    """Keyframe operation on a paint layer at `frame`: blank (new empty drawing), duplicate (copy of the
+    previous drawing), remove, remove_and_pull (shift later frames back), hold (insert a hold frame,
+    shifting later ones), unhold. The layer becomes animated; draw on it while at that frame."""
+    return await _call("animation.frame", frame=frame, kind=kind, layer=layer)
+
+
+@tool
+async def list_keyframes(layer: Optional[str] = None, start: Optional[int] = None,
+                         end: Optional[int] = None) -> dict:
+    """Frames at which a layer has keyframes."""
+    return await _call("animation.keyframes", layer=layer, start=start, end=end)
+
+
+@tool
+async def import_frames(paths: list[str], first_frame: int = 0, step: int = 1) -> dict:
+    """Load image files from the workspace (in order) as frames of a new animated layer."""
+    return await _call("animation.import_frames", paths=paths, first_frame=first_frame, step=step)
+
+
+@tool
+async def animation_contact_sheet(start: Optional[int] = None, end: Optional[int] = None,
+                                  step: Optional[int] = None, columns: Optional[int] = None,
+                                  cell_size: int = 256) -> Image:
+    """See many frames at once: a labelled grid of frames (max 48) to review motion and consistency."""
+    r = await _call("animation.contact_sheet", start=start, end=end, step=step, columns=columns,
+                    cell_size=cell_size)
+    return Image(data=base64.b64decode(r["png_base64"]), format="png")
+
+
+# -------------------------------------------------------------------- video
+@tool
+async def video_info(path: str) -> dict:
+    """Size, fps, duration, frame count, codec and audio presence of a video in the workspace."""
+    return await _call("video.info", path=path)
+
+
+@tool
+async def import_video(path: str, start: float = 0, duration: Optional[float] = None,
+                       fps: Optional[float] = None, max_frames: int = 240, width: Optional[int] = None,
+                       into_current: bool = False, name: Optional[str] = None) -> dict:
+    """Decode a video (mp4/mov/webm/mkv/avi/gif...) from the workspace into an animated layer so every
+    frame can be painted, filtered or adjusted. Opens a new document sized to the video unless
+    into_current. start/duration in seconds; fps resamples; width scales (keeps aspect). Max 1000 frames."""
+    return await _call("video.import", path=path, start=start, duration=duration, fps=fps,
+                       max_frames=max_frames, width=width, into_current=into_current or None, name=name)
+
+
+@tool
+async def render_video(path: str, start: Optional[int] = None, end: Optional[int] = None,
+                       fps: Optional[float] = None, width: Optional[int] = None, quality: Optional[int] = None,
+                       bitrate_kbps: Optional[int] = None) -> dict:
+    """Render the animation (default: playback range) to .mp4 (H.264), .webm (VP9), .gif, .mov (ProRes),
+    .mkv or .apng in the workspace, using the ffmpeg bundled with Krita. width scales the output."""
+    return await _call("video.render", path=path, start=start, end=end, fps=fps, width=width, quality=quality,
+                       bitrate_kbps=bitrate_kbps)
+
+
+# ------------------------------------------------------------- photo editing
+@tool
+async def adjust_image(operation: str, settings: Optional[dict[str, Any]] = None, layer: Optional[str] = None,
+                       non_destructive: bool = False) -> dict:
+    """Photo adjustment on a paint layer (limited to the selection if any). operation + settings:
+    exact tone tools (pixel-precise, channel = rgb|r|g|b):
+      levels {in_black, in_white, gamma, out_black, out_white} · curves {points: [[in,out],...] 0-255}
+      brightness_contrast {brightness, contrast -100..100} · exposure {stops} · gamma {gamma}
+      temperature {temperature -100..100 (warm+), tint -100..100 (magenta+)}
+    Krita filters (non_destructive=true adds them as an editable filter mask instead):
+      hue_saturation {hue -180..180, saturation, lightness -100..100, colorize}
+      color_balance {shadows_|midtones_|highlights_ + cyan_red|magenta_green|yellow_blue: -100..100}
+      sharpen {amount 0-10, radius, threshold} · blur {radius} · motion_blur {angle, length}
+      lens_blur {radius} · denoise {strength} · denoise_gaussian {threshold, window}
+      desaturate {method} · auto_contrast · normalize · invert · posterize {steps}
+      threshold {level} · pixelize {size} · oil_paint {brush_size, smooth} · emboss {depth}
+      edge_detect {radius} · high_pass {radius} · noise {amount, opacity, grayscale}
+      color_to_alpha {color, threshold} · dodge / burn {exposure 0-1, range 0 shadows|1 mid|2 highlights}
+      wave {amplitude, wavelength} · round_corners {radius}
+    Any other Krita filter: apply_filter."""
+    params = dict(settings or {})
+    return await _call("photo.adjust", operation=operation, layer=layer,
+                       non_destructive=non_destructive or None, **params)
+
+
+@tool
+async def auto_enhance(layer: Optional[str] = None, clip_percent: float = 0.5, per_channel: bool = True) -> dict:
+    """One-click photo fix: stretch the tonal range (per channel also removes colour casts)."""
+    return await _call("photo.auto_enhance", layer=layer, clip=clip_percent, per_channel=per_channel)
+
+
+@tool
+async def add_vignette(strength: float = 0.5, size: float = 0.65, color: str = "#000000",
+                       blend_mode: str = "normal") -> dict:
+    """Darken (or tint) the edges on a new layer on top; adjust its opacity or delete it later."""
+    return await _call("photo.vignette", strength=strength, size=size, color=color, blend_mode=blend_mode)
+
+
+@tool
+async def convert_color_space(model: str = "RGBA", depth: str = "U8", profile: Optional[str] = None) -> dict:
+    """Convert the image colour space, e.g. depth U16/F16/F32 for high-precision grading, back to RGBA/U8
+    for pixel tools. model: RGBA, GRAYA, CMYKA, LABA, XYZA. Profile defaults to sRGB."""
+    return await _call("document.color_space", model=model, depth=depth, profile=profile)
+
+
+@tool
+async def colorize_lineart(regions: list[dict[str, Any]], layer: Optional[str] = None,
+                           transparent_color: Optional[str] = None, edge_detection: bool = False,
+                           cleanup: float = 0.7, name: str = "Colourise") -> dict:
+    """Flat-colour line art with Krita's Colourise Mask: regions = [{"color": "#e0b090",
+    "points": [[x,y],...] (a scribble inside the area)} or {"color": ..., "rect": [x,y,w,h]}].
+    Krita floods each scribble's colour up to the lines. transparent_color marks areas to leave empty."""
+    return await _call("lineart.colorize", regions=regions, layer=layer, transparent_color=transparent_color,
+                       edge_detection=edge_detection, cleanup=cleanup, name=name)
+
+
+# ------------------------------------------------------------------ controls
+@tool
+async def krita_action(name: str, layer: Optional[str] = None) -> dict:
+    """Run one of Krita's own commands on the active document/layer (curated, no dialogs):
+    selection: select_all, deselect, reselect, invert_selection, select_opaque(_add|_subtract|_intersect),
+      copy_selection_to_new_layer, cut_selection_to_new_layer, clear_selection_pixels,
+      fill_with_foreground, fill_with_background, fill_with_pattern, selection_to_vector_shape
+    layers: convert_to_paint_layer, convert_to_animated_layer, convert_group_to_animated,
+      convert_to_transparency_mask, convert_to_selection_mask, alpha_into_mask, flatten_layer,
+      isolate_layer, isolate_group, rotate_layer_90_cw|90_ccw|180, mirror_all_layers_horizontally|vertically
+    image: rotate_image_90_cw|90_ccw|180, trim_to_image, trim_to_layer, trim_to_selection,
+      duplicate_image_as_new_document, create_snapshot
+    animation: next_frame, previous_frame, next_keyframe, previous_keyframe, first_frame, last_frame,
+      toggle_onion_skin, play_pause, stop_playback
+    view: zoom_to_fit, zoom_to_100, zoom_in, zoom_out, mirror_view, rotate_view_left|right, reset_view,
+      toggle_wrap_around, toggle_grid, toggle_pixel_grid, toggle_guides, toggle_rulers,
+      toggle_selection_display, toggle_canvas_only"""
+    return await _call("krita.action", name=name, layer=layer)
+
+
+@tool
+async def view_control(zoom: Optional[float] = None, rotation: Optional[float] = None,
+                       mirror: Optional[bool] = None, fit: bool = False, reset: bool = False,
+                       center_x: Optional[float] = None, center_y: Optional[float] = None) -> dict:
+    """Move the user's view of the canvas (not the image): zoom (1.0 = 100%), rotation in degrees,
+    mirror, fit to window, reset, or centre on a canvas point - e.g. to show the user what you changed."""
+    return await _call("view.control", zoom=zoom, rotation=rotation, mirror=mirror, fit=fit or None,
+                       reset=reset or None, center_x=center_x, center_y=center_y)
+
+
+@tool
+async def notify_user(message: str, seconds: int = 4) -> dict:
+    """Show a short floating message on the user's Krita canvas."""
+    return await _call("user.notify", message=message, seconds=seconds)
+
+
+@tool
+async def user_tool_state(foreground: Optional[str] = None, background: Optional[str] = None,
+                          preset: Optional[str] = None, size: Optional[float] = None,
+                          opacity: Optional[float] = None, flow: Optional[float] = None,
+                          blend_mode: Optional[str] = None, eraser: Optional[bool] = None) -> dict:
+    """Read (no arguments) or set the colours and brush the USER paints with next - e.g. hand them the
+    palette colour or brush you used. Returns the current state."""
+    return await _call("user.tool_state", foreground=foreground, background=background, preset=preset, size=size,
+                       opacity=opacity, flow=flow, blend_mode=blend_mode, eraser=eraser)
 
 
 @tool
@@ -534,6 +703,36 @@ async def batch(operations: list[dict[str, Any]], stop_on_error: bool = True) ->
         if stop_on_error:
             break
     return [{"completed": sum(r["ok"] for r in results), "of": len(operations), "results": results}] + images
+
+
+@tool
+async def for_each_frame(operations: list[dict[str, Any]], start: Optional[int] = None,
+                         end: Optional[int] = None, step: int = 1) -> dict:
+    """Apply the same tool calls to every frame of an animation / imported video, e.g. colour-grade a clip:
+    [{"tool": "adjust_image", "args": {"operation": "temperature", "settings": {"temperature": 30}}}].
+    Frames default to the playback range (max 1000 frames, 20 operations)."""
+    if not isinstance(operations, list) or not 1 <= len(operations) <= 20:
+        raise ToolError("operations must be a list of 1..20 {tool, args} objects")
+    for op in operations:
+        if not isinstance(op, dict) or op.get("tool") not in TOOLS or op.get("tool") in ("batch", "for_each_frame"):
+            raise ToolError("unknown or disallowed tool %r" % (op.get("tool") if isinstance(op, dict) else op))
+    info = await _call("animation.info")
+    first = info["playback"][0] if start is None else start
+    last = info["playback"][1] if end is None else end
+    frames = list(range(first, last + 1, max(1, step)))[:1000]
+    done, errors = 0, []
+    for f in frames:
+        await _call("animation.set", frame=f)
+        for op in operations:
+            try:
+                await TOOLS[op["tool"]](**(op.get("args") or {}))
+            except (ToolError, TypeError) as e:
+                errors.append({"frame": f, "tool": op["tool"], "error": str(e)})
+                if len(errors) >= 5:
+                    return {"frames_done": done, "stopped": True, "errors": errors}
+        done += 1
+    await _call("animation.set", frame=first)
+    return {"frames_done": done, "frames": [frames[0], frames[-1]] if frames else [], "errors": errors}
 
 
 # ------------------------------------------------------------------- main
