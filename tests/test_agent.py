@@ -2,6 +2,7 @@
 import json
 import threading
 import time
+import urllib.error
 import urllib.request
 
 import pytest
@@ -214,3 +215,101 @@ def test_keys_signed_in_from_krita_serve_the_generative_tools(home, monkeypatch)
     assert http.secret("KRITA_MCP_FAL_KEY") == "from-env"
     st = keys.status()
     assert st["fal"]["signed_in"] and "fal-from-krita" not in json.dumps(st)
+
+
+# ---------------------------------------------------------------- browser sign-in (OAuth PKCE) and key checks
+def test_pkce_pair_is_s256_base64url():
+    import base64
+    import hashlib
+    from krita_mcp import oauth
+    verifier, challenge = oauth.pkce_pair()
+    assert 43 <= len(verifier) <= 128 and "=" not in challenge
+    assert challenge == base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+
+
+def _browser_hits(url):
+    try:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            return r.status, r.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()
+
+
+def test_openrouter_browser_sign_in(home, monkeypatch):
+    import urllib.parse
+    from krita_mcp import oauth
+    from krita_mcp.providers import keys
+    m = Mock()
+    try:
+        m.json("POST", "/api/v1/auth/keys", lambda h, b: {"key": "sk-or-v1-" + "a" * 64}
+               if json.loads(b) == {"code": "good-code", "code_verifier": oauth.FLOWS[fid].verifier,
+                                    "code_challenge_method": "S256"} else {"error": "bad"})
+        monkeypatch.setenv("KRITA_MCP_OPENROUTER_BASE_URL", m.url + "/api/v1")
+        flow = oauth.start("openrouter")
+        fid = flow["id"]
+        q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(flow["url"]).query))
+        assert flow["url"].startswith("https://openrouter.ai/auth?") and q["code_challenge_method"] == "S256"
+        assert q["callback_url"].startswith("http://localhost:") and q["key_label"] == "Krita MCP"
+        cb = q["callback_url"].replace("localhost", "127.0.0.1")
+        code, page = _browser_hits(cb + "?code=good-code&state=forged")  # CSRF: wrong state is refused
+        assert code == 400 and oauth.poll(fid)["status"] == "pending"
+        code, page = _browser_hits(cb + "?code=good-code&state=" + q["state"])
+        assert code == 200 and "Signed in" in page and oauth.poll(fid) == {"status": "done", "error": None}
+        assert keys.saved("openrouter").startswith("sk-or-v1-") and agent.status()["openrouter"]["signed_in"]
+        cancelled = oauth.start("openrouter")
+        q2 = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(cancelled["url"]).query))
+        _browser_hits(q2["callback_url"].replace("localhost", "127.0.0.1") + "?state=" + q2["state"])
+        assert oauth.poll(cancelled["id"])["status"] == "error"
+    finally:
+        m.srv.shutdown()
+    with pytest.raises(ValueError, match="no browser sign-in"):
+        oauth.start("gemini")
+
+
+def test_keys_are_checked_before_saving(home, monkeypatch):
+    from krita_mcp import oauth
+    m = Mock()
+    try:
+        m.routes[("GET", "/models")] = lambda h, b: (
+            200 if h.headers.get("x-goog-api-key") == "AIza-good" else 400, "application/json", b'{"models": []}')
+        monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", m.url)
+        assert oauth.verify("gemini", "AIza-good") == (True, "key works")
+        assert oauth.verify("gemini", "AIza-bad")[0] is False
+        assert oauth.verify("fal", "x")[0] is None and oauth.verify("gemini", "")[0] is False
+        srv = {}
+        threading.Thread(target=agent.serve, kwargs={"port": 0, "ready": lambda s: srv.setdefault("s", s)},
+                         daemon=True).start()
+        while "s" not in srv:
+            time.sleep(0.02)
+        port = srv["s"].server_address[1]
+
+        def post(path, body):
+            r = urllib.request.Request("http://127.0.0.1:%d%s" % (port, path), method="POST",
+                                       data=json.dumps(body).encode(), headers={"Authorization": "Bearer test-token"})
+            try:
+                with urllib.request.urlopen(r, timeout=10) as resp:
+                    return resp.status, json.loads(resp.read())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read())
+        code, r = post("/signin", {"provider": "gemini", "key": "AIza-bad"})
+        assert code == 400 and "not saved" in r["error"] and agent.key_for("gemini") is None
+        code, r = post("/signin", {"provider": "gemini", "key": "AIza-good"})
+        assert code == 200 and r["providers"]["gemini"]["signed_in"]
+        assert post("/verify", {"provider": "gemini", "key": "AIza-bad"})[1]["ok"] is False
+        srv["s"].shutdown()
+    finally:
+        m.srv.shutdown()
+
+
+def test_openrouter_chat_omits_model_and_sends_attribution(home, bridge, monkeypatch):
+    m = Mock()
+    try:
+        m.json("POST", "/api/v1/chat/completions", {"choices": [{"message": {"content": "hi"}}]})
+        monkeypatch.setenv("KRITA_MCP_OPENROUTER_BASE_URL", m.url + "/api/v1")
+        agent.save_key("openrouter", "sk-or-v1-x")
+        events = _wait(agent.chat(None, "openrouter", None, "hello"))
+    finally:
+        m.srv.shutdown()
+    body, headers = json.loads(m.calls[-1][3]), m.calls[-1][2]
+    assert events[-1]["text"] == "hi" and "model" not in body  # the account's default model
+    assert headers["x-openrouter-title"] == "Krita MCP" and headers["authorization"] == "Bearer sk-or-v1-x"

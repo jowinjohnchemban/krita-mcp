@@ -12,13 +12,26 @@ the chat, and its edits can be undone like any other AI edit.
 |---|---|
 | Google Gemini | An API key from [Google AI Studio](https://aistudio.google.com/apikey) |
 | Anthropic Claude | An API key from the [Anthropic Console](https://console.anthropic.com/settings/keys) (needs `pip install "krita-mcp[anthropic]"`) |
-| OpenAI / compatible | An OpenAI key, or the URL of any OpenAI-compatible service (OpenRouter, a gateway, …) |
+| OpenAI / compatible | An OpenAI key, or the URL of any OpenAI-compatible service (a gateway, …) |
+| OpenRouter | **Sign in with browser**, no key to copy. One account reaches Gemini, Claude, GPT and hundreds of other models; leave the model empty to use your OpenRouter default, or enter one such as `anthropic/claude-sonnet-4.6` |
 | Local model | Nothing: point it at [Ollama](https://ollama.com) (`http://127.0.0.1:11434/v1`) or LM Studio (`http://127.0.0.1:1234/v1`) |
 
 The model box can be left empty to use the default model, or set to any model name. The AI gets the same 84
 tools as MCP clients: painting with real brushes, seeing and measuring the canvas, layers, photo editing,
 animation and video, generative AI and the asset libraries. It looks at its work and improves it before it
 answers.
+
+## Two ways to sign in
+
+- **Sign in with browser** (OpenRouter). Krita opens your browser, you approve "Krita MCP" on OpenRouter,
+  and you are signed in. Under the hood this is OAuth with PKCE: OpenRouter redirects to a one-shot
+  listener on `localhost`, and the code is exchanged for a key that only this computer stores. Approval
+  links expire after 10 minutes, and a reply that does not match Krita's request is refused.
+- **API key**, for every other service (Google, Anthropic, OpenAI, Stability, Replicate, fal, HeyGen).
+  These providers do not offer browser sign-in to third-party apps. Click **Get a key in the browser**: the
+  provider's key page opens, and when you copy the key there, the dialog recognises it from the clipboard
+  and fills it in. You can also paste it by hand. Before saving, krita-mcp checks the key with the provider
+  (where the provider allows a free check), so a mistyped key is reported instead of stored.
 
 ## Services: sign in once
 

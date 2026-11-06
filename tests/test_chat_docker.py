@@ -137,3 +137,40 @@ def test_services_dialog_lists_every_service(chat):
     sign = c.SignInDialog(dock, "comfyui", info)
     labels = [w.text() for w in sign.findChildren(qtw.QLabel)]
     assert "API key" not in labels and "Server URL" in labels  # local servers need a URL, not a key
+
+
+def test_key_detection_and_browser_flows(chat, monkeypatch):
+    app, c, dock, sent = chat
+    pump(app, 0.3)
+    assert c.find_key("gemini", "here: AIzaSyA" + "b" * 33 + " thanks") == "AIzaSyA" + "b" * 33
+    assert c.find_key("openai", "sk-ant-" + "x" * 30) is None and c.find_key("anthropic", "sk-ant-" + "x" * 30)
+    assert c.find_key("openrouter", "sk-or-v1-" + "f" * 64).startswith("sk-or-v1-")
+    opened = []
+    monkeypatch.setattr(c.QDesktopServices, "openUrl", lambda url: opened.append(url.toString()))
+    dlg = c.SignInDialog(dock, "gemini", {"label": "Google Gemini", "needs_key": True,
+                                          "key_url": "https://aistudio.google.com/apikey"})
+    clip = c.QGuiApplication.clipboard()
+    clip.setText("something unrelated")
+    dlg._open_key_page()
+    assert opened == ["https://aistudio.google.com/apikey"] and dlg.clip_timer.isActive()
+    clip.setText("AIzaSyC" + "k" * 33)
+    pump(app, 1.0)
+    assert dlg.key.text() == "AIzaSyC" + "k" * 33 and "Key found" in dlg.hint.text()
+    # OpenRouter: a real browser sign-in
+    state = {"n": 0}
+    real = c._request
+
+    def oauth_request(method, path, body=None, timeout=10):
+        if path == "/oauth/start":
+            sent.append((method, path, body))
+            return {"id": "f1", "url": "https://openrouter.ai/auth?x=1"}
+        if path.startswith("/oauth/status"):
+            state["n"] += 1
+            return {"status": "done" if state["n"] > 1 else "pending", "error": None}
+        return real(method, path, body, timeout)
+    monkeypatch.setattr(c, "_request", oauth_request)
+    dock.browser_sign_in("openrouter")
+    pump(app, 3.0)
+    assert ("POST", "/oauth/start", {"provider": "openrouter"}) in sent
+    assert "https://openrouter.ai/auth?x=1" in opened and not dock.oauth_timer.isActive()
+    assert "approve Krita" in dock.log.toPlainText()

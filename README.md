@@ -26,8 +26,9 @@ AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token�
 - **Edit photos.** Exact levels, curves, exposure and temperature; hue/saturation, colour balance,
   sharpen, denoise, blur and about 25 more; auto-enhance; vignette; non-destructive filter masks;
   16-bit colour spaces.
-- **Chat with an AI inside Krita.** The *AI Chat* docker lets you sign in to Gemini, Claude, OpenAI or
-  a local model (Ollama, LM Studio), type what you want and watch it work in your document. One
+- **Chat with an AI inside Krita.** The *AI Chat* docker lets you sign in to Gemini, Claude, OpenAI,
+  OpenRouter (with your browser, no key to copy) or a local model (Ollama, LM Studio), type what you want
+  and watch it work in your document. One
   **Services** list holds every key and server URL, and AI apps connected through MCP use the same
   sign-in.
 - **Real-world materials.** CC0 photo textures and HDRI skies from Poly Haven, and openly licensed photos

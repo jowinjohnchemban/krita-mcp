@@ -16,6 +16,8 @@ SERVICES = {
                   "https://console.anthropic.com/settings/keys", False),
     "openai": ("OpenAI / compatible", "chat, images, video (Sora), vision", "KRITA_MCP_OPENAI_API_KEY",
                "https://platform.openai.com/api-keys", True),
+    "openrouter": ("OpenRouter (sign in with browser)", "chat with Gemini, Claude, GPT and 300+ models",
+                   "KRITA_MCP_OPENROUTER_API_KEY", "https://openrouter.ai/settings/keys", False),
     "ollama": ("Local model (Ollama, LM Studio)", "chat (no key)", None, "https://ollama.com/download", True),
     "stability": ("Stability AI", "images, upscale, background removal", "KRITA_MCP_STABILITY_API_KEY",
                   "https://platform.stability.ai/account/keys", False),
@@ -28,6 +30,7 @@ SERVICES = {
               "https://github.com/lllyasviel/stable-diffusion-webui-forge", True),
 }
 ENV_TO_SERVICE = {v[2]: k for k, v in SERVICES.items() if v[2]}
+BROWSER_SIGN_IN = {"openrouter"}  # real OAuth; the others get a browser-assisted key flow
 
 
 def home():
@@ -83,5 +86,6 @@ def status():
         url = saved(name, "base_url")
         signed = key or (name in ("ollama", "comfyui", "a1111") and bool(url)) or name == "ollama"
         out[name] = {"label": label, "use": use, "signed_in": bool(signed), "key_url": key_url,
-                     "needs_key": bool(env_name), "has_url": has_url, "base_url": url}
+                     "needs_key": bool(env_name), "has_url": has_url, "base_url": url,
+                     "browser_sign_in": name in BROWSER_SIGN_IN}
     return out

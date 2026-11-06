@@ -16,6 +16,7 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from . import oauth
 from .providers import http, keys
 from .providers.http import ProviderError, env, secret
 
@@ -31,6 +32,8 @@ PROVIDERS = {
                   "env": ("KRITA_MCP_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")},
     "openai": {"label": "OpenAI (or compatible)", "model": "gpt-5-mini", "key_url": "https://platform.openai.com/api-keys",
                "env": ("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY")},
+    "openrouter": {"label": "OpenRouter", "model": "", "key_url": "https://openrouter.ai/settings/keys",
+                   "env": ("KRITA_MCP_OPENROUTER_API_KEY",)},
     "ollama": {"label": "Local model (Ollama / LM Studio)", "model": "qwen3:8b", "key_url": "",
                "env": ()},
 }
@@ -61,6 +64,8 @@ def base_url_for(provider):
         return http.service_url("KRITA_MCP_OLLAMA_BASE_URL", "ollama", "http://127.0.0.1:11434/v1")
     if provider == "openai":
         return http.service_url("KRITA_MCP_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
+    if provider == "openrouter":
+        return http.service_url("KRITA_MCP_OPENROUTER_BASE_URL", "openrouter", "https://openrouter.ai/api/v1")
     if provider == "gemini":
         return env("KRITA_MCP_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
     return None
@@ -212,8 +217,12 @@ class OpenAICompat:
         self.base = base_url_for(provider).rstrip("/")
         self.key = key_for(provider) or ("local" if http.is_loopback_url(self.base) else None)
         if not self.key:
-            raise ProviderError("Sign in to OpenAI first (an API key from https://platform.openai.com/api-keys)")
+            raise ProviderError("Sign in to %s first (Services... > Sign in)" % PROVIDERS[provider]["label"])
         self.model = model
+        self.headers = {"Authorization": "Bearer " + self.key}
+        if provider == "openrouter":  # app attribution, as OpenRouter suggests
+            self.headers.update({"HTTP-Referer": "https://github.com/jowinjohnchemban/krita-mcp",
+                                 "X-OpenRouter-Title": "Krita MCP"})
 
     def start(self, specs):
         self.tools = [{"type": "function", "function": {"name": s["name"], "description": s["description"],
@@ -224,9 +233,10 @@ class OpenAICompat:
         history.append({"role": "user", "content": text})
 
     def step(self, history):
-        r = http.post_json(self.base + "/chat/completions", {"model": self.model, "messages": history,
-                                                             "tools": self.tools},
-                           {"Authorization": "Bearer " + self.key})
+        body = {"messages": history, "tools": self.tools}
+        if self.model:  # OpenRouter: no model = the account's default model
+            body["model"] = self.model
+        r = http.post_json(self.base + "/chat/completions", body, self.headers)
         msg = (r.get("choices") or [{}])[0].get("message") or {}
         entry = {"role": "assistant", "content": msg.get("content") or ""}
         if msg.get("tool_calls"):
@@ -435,6 +445,8 @@ class Handler(BaseHTTPRequestHandler):
         q = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
         if path == "/health":
             return self._send(200, {"ok": True, "providers": status()})
+        if path == "/oauth/status":
+            return self._send(200, oauth.poll(q.get("id", "")))
         if path == "/events":
             sess = SESSIONS.get(q.get("session", ""))
             if sess is None:
@@ -465,8 +477,18 @@ class Handler(BaseHTTPRequestHandler):
                 SESSIONS.pop(b.get("session", ""), None)
                 return self._send(200, {"ok": True})
             if self.path == "/signin":
-                keys.save(b["provider"], key=b.get("key") or "", base_url=b.get("base_url"))
+                key = b.get("key") or ""
+                if key and b.get("verify", True):
+                    ok, detail = oauth.verify(b["provider"], key)
+                    if ok is False:
+                        return self._send(400, {"error": "%s - not saved" % detail})
+                keys.save(b["provider"], key=key, base_url=b.get("base_url"))
                 return self._send(200, {"providers": status()})
+            if self.path == "/verify":
+                ok, detail = oauth.verify(b["provider"], b.get("key"))
+                return self._send(200, {"ok": ok, "detail": detail})
+            if self.path == "/oauth/start":
+                return self._send(200, oauth.start(b["provider"]))
             if self.path == "/signout":
                 keys.save(b["provider"], remove=True)
                 return self._send(200, {"providers": status()})

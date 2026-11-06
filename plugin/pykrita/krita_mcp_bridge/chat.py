@@ -7,6 +7,7 @@ thread must never wait for the assistant.
 """
 import html
 import json
+import re
 import os
 import queue
 import shlex
@@ -20,14 +21,14 @@ from krita import DockWidget, DockWidgetFactory, DockWidgetFactoryBase, Krita
 
 try:
     from PyQt6.QtCore import Qt, QTimer, QUrl
-    from PyQt6.QtGui import QDesktopServices, QKeySequence, QShortcut
+    from PyQt6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut
     from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
                                  QLineEdit, QPlainTextEdit, QPushButton, QTextBrowser, QVBoxLayout, QWidget)
     _PASSWORD = QLineEdit.EchoMode.Password
     _RICH = Qt.TextFormat.RichText
 except ImportError:  # Krita 5
     from PyQt5.QtCore import Qt, QTimer, QUrl
-    from PyQt5.QtGui import QDesktopServices, QKeySequence
+    from PyQt5.QtGui import QDesktopServices, QGuiApplication, QKeySequence
     from PyQt5.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
                                  QLineEdit, QPlainTextEdit, QPushButton, QShortcut, QTextBrowser, QVBoxLayout,
                                  QWidget)
@@ -40,8 +41,15 @@ from .util import i18n
 
 AGENT_PORT = int(os.environ.get("KRITA_MCP_AGENT_PORT") or 5680)
 PROVIDERS = [("gemini", "Google Gemini"), ("anthropic", "Anthropic Claude"), ("openai", "OpenAI / compatible"),
-             ("ollama", "Local model (Ollama, LM Studio)")]
-SHORT = {"gemini": "Gemini", "anthropic": "Claude", "openai": "GPT", "ollama": "AI"}
+             ("openrouter", "OpenRouter (browser sign-in)"), ("ollama", "Local model (Ollama, LM Studio)")]
+# what each service's keys look like, to pick them up from the clipboard while the key page is open
+KEY_PATTERNS = {
+    "gemini": r"AIza[0-9A-Za-z_\-]{30,}", "anthropic": r"sk-ant-[0-9A-Za-z_\-]{20,}",
+    "openai": r"sk-(?!ant-|or-)[0-9A-Za-z_\-]{20,}", "openrouter": r"sk-or-[0-9A-Za-z_\-]{20,}",
+    "replicate": r"r8_[0-9A-Za-z]{20,}", "stability": r"sk-[0-9A-Za-z]{20,}",
+    "fal": r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{20,}",
+    "heygen": r"[0-9A-Za-z_\-=]{24,}"}
+SHORT = {"gemini": "Gemini", "anthropic": "Claude", "openai": "GPT", "openrouter": "AI", "ollama": "AI"}
 _SERVICE = {"proc": None}
 
 
@@ -110,16 +118,63 @@ class SignInDialog(QDialog):
             form.addRow(i18n("API key"), self.key)
         if info.get("has_url"):
             form.addRow(i18n("Server URL"), self.base)
-        if info.get("key_url"):
-            link = QLabel('<a href="%s">%s</a>' % (info["key_url"], i18n("Get a key / download")))
+        self.service, self.info, self.browser_requested = service, info, False
+        self.hint = QLabel()
+        self.hint.setWordWrap(True)
+        if info.get("browser_sign_in"):  # real OAuth: approve in the browser, nothing to copy
+            btn = QPushButton(i18n("Sign in with browser"))
+            btn.setDefault(True)
+            btn.clicked.connect(self._browser)
+            form.addRow(btn)
+            form.addRow(QLabel(i18n("or paste a key:")))
+        elif info.get("needs_key", True) and info.get("key_url"):
+            btn = QPushButton(i18n("Get a key in the browser"))
+            btn.setToolTip(i18n("Opens the provider's key page; copy the key there and it appears here"))
+            btn.clicked.connect(self._open_key_page)
+            form.addRow(btn)
+        elif info.get("key_url"):
+            link = QLabel('<a href="%s">%s</a>' % (info["key_url"], i18n("Download / documentation")))
             link.setTextFormat(_RICH)
             link.linkActivated.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
             form.addRow(link)
+        form.addRow(self.hint)
+        self.clip_timer = QTimer(self)
+        self.clip_timer.timeout.connect(self._check_clipboard)
+        self.clip_start = None
         buttons = QDialogButtonBox(_enum(QDialogButtonBox, "StandardButton", "Ok")
                                    | _enum(QDialogButtonBox, "StandardButton", "Cancel"))
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
+
+    def _browser(self):
+        self.browser_requested = True
+        self.accept()
+
+    def _open_key_page(self):
+        self.clip_start = QGuiApplication.clipboard().text()
+        QDesktopServices.openUrl(QUrl(self.info["key_url"]))
+        self.hint.setText(i18n("Create or copy a key in your browser - it will appear here automatically."))
+        self.clip_timer.start(600)
+
+    def _check_clipboard(self):
+        text = (QGuiApplication.clipboard().text() or "").strip()
+        if not text or text == self.clip_start or len(text) > 300:
+            return
+        found = find_key(self.service, text)
+        if found:
+            self.key.setText(found)
+            self.hint.setText("✓ " + i18n("Key found in the clipboard - click OK to check and save it."))
+            self.clip_timer.stop()
+
+
+def find_key(service, text):
+    """The API key in `text` if it looks like one of `service`'s keys."""
+    pattern = KEY_PATTERNS.get(service)
+    if not pattern:
+        return None
+    m = re.search(r"(?<![0-9A-Za-z_\-])(%s)(?![0-9A-Za-z_\-])" % pattern, text)
+    return m.group(1) if m else None
 
 
 class ServicesDialog(QDialog):
@@ -307,10 +362,41 @@ class ChatDocker(DockWidget):
         dlg = SignInDialog(parent or self, name, info)
         if not dlg.exec():
             return
+        if dlg.browser_requested:
+            return self.browser_sign_in(name)
         body = {"provider": name, "key": dlg.key.text().strip(), "base_url": dlg.base.text().strip() or None}
         if info.get("needs_key", True) and not body["key"]:
             return self._error(i18n("No key entered."))
         self._background(lambda: _ensure_service() and _request("POST", "/signin", body), self._signed)
+
+    def browser_sign_in(self, name):
+        """OAuth in the user's browser; the assistant service receives the redirect and saves the key."""
+        def opened(flow):
+            QDesktopServices.openUrl(QUrl(flow["url"]))
+            self._append("<p style='color:#8a8'>%s</p>" % html.escape(
+                i18n("Your browser opened: approve Krita there. This panel updates when you are signed in.")))
+            self.oauth_id = flow["id"]
+            self.oauth_timer = QTimer(self)
+            self.oauth_timer.timeout.connect(self._oauth_poll)
+            self.oauth_timer.start(1000)
+        self._background(lambda: _ensure_service() and _request("POST", "/oauth/start", {"provider": name}), opened)
+
+    def _oauth_poll(self):
+        if getattr(self, "_oauth_polling", False):
+            return
+        self._oauth_polling = True
+        fid = self.oauth_id
+
+        def got(r):
+            self._oauth_polling = False
+            if r.get("status") == "pending":
+                return
+            self.oauth_timer.stop()
+            if r.get("status") == "done":
+                self._background(lambda: _request("GET", "/health"), lambda h: self._signed(h))
+            else:
+                self._error(i18n("Browser sign-in failed: %s") % (r.get("error") or "?"))
+        self._background(lambda: _request("GET", "/oauth/status?id=%s" % fid), got)
 
     def _signed(self, result):
         self.providers = (result or {}).get("providers", self.providers)
