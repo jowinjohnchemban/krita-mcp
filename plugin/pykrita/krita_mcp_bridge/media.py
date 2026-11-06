@@ -77,10 +77,15 @@ def _selection_area(doc, p):
 
 
 def _apply_lut_op(doc, node, op, p):
+    apply_channel_luts(doc, node, _channel_luts(op, p), p)
+
+
+def apply_channel_luts(doc, node, luts, p):
+    """Apply (r, g, b) LUTs to a paint layer, only inside the (soft) selection if there is one."""
     sel, (x, y, w, h) = _selection_area(doc, p)
     history.backup_layer(node, doc)
     raw = bytes(node.pixelData(x, y, w, h))
-    out = apply_luts(raw, *_channel_luts(op, p))
+    out = apply_luts(raw, *luts)
     if sel is not None:  # keep the change only inside the (soft) selection
         new = QImage(out, w, h, w * 4, FMT_ARGB32).copy()
         mask = QImage(bytes(sel.pixelData(x, y, w, h)), w, h, w, FMT_ALPHA8).copy()

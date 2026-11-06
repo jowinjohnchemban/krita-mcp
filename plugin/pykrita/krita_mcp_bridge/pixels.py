@@ -23,11 +23,16 @@ def color_mask(raw, rgba, tolerance):
 
 def flood_region(mask, w, h, x, y):
     """Contiguous (4-connected) part of `mask` that contains (x, y), as a new Alpha8 mask."""
+    return flood_seeds(mask, w, h, [(x, y)])
+
+
+def flood_seeds(mask, w, h, seeds):
+    """Union of the contiguous (4-connected) parts of `mask` containing any of `seeds`."""
     m = bytearray(mask)
     out = bytearray(w * h)
-    if not (0 <= x < w and 0 <= y < h) or m[y * w + x] != 255:
+    stack = [(x, y) for x, y in seeds if 0 <= x < w and 0 <= y < h and m[y * w + x] == 255]
+    if not stack:
         return bytes(out)
-    stack = [(x, y)]
     while stack:
         sx, sy = stack.pop()
         row = sy * w
@@ -276,3 +281,59 @@ def percentile_bounds(hist, clip=0.005):
             high = i
             break
     return low, max(high, low + 1)
+
+
+INVERT = bytes(255 - v for v in range(256))
+
+
+def invert_mask(mask):
+    return mask.translate(INVERT)
+
+
+def border_seeds(w, h, step=1):
+    """Coordinates along the image border."""
+    pts = [(x, 0) for x in range(0, w, step)] + [(x, h - 1) for x in range(0, w, step)]
+    pts += [(0, y) for y in range(0, h, step)] + [(w - 1, y) for y in range(0, h, step)]
+    return pts
+
+
+def dominant_border_color(raw, w, h):
+    """Most common (coarsely quantised) colour on the border of a BGRA buffer, averaged exactly."""
+    buckets = {}
+    for x, y in border_seeds(w, h, max(1, (w + h) // 400)):
+        o = (y * w + x) * 4
+        b, g, r, a = raw[o], raw[o + 1], raw[o + 2], raw[o + 3]
+        key = (r >> 4, g >> 4, b >> 4, a >> 6)
+        acc = buckets.setdefault(key, [0, 0, 0, 0, 0])
+        acc[0] += r; acc[1] += g; acc[2] += b; acc[3] += a; acc[4] += 1
+    best = max(buckets.values(), key=lambda v: v[4])
+    n = best[4]
+    return tuple(int(round(best[i] / n)) for i in range(4)), n / float(sum(v[4] for v in buckets.values()))
+
+
+def channel_stats(raw, min_alpha=128):
+    """(mean, std) for R, G, B over pixels with alpha >= min_alpha; None if there are none."""
+    sums = [0.0, 0.0, 0.0]
+    sq = [0.0, 0.0, 0.0]
+    n = 0
+    for o in range(0, len(raw) - 3, 4):
+        if raw[o + 3] < min_alpha:
+            continue
+        b, g, r = raw[o], raw[o + 1], raw[o + 2]
+        sums[0] += r; sums[1] += g; sums[2] += b
+        sq[0] += r * r; sq[1] += g * g; sq[2] += b * b
+        n += 1
+    if n == 0:
+        return None
+    return [(sums[i] / n, math.sqrt(max(0.0, sq[i] / n - (sums[i] / n) ** 2))) for i in range(3)]
+
+
+def transfer_luts(src, ref, strength=1.0):
+    """Per-channel LUTs that give `src` statistics the mean/contrast of `ref` (Reinhard-style colour
+    transfer), blended with identity by `strength`."""
+    luts = []
+    for (ms, ss), (mr, sr) in zip(src, ref):
+        k = sr / ss if ss > 1e-3 else 1.0
+        k = max(0.25, min(4.0, k))
+        luts.append([_clamp(v + strength * ((mr + (v - ms) * k) - v)) for v in range(256)])
+    return luts

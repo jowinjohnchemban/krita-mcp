@@ -92,6 +92,12 @@ class FakeNode:
 
     def parentNode(self): return self._parent
 
+    def duplicate(self):
+        d = FakeNode(self._name, self._kind, self.w, self.h)
+        d.buf[:] = self.buf
+        d._vis, d._op = self._vis, self._op
+        return d
+
     def pixelData(self, x, y, w, h):
         out = bytearray()
         for row in range(y, y + h):
@@ -133,6 +139,11 @@ class FakeDoc:
     def setSelection(self, s): self._sel = s
     def setBatchmode(self, v): pass
 
+    def createTransparencyMask(self, name):
+        m = FakeNode(name, "transparencymask", self._w, self._h)
+        m.setSelection = lambda sel: setattr(m, "sel", sel)
+        return m
+
     def projection(self, x, y, w, h):  # composite = just stack nodes bottom->top
         out = QImage(w, h, ARGB32)
         out.fill(QColor(0, 0, 0, 0))
@@ -167,6 +178,14 @@ class FakeSelection:
         assert len(data) == w * h, "selection data must be tightly packed (w*h bytes)"
         for r in range(h):
             self.mask[(y + r) * self.N + x:(y + r) * self.N + x + w] = data[r * w:(r + 1) * w]
+
+    def feather(self, n): pass
+
+    def add(self, other):
+        self.mask[:] = bytes(max(a, b) for a, b in zip(self.mask, other.mask))
+
+    def subtract(self, other):
+        self.mask[:] = bytes(max(0, a - b) for a, b in zip(self.mask, other.mask))
 
     def _box(self):
         pts = [(i % self.N, i // self.N) for i, v in enumerate(self.mask) if v]
@@ -532,3 +551,83 @@ def test_docker_client_snippets(H):
     assert '"command": "C:/My Tools/krita-mcp.exe"' in js and '"--x"' in js
     assert "[mcp_servers.krita]" in dock.client_snippet("Codex CLI", "uvx krita-mcp", 5679)
     assert '"type": "stdio"' in dock.client_snippet("VS Code (Copilot)", "krita-mcp", 5679)
+
+
+# ------------------------------------------------------------ generative round trips
+def _png_b64(w, h, color):
+    img = QImage(w, h, ARGB32)
+    img.fill(QColor(color))
+    buf = QBuffer(); buf.open(WRITE_ONLY); img.save(buf, "PNG")
+    return base64.b64encode(bytes(buf.data())).decode()
+
+
+def _decode(b64):
+    img = QImage.fromData(base64.b64decode(b64))
+    assert not img.isNull()
+    return img
+
+
+def test_gen_context_region_mask_and_sizes(H):
+    H.dispatch("document.new", {"width": 100, "height": 80, "background": "white"})
+    doc = H.active_doc()
+    sel = FakeSelection(); sel.select(10, 10, 20, 20, 255); doc.setSelection(sel)
+    r = H.dispatch("gen.context", {"padding": 5, "target": 64, "multiple": 8, "need_mask": True, "mask_alpha": True})
+    assert r["region"] == [5, 5, 30, 30] and r["size"] == [64, 64] and r["has_selection"]
+    mask = _decode(r["mask_png"])
+    assert mask.pixelColor(32, 32).red() == 255 and mask.pixelColor(1, 1).red() == 0
+    hole = _decode(r["mask_alpha_png"])
+    assert hole.pixelColor(32, 32).alpha() == 0 and hole.pixelColor(1, 1).alpha() == 255
+    r = H.dispatch("gen.context", {"region": "canvas", "sizes": ["1024x1024", "1536x1024", "1024x1536"]})
+    assert r["region"] == [0, 0, 100, 80] and r["size"] == [1536, 1024]
+    doc.setSelection(None)
+    assert H.dispatch("gen.context", {"need_image": False})["has_selection"] is False
+
+
+def test_gen_place_variants_sheet_and_pick(H):
+    H.dispatch("document.new", {"width": 40, "height": 30, "background": "white"})
+    r = H.dispatch("gen.place", {"images": [_png_b64(8, 6, "#ff0000"), _png_b64(8, 6, "#0000ff")],
+                                 "region": [0, 0, 40, 30], "name": "gen", "labels": ["seed 1", "seed 2"],
+                                 "sheet": True})
+    assert r["group"]["name"] == "gen" and [l["name"] for l in r["layers"]] == ["Variant 1 seed 1", "Variant 2 seed 2"]
+    assert [l["visible"] for l in r["layers"]] == [True, False]
+    sheet = _decode(r["sheet_png"])
+    assert sheet.width() > sheet.height()  # two cells side by side
+    layer2 = H.find_layer(H.active_doc(), "Variant 2 seed 2")
+    assert layer2.pixelData(20, 15, 1, 1) == bytes([255, 0, 0, 255])  # BGRA blue, stretched over the region
+    assert H.dispatch("gen.pick", {"group": "gen", "index": 2})["visible"]["name"] == "Variant 2 seed 2"
+    kept = H.dispatch("gen.pick", {"group": "gen", "index": 1, "keep_only": True})["kept"]
+    names = [l["name"] for l in H.dispatch("layer.list", {})["layers"]]
+    assert kept["name"] == "gen" and "Variant 2 seed 2" not in str(names)
+    with pytest.raises(H.BridgeError):
+        H.dispatch("gen.place", {"images": []})
+
+
+def test_gen_place_is_cut_to_the_selection(H):
+    H.dispatch("document.new", {"width": 40, "height": 40, "background": "white"})
+    doc = H.active_doc()
+    sel = FakeSelection(); sel.select(10, 10, 10, 10, 255); doc.setSelection(sel)
+    r = H.dispatch("gen.place", {"images": [_png_b64(4, 4, "#00ff00")], "region": [0, 0, 40, 40], "mask": True})
+    node = H.find_layer(doc, r["layers"][0]["id"])
+    assert node.pixelData(15, 15, 1, 1)[3] == 255 and node.pixelData(2, 2, 1, 1)[3] == 0
+
+
+def test_remove_background_color_method(H):
+    H.dispatch("document.new", {"width": 60, "height": 60, "background": "transparent"})
+    H.dispatch("layer.create", {"name": "photo", "fill": "#f0f0f0"})
+    H.dispatch("draw.shapes", {"layer": "photo", "shapes": [
+        {"type": "rect", "x": 20, "y": 20, "width": 20, "height": 20, "fill": "#cc2020"}]})
+    r = H.dispatch("image.remove_background", {"layer": "photo", "mode": "erase", "feather": 0})
+    node = H.find_layer(H.active_doc(), "photo")
+    assert node.pixelData(5, 5, 1, 1)[3] == 0 and node.pixelData(30, 30, 1, 1) == bytes([0x20, 0x20, 0xcc, 255])
+    assert r["background_color"] == "#f0f0f0" and 0.8 < r["background_fraction"] < 0.92
+    r = H.dispatch("image.remove_background", {"layer": "photo", "mode": "mask"})
+    assert r["mask"]["type"] == "transparencymask"
+
+
+def test_match_colors_transfers_mean(H):
+    H.dispatch("document.new", {"width": 20, "height": 20, "background": "transparent"})
+    H.dispatch("layer.create", {"name": "ref", "fill": "#c8c8c8"})
+    H.dispatch("layer.create", {"name": "elem", "fill": "#646464"})
+    r = H.dispatch("photo.match_colors", {"layer": "elem", "reference_layer": "ref"})
+    assert r["before"]["mean"][0] == 100 and r["reference"]["mean"][0] == 200
+    assert H.find_layer(H.active_doc(), "elem").pixelData(5, 5, 1, 1)[:3] == bytes([200, 200, 200])

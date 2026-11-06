@@ -32,8 +32,11 @@ undo/redo revert whole AI edits (pixels, properties, layers). Use batch to run m
 Photos: adjust_image (levels, curves, hue/saturation, sharpen, denoise...), auto_enhance, add_vignette.
 Video/animation: import_video -> edit frames (animation_set frame=..., or for_each_frame) -> render_video;
 keyframe/list_keyframes, animation_contact_sheet to review motion. krita_action runs Krita's own commands.
-Inpainting with an external image model: set_selection -> export_image(x,y,width,height) +
-export_selection_mask -> generate -> import_image(fit="selection").
+Generative AI (ai_backends shows what is connected: ComfyUI, AUTOMATIC1111/Forge, OpenAI, Gemini,
+Stability, Replicate, fal): generate_image (txt2img / img2img / inpaint the selection, count>1 = variations
++ comparison sheet -> pick_variation), outpaint, upscale_image, remove_background, match_colors (blend an
+element into the scene), generate_video (Sora, Veo, HeyGen avatars, ...), ask_vision (second opinion from
+Claude, GPT or Gemini). Results always land on new layers, cut to the selection, one undo step each.
 Coordinates are pixels with the origin at the top-left. Colours are '#rrggbb' or '#rrggbbaa'.
 Layers can be referenced by id or (if unique) name.
 """
@@ -48,7 +51,7 @@ def tool(fn):
     return mcp.tool()(fn)
 
 
-async def _call(method: str, **params) -> Any:
+async def _call(method: str, /, **params) -> Any:
     clean = {k: v for k, v in params.items() if v is not None}
     try:
         return await asyncio.to_thread(_client.call, method, clean)
@@ -734,6 +737,11 @@ async def for_each_frame(operations: list[dict[str, Any]], start: Optional[int] 
         done += 1
     await _call("animation.set", frame=first)
     return {"frames_done": done, "frames": [frames[0], frames[-1]] if frames else [], "errors": errors}
+
+
+from . import gen_tools  # noqa: E402  (importing registers the generative-AI tools and prompts)
+
+FEATURE_MODULES = (gen_tools,)
 
 
 # ------------------------------------------------------------------- main

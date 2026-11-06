@@ -24,7 +24,7 @@ except ImportError:  # Krita 5
 from . import history, pixels
 from .util import DOC_EXTS, IMAGE_EXTS, OPEN_EXTS, BridgeError, parse_color, safe_path, workspace_root
 
-BRIDGE_VERSION = "0.2.0"
+BRIDGE_VERSION = "0.3.0"
 MAX_DIM = 16384
 MAX_PIXELS = 100_000_000
 MAX_SHAPES = 5000
@@ -63,7 +63,7 @@ READS = {"app.info", "app.actions", "document.info", "canvas.snapshot", "canvas.
          "filter.list", "filter.describe", "brush.presets", "history.list", "image.analyze", "image.read_pixels",
          "image.find_color", "file.list", "file.view", "vector.list", "resources.list", "palette.colors",
          "animation.info", "animation.keyframes", "animation.contact_sheet", "video.info", "krita.action_list",
-         "generator.describe"}
+         "generator.describe", "gen.context"}
 
 ACCESS = {"mode": "full"}  # full | read_only | paused - set from the MCP docker
 ACTIVITY = collections.deque(maxlen=300)  # (time, method, ok, ms, detail) for the docker's log
@@ -1414,4 +1414,6 @@ def history_redo(p):
 
 from . import analysis, controls, extras, media  # noqa: E402  (importing registers their handlers)
 
-FEATURE_MODULES = (analysis, controls, extras, media)
+from . import genai  # noqa: E402
+
+FEATURE_MODULES = (analysis, controls, extras, media, genai)

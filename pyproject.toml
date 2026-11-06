@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "krita-mcp"
-version = "0.2.0"
-description = "MCP server + Krita plugin so any AI agent (Claude, ChatGPT, Gemini, ...) can edit and generate art in Krita"
+version = "0.3.0"
+description = "MCP server + Krita plugin so any AI agent (Claude, ChatGPT, Gemini, ...) can paint, edit and generate art, photos, animation and video in Krita, with ComfyUI, A1111, OpenAI, Gemini, Stability, Replicate, fal and HeyGen"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = ["mcp>=1.9", "uvicorn>=0.30"]
-keywords = ["krita", "mcp", "model-context-protocol", "ai", "art", "painting", "photo-editing", "animation"]
+keywords = ["krita", "mcp", "model-context-protocol", "ai", "art", "painting", "photo-editing", "animation", "generative-ai", "stable-diffusion", "comfyui", "inpainting"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
@@ -28,6 +28,7 @@ Releases = "https://github.com/jowinjohnchemban/krita-mcp/releases"
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
+anthropic = ["anthropic>=0.70"]
 
 [project.scripts]
 krita-mcp = "krita_mcp.server:main"

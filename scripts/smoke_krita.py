@@ -793,6 +793,60 @@ def colorize():
 
 
 @step
+def generative_round_trip():
+    """gen.* + background removal + colour matching, without any AI service (images are made locally)."""
+    call("document.new", width=200, height=150, name="genai", background="white")
+    try:
+        return _generative_round_trip()
+    finally:
+        call("document.close")
+
+
+def _generative_round_trip():
+    photo = call("layer.create", name="Photo", fill="#f0f0f0")["id"]
+    call("draw.shapes", layer=photo, shapes=[{"type": "rect", "x": 70, "y": 40, "width": 60, "height": 70,
+                                               "fill": "#c02020"}])
+    r = call("image.remove_background", layer=photo, mode="select", feather=0)
+    expect(r["foreground_bounds"] == [70, 40, 60, 70], r)
+    ctx = call("gen.context", padding=10, target=128, multiple=8, need_mask=True, mask_alpha=True)
+    expect(ctx["region"] == [60, 30, 80, 90] and ctx["size"][1] == 128 and ctx["size"][0] % 8 == 0, ctx)
+    expect(all(k in ctx for k in ("image_png", "mask_png", "mask_alpha_png")), list(ctx))
+    patch = call("canvas.snapshot", max_size=64, x=0, y=0, width=8, height=8)["png_base64"]  # white
+    other = base64.b64encode((OUT / "11_grid.png").read_bytes()).decode() if (OUT / "11_grid.png").exists()         else patch
+    before = state()
+    placed = call("gen.place", images=[patch], region=ctx["region"], mask=True, name="Gen", sheet=True)
+    expect(placed["layers"][0]["bounds"][:2] == [70, 40], placed)  # cut to the selection
+    got = sample(100, 75, layer=placed["layers"][0]["id"])
+    expect(near(got[:3], (0xf0, 0xf0, 0xf0)) and got[3] == 255, "patch pixels %r" % (got,))
+    expect(sample(65, 35, layer=placed["layers"][0]["id"])[3] == 0, "outside the selection must stay empty")
+    call("history.undo")
+    expect(state() == before, "undo of gen.place")
+    call("history.redo")
+    v = call("gen.place", images=[patch, other, patch], region=[0, 0, 200, 150], name="Vars", sheet=True)
+    expect(len(v["layers"]) == 3 and [l["visible"] for l in v["layers"]] == [True, False, False], v)
+    (OUT / "20_variants_sheet.png").write_bytes(base64.b64decode(v["sheet_png"]))
+    call("gen.pick", group=v["group"]["id"], index=2)
+    kept = call("gen.pick", group=v["group"]["id"], index=2, keep_only=True)["kept"]
+    names = [l["name"] for l in call("layer.list")["layers"]]
+    expect("Vars" in names and not any(n.startswith("Variant") for n in names), names)
+    call("layer.delete", layer=kept["id"])
+    call("selection.set", kind="none")
+    m = call("photo.match_colors", layer=placed["layers"][0]["id"], reference_layer=photo, strength=1.0)
+    rb = call("image.remove_background", layer=photo, mode="mask")
+    expect(rb["mask"]["type"] == "transparencymask" and rb["background_color"] == "#f0f0f0", rb)
+    corner, raw = sample(5, 5), sample(5, 5, layer=photo)  # the mask hides it; the layer pixels stay intact
+    expect(near(corner[:3], (255, 255, 255)) and near(raw[:3], (0xf0, 0xf0, 0xf0)), (corner, raw))
+    ex = call("gen.expand", left=40, top=20, overlap=10)
+    expect(ex["canvas"] == [240, 170] and ex["old_image_at"] == [40, 20, 200, 150], ex)
+    expect(near(sample(40 + 100, 20 + 75, layer=photo)[:3], (0xc0, 0x20, 0x20), 10), "content must move with the expansion")
+    snap("20_expanded")
+    call("history.undo")
+    info = call("document.info")
+    expect((info["width"], info["height"]) == (200, 150), info)
+    return {"region": ctx["region"], "match": m["reference"]["mean"], "bg": rb["background_fraction"]}
+
+
+@step
 def export_layer():
     r = call("document.export", path="layer_only.png", layer=STATE["shapes"])
     r2 = call("document.export", path="q.jpg", quality=40)

@@ -4,6 +4,7 @@
 Usage:  python scripts/gen_tool_docs.py          # rewrite docs/tools.md
         python scripts/gen_tool_docs.py --check  # exit 1 if docs/tools.md is out of date (CI)
 """
+import asyncio
 import inspect
 import sys
 from pathlib import Path
@@ -24,6 +25,8 @@ GROUPS = [
                 "duplicate_layer", "transform_layer", "import_image", "import_image_from_url"]),
     ("Painting and drawing", ["brush_stroke", "list_brush_presets", "draw_shapes", "add_svg",
                               "list_vector_shapes", "remove_vector_shapes", "colorize_lineart"]),
+    ("Generative AI", ["ai_backends", "generate_image", "pick_variation", "outpaint", "upscale_image",
+                       "remove_background", "match_colors", "generate_video", "ask_vision"]),
     ("Photo editing", ["adjust_image", "auto_enhance", "add_vignette", "apply_filter", "list_filters",
                        "describe_filter"]),
     ("Selections", ["set_selection", "modify_selection", "fill_selection", "export_selection_mask"]),
@@ -63,7 +66,7 @@ def render():
            "canvas pixels from the top-left; colours are `#rrggbb` or `#rrggbbaa`." % (__version__, len(tools)), ""]
     for title, names in groups:
         out.append("- [%s](#%s)" % (title, title.lower().replace(" ", "-")))
-    out.append("")
+    out += ["- [Prompts](#prompts)", ""]
     for title, names in groups:
         out += ["## " + title, ""]
         for name in names:
@@ -73,6 +76,13 @@ def render():
             sig = _sig(fn)
             if sig:
                 out += ["Parameters: " + ", ".join(sig), ""]
+    prompts = asyncio.run(server.mcp.list_prompts())
+    if prompts:
+        out += ["## Prompts", "", "Ready-made workflows that MCP clients offer as slash commands or templates:", ""]
+        for pr in prompts:
+            args = ", ".join("`%s`%s" % (a.name, "" if a.required else " (optional)") for a in pr.arguments or [])
+            out.append("- **`%s`** (%s) - %s" % (pr.name, args, pr.description))
+        out.append("")
     return "\n".join(out).rstrip() + "\n"
 
 

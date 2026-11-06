@@ -15,7 +15,7 @@ It works with any MCP client: Claude, ChatGPT, Gemini, Cursor, VS Code Copilot, 
 AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
 ```
 
-## What the AI can do (71 tools)
+## What the AI can do (80 tools + 6 workflow prompts)
 
 - **Paint like an artist.** It uses Krita's real brush engine with any preset, pressure and eraser,
   plus crisp shapes and gradients, editable SVG vectors and text, procedural SeExpr textures,
@@ -26,9 +26,16 @@ AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token�
 - **Edit photos.** Exact levels, curves, exposure and temperature; hue/saturation, colour balance,
   sharpen, denoise, blur and about 25 more; auto-enhance; vignette; non-destructive filter masks;
   16-bit colour spaces.
-- **Work with generative models.** Colour-range and magic-wand selections, export a region plus its
-  mask, then composite the generated result back through a soft selection. Images can also be
-  imported from files or URLs.
+- **Generate with any image model, right on the canvas.** It works with ComfyUI (including your own
+  workflows: Flux, ControlNet, IP-Adapter, …), AUTOMATIC1111/Forge, OpenAI, Gemini, Stability AI,
+  Replicate and fal.ai. You can generate from text, rework a region (img2img), inpaint a selection,
+  outpaint beyond the edges, upscale, and remove backgrounds. Several variations at once come with a
+  numbered comparison sheet. `match_colors` blends a generated element into the scene. Results always
+  land on new layers, cut to your selection, and each placement is one undo step.
+- **Video and a second opinion.** Generate video with Sora, Veo, HeyGen talking avatars (they can even
+  make your painted character talk) or any Replicate/fal video model. It opens in Krita as an animation
+  you can edit. `ask_vision` gets a critique, caption or prompt from Claude, GPT or Gemini (or a local
+  Ollama model).
 - **Animate and edit video.** Keyframes, onion skin, frame contact sheets, importing video from
   mp4/mov/webm/gif, grading every frame (`for_each_frame`), and rendering to mp4/webm/gif/ProRes with
   Krita's bundled ffmpeg.
@@ -38,6 +45,9 @@ AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token�
 - **Real undo for AI edits,** even for edits Krita itself doesn't record. It never overwrites your
   own work.
 - **`batch` and `for_each_frame`** let the AI do many steps in one call.
+
+Built-in **prompts** (`generative_inpaint`, `concept_variations`, `retouch_photo`, `product_shot`,
+`paint_scene`, `animate`) appear as slash commands in clients that support MCP prompts.
 
 An **AI Bridge (MCP)** panel inside Krita shows the status and a live activity log. From it you can
 make the AI read-only or pause it, undo AI edits, set the workspace and token, and copy a ready-made
@@ -88,12 +98,20 @@ Environment variables:
 
 Plugin settings can also be changed in Krita's *AI Bridge (MCP)* panel; environment variables take priority.
 
+Generative services are configured with more server variables (`KRITA_MCP_COMFYUI_URL`,
+`KRITA_MCP_A1111_URL`, `KRITA_MCP_OPENAI_API_KEY`, `KRITA_MCP_GEMINI_API_KEY`, `KRITA_MCP_STABILITY_API_KEY`,
+`KRITA_MCP_REPLICATE_API_TOKEN`, `KRITA_MCP_FAL_KEY`, `KRITA_MCP_HEYGEN_API_KEY`,
+`KRITA_MCP_ANTHROPIC_API_KEY`, `KRITA_MCP_IMAGE_BACKEND`, …). Cloud services are used only with a
+`KRITA_MCP_…` key, so a key that happens to be in your environment never uploads your art by surprise.
+See [Connecting AI services](docs/ai-backends.md).
+
 ## Documentation
 
 | | |
 |---|---|
+| [Connecting AI services](docs/ai-backends.md) | ComfyUI, A1111, OpenAI, Gemini, Stability, Replicate, fal, HeyGen, Sora, Veo, Claude |
 | [Workflows](docs/workflows.md) | Painting, photo retouching, inpainting, line art, animation, video |
-| [Tool reference](docs/tools.md) | All 71 tools and their parameters |
+| [Tool reference](docs/tools.md) | All 80 tools, their parameters, and the prompts |
 | [Undo, safety and limits](docs/undo-and-safety.md) | How undo works, the security model, access modes |
 | [Development](docs/development.md) | Architecture, tests, real-Krita smoke test, adding tools |
 | [Releasing](docs/releasing.md) | How plugin zips, wheels and GitHub/PyPI releases are published |

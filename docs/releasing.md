@@ -9,8 +9,8 @@ Releases are built by GitHub Actions (`.github/workflows/release.yml`) when a ve
 3. Run the tests. Ideally also run `python scripts/smoke_krita.py` against a real Krita.
 4. Commit, then tag and push:
    ```bash
-   git tag v0.2.0
-   git push origin main v0.2.0
+   git tag v0.3.0
+   git push origin main v0.3.0
    ```
 
 The workflow then:
