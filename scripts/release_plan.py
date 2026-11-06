@@ -6,7 +6,7 @@
 Rules:
   * the version in pyproject.toml is newer than the latest v* tag  -> release it as is (a manual bump);
   * otherwise, if plugin / server code changed since the latest tag  -> release the next version:
-    patch by default, minor if a commit message since then contains [minor], major for [major];
+    patch by default, minor if a commit's first line has the word [minor], major for [major];
   * otherwise (docs, tests, CI only)                                 -> nothing to release.
 """
 import json
@@ -17,6 +17,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CODE_PATHS = ["src", "plugin", "pyproject.toml", "scripts/build_plugin.py"]
+# a marker counts only as a separate word in a commit's first line - text that merely mentions
+# "[minor]/[major]" (like this comment, or a commit body explaining the rule) does not
+MARKER = {k: re.compile(r"(?:^|\s)\[%s\](?:\s|$)" % k) for k in ("major", "minor")}
 
 
 def git(*args, cwd=ROOT):
@@ -54,8 +57,9 @@ def plan(root=ROOT):
     if not changed:
         return dict(out, publish=False, version=cur, tag="v" + cur,
                     reason="no plugin or server changes since %s" % last)
-    messages = git("log", "--format=%s%n%b", "%s..HEAD" % last, cwd=root)
-    level = "major" if "[major]" in messages else "minor" if "[minor]" in messages else "patch"
+    subjects = git("log", "--format=%s", "%s..HEAD" % last, cwd=root).splitlines()
+    level = ("major" if any(MARKER["major"].search(s) for s in subjects) else
+             "minor" if any(MARKER["minor"].search(s) for s in subjects) else "patch")
     nxt = bump(max(parse(cur), parse(last)), level)
     return dict(out, publish=True, bump=True, version=nxt, tag="v" + nxt,
                 reason="%s release: %d changed files since %s" % (level, len(changed.splitlines()), last))
