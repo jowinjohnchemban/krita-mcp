@@ -48,7 +48,11 @@ def test_release_rules(repo):
     p = release_plan.plan(repo)
     assert (p["version"], p["bump"]) == ("1.0.0", False)  # a version you set yourself is respected
     git(repo, "tag", "v1.0.0")
-    commit(repo, "src/d.py", "5", "rewrite\n\n[major]")
+    commit(repo, "src/d.py", "5", "Docs mention markers\n\nnext version: patch, or [minor]/[major] if marked")
+    assert release_plan.plan(repo)["version"] == "1.0.1"  # a body that only explains the rule is not a marker
+    commit(repo, "src/e.py", "6", "Explain [minor]/[major] in the subject too")
+    assert release_plan.plan(repo)["version"] == "1.0.1"  # not separate words
+    commit(repo, "src/f.py", "7", "Big rewrite [major]")
     assert release_plan.plan(repo)["version"] == "2.0.0"
 
 
