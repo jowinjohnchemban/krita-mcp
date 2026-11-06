@@ -108,7 +108,7 @@ def _ensure_service():
     if proc is None or proc.poll() is not None:
         cmd = extension.setting("client_command", "krita-mcp") or "krita-mcp"
         args = shlex.split(cmd, posix=os.name != "nt") + ["--agent", "--agent-port", str(AGENT_PORT)]
-        env = dict(os.environ, KRITA_MCP_PORT=str(extension.port()), KRITA_MCP_HOME=str(protocol.config_dir()))
+        env = dict(os.environ, KRITA_MCP_PORT=str(extension.bridge_port()), KRITA_MCP_HOME=str(protocol.config_dir()))
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
             _SERVICE["proc"] = subprocess.Popen(args, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,

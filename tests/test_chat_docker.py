@@ -79,6 +79,7 @@ def chat(monkeypatch, tmp_path):
             return {"providers": {"gemini": {"signed_in": False, "needs_key": True, "chat": True}}}
         return {}
     monkeypatch.setattr(c, "_request", fake_request)
+    c._real_ensure_service = c._ensure_service  # for the test that exercises the real start-up
     monkeypatch.setattr(c, "_ensure_service", lambda: fake_request("GET", "/health"))
     dock = c.ChatDocker()
     yield app, c, dock, sent
@@ -188,3 +189,35 @@ def test_key_page_button_without_a_running_service(chat):
     assert c.service_info("gemini", {"signed_in": True, "key_url": None})["key_url"]  # reported None keeps ours
     local = [w.text() for w in c.SignInDialog(dock, "ollama", c.service_info("ollama")).findChildren(qtw.QLabel)]
     assert "API key" not in local and "Server URL" in local
+
+
+def test_starting_the_assistant_service_for_real(chat, monkeypatch):
+    """The real _ensure_service: starts `<server command> --agent` and hands it the bridge's actual port."""
+    app, c, dock, sent = chat
+    launched, state = {}, {"up": False}
+
+    def fake_request(method, path, body=None, timeout=10):
+        if not state["up"]:
+            raise OSError("connection refused")
+        return {"providers": {"gemini": {"signed_in": False}}}
+
+    class FakeProc:
+        def __init__(self, args, env=None, **kw):
+            launched.update(args=args, env=env)
+            state["up"] = True
+
+        def poll(self):
+            return None
+    running = type("Ext", (), {"server": type("Server", (), {"port": 5676})(), "port": lambda self: 5679})()
+    monkeypatch.setattr(c.extension, "INSTANCE", running)
+    monkeypatch.setattr(c, "_request", fake_request)
+    monkeypatch.setattr(c.subprocess, "Popen", FakeProc)
+    monkeypatch.setattr(c.time, "sleep", lambda s: None)
+    monkeypatch.setitem(c._SERVICE, "proc", None)
+    health = c._real_ensure_service()
+    assert health["providers"]["gemini"]["signed_in"] is False
+    assert launched["args"][0] == "krita-mcp" and launched["args"][1:] == ["--agent", "--agent-port", "5680"]
+    assert launched["env"]["KRITA_MCP_PORT"] == "5676"  # the port the bridge really listens on
+    assert c.extension.bridge_port() == 5676
+    monkeypatch.setattr(c.extension, "INSTANCE", None)
+    assert c.extension.bridge_port() == 5679  # nothing running: the configured / default port

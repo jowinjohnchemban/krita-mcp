@@ -28,6 +28,18 @@ def _log(msg):
     print("[krita-mcp] " + msg, file=sys.stderr)
 
 
+def bridge_port():
+    """The port the bridge listens on: the running server's, else the configured one."""
+    ext = INSTANCE
+    server = getattr(ext, "server", None) if ext is not None else None
+    if server is not None and getattr(server, "port", None):
+        return int(server.port)
+    if ext is not None:
+        return ext.port()
+    env = os.environ.get("KRITA_MCP_PORT")
+    return int(env) if env else int(setting("port", DEFAULT_PORT))
+
+
 def setting(key, default):
     return Krita.instance().readSetting(SETTINGS, key, str(default))
 
