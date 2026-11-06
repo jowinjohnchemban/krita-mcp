@@ -14,18 +14,15 @@ Releases build and publish themselves (`.github/workflows/release.yml`). Pushing
    | you raised the version yourself (`python scripts/bump_version.py 1.0.0`) | **that version** is released |
    | only docs, tests or CI changed | nothing is released |
 
-3. For an automatic version, **github-actions[bot] commits "Release vX.Y.Z"** to `main`. This sets the
-   version in `pyproject.toml`, `__version__` and the plugin's `BRIDGE_VERSION`, and refreshes
-   `docs/tools.md`. A commit made by the bot does not start CI again. If someone pushed to `main` while
-   this was running, the bot leaves it, and the next CI run releases those commits after they have been
-   tested.
-4. The workflow tests again, then builds `krita-mcp-bridge-<version>.zip` (the Krita plugin, for
+3. **Nothing is committed to `main`.** The new version is written only into the release job's own build copy
+   (`pyproject.toml`, `__version__`, the plugin's `BRIDGE_VERSION`, `docs/tools.md`). The version lives in the
+   **release tag**, which is created on exactly the commit that passed CI. The version in the source files on
+   `main` can therefore be older than the latest release; the next version is always counted from the newest tag.
+4. The workflow tests that build copy, then builds `krita-mcp-bridge-<version>.zip` (the Krita plugin, for
    *Import Python Plugin from File*), the wheel and the sdist. It tags the commit and publishes the
    GitHub Release. The release notes contain install instructions followed by GitHub's changelog since
    the previous release.
 5. If PyPI is enabled (see below), the same wheel and sdist go to PyPI.
-
-After a release, run `git pull` to get the bot's version commit.
 
 CI cannot run Krita. Before pushing larger changes, run `python scripts/smoke_krita.py` against a real
 Krita.
@@ -39,12 +36,6 @@ Krita.
   workflow*, and enter the tag. The release's files are replaced.
 - **Release `main` now:** *Actions ▸ Release ▸ Run workflow* with the tag left empty. This follows the
   same rules as above.
-
-## If the bot cannot push
-
-If `main` is protected so that only pull requests can change it, the bot's version commit is refused, and
-the release stops at that step. Either allow `github-actions[bot]` to push to `main`, or bump the version
-yourself in your pull request (`bump_version.py`), which is then released as is.
 
 ## PyPI (optional)
 
