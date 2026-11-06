@@ -16,7 +16,9 @@ the chat, and its edits can be undone like any other AI edit.
 | OpenRouter | **Sign in with browser**, no key to copy. One account reaches Gemini, Claude, GPT and hundreds of other models; leave the model empty to use your OpenRouter default, or enter one such as `anthropic/claude-sonnet-4.6` |
 | Local model | Nothing: point it at [Ollama](https://ollama.com) (`http://127.0.0.1:11434/v1`) or LM Studio (`http://127.0.0.1:1234/v1`) |
 
-The model box can be left empty to use the default model, or set to any model name. The AI gets the same 84
+The model box lists the models your account can use, loaded live from the provider (⟳ reloads it).
+**Auto (newest)** picks the newest suitable model fresh for every message, and the chat shows which one
+it used. You can also type any model name. The AI gets the same 84
 tools as MCP clients: painting with real brushes, seeing and measuring the canvas, layers, photo editing,
 animation and video, generative AI and the asset libraries. It looks at its work and improves it before it
 answers.

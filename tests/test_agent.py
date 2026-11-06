@@ -65,7 +65,7 @@ def test_gemini_agent_loop_calls_tools_and_answers(home, bridge, monkeypatch):
                          "finishReason": "STOP"}]},
     ])
     try:
-        m.json("POST", "/models/gemini-2.5-flash:generateContent", lambda h, b: next(replies))
+        m.json("POST", "/models/gemini-3.8-flash:generateContent", lambda h, b: next(replies))
         monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", m.url)
         agent.save_key("gemini", "g-key")
         sess = agent.chat(None, "gemini", None, "make a canvas for a fox")
@@ -73,13 +73,15 @@ def test_gemini_agent_loop_calls_tools_and_answers(home, bridge, monkeypatch):
     finally:
         m.srv.shutdown()
     kinds = [(e["type"], e.get("name")) for e in events]
-    assert kinds == [("user", None), ("tool", "document_new"), ("tool_result", "document_new"),
+    assert kinds == [("user", None), ("note", None), ("tool", "document_new"), ("tool_result", "document_new"),
                      ("tool", "canvas_snapshot"), ("tool_result", "canvas_snapshot"), ("assistant", None)]
-    assert events[4]["images"] == 1 and events[-1]["text"] == "Made a 640x480 canvas."
+    assert events[1]["text"] == "Model: gemini-3.8-flash"  # newest Flash listed now; 2.5 is skipped
+    assert events[5]["images"] == 1 and events[-1]["text"] == "Made a 640x480 canvas."
     assert ("document.new", {"width": 640, "height": 480, "name": "fox", "background": "white",
                              "resolution_ppi": 72}) in calls
-    first, third = (json.loads(c[3]) for c in (m.calls[0], m.calls[2]))
-    assert m.calls[0][2]["x-goog-api-key"] == "g-key"
+    posts = [c for c in m.calls if c[0] == "POST"]
+    first, third = (json.loads(c[3]) for c in (posts[0], posts[2]))
+    assert posts[0][2]["x-goog-api-key"] == "g-key" and m.calls[0][1].startswith("/models?")
     decl = first["tools"][0]["functionDeclarations"]
     assert len(decl) > 80 and "parametersJsonSchema" in decl[0]
     turns = third["contents"]
@@ -99,7 +101,7 @@ def test_gemini_falls_back_to_openapi_schemas(home, bridge, monkeypatch):
             return {"error": {"message": "Unknown name parametersJsonSchema"}}
         return {"candidates": [{"content": {"role": "model", "parts": [{"text": "ok"}]}}]}
     try:
-        m.routes[("POST", "/models/gemini-2.5-flash:generateContent")] = lambda h, b: (
+        m.routes[("POST", "/models/gemini-3.8-flash:generateContent")] = lambda h, b: (
             400 if "parametersJsonSchema" in b.decode() else 200, "application/json",
             json.dumps(reply(h, b)).encode())
         monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", m.url)
@@ -125,7 +127,7 @@ def test_openai_compatible_local_model(home, bridge, monkeypatch):
     finally:
         m.srv.shutdown()
     assert events[-1]["text"] == "Looks good."
-    second = json.loads(m.calls[1][3])
+    second = json.loads([c for c in m.calls if c[0] == "POST"][1][3])
     roles = [msg["role"] for msg in second["messages"]]
     assert roles == ["system", "user", "assistant", "tool", "user"]  # image follows as a user turn
     assert second["model"] == "llava" and second["messages"][4]["content"][1]["type"] == "image_url"
@@ -150,10 +152,10 @@ def test_claude_agent_loop(home, bridge, monkeypatch):
     finally:
         m.srv.shutdown()
     assert events[-1]["text"] == "There is one layer."
-    second = json.loads(m.calls[1][3])
+    second = json.loads([c for c in m.calls if c[0] == "POST"][1][3])
     result = second["messages"][2]["content"][0]
     assert result["type"] == "tool_result" and result["tool_use_id"] == "tu1"
-    assert second["model"] == "claude-opus-5-5" and len(second["tools"]) > 80
+    assert second["model"] == "claude-opus-6" and len(second["tools"]) > 80  # newest Opus listed
 
 
 def test_service_requires_the_token_and_runs_a_chat(home, bridge, monkeypatch):

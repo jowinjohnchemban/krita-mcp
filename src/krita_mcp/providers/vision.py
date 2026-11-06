@@ -3,7 +3,7 @@ endpoint such as Ollama / LM Studio / OpenRouter) and get text back - critique, 
 image model, an art-direction checklist."""
 import base64
 
-from . import http
+from . import catalog, gemini, http
 from .http import ProviderError, env, secret
 from .images import GEMINI_BASE
 
@@ -20,7 +20,7 @@ def ask_anthropic(png, question, model=None, max_tokens=4000):
     except ImportError:
         raise ProviderError("install the Anthropic SDK: pip install 'krita-mcp[anthropic]'") from None
     client = anthropic.Anthropic(api_key=key)
-    model = model or env("KRITA_MCP_ANTHROPIC_MODEL", "claude-opus-5-5")
+    model = model or env("KRITA_MCP_ANTHROPIC_MODEL") or catalog.first(catalog.anthropic_models(key), "Claude model")
     kwargs = dict(model=model, max_tokens=max_tokens, system=SYSTEM, messages=[{"role": "user", "content": [
         {"type": "image", "source": {"type": "base64", "media_type": "image/png",
                                      "data": base64.standard_b64encode(png).decode()}},
@@ -51,7 +51,8 @@ def ask_openai(png, question, model=None, max_tokens=4000):
     if not key:
         raise ProviderError("OpenAI is not configured: set KRITA_MCP_OPENAI_API_KEY (or a local "
                             "KRITA_MCP_OPENAI_BASE_URL such as Ollama's http://127.0.0.1:11434/v1)")
-    model = model or env("KRITA_MCP_OPENAI_VISION_MODEL", "gpt-5-mini")
+    model = model or env("KRITA_MCP_OPENAI_VISION_MODEL") or catalog.first(
+        catalog.local_models(base) if http.is_loopback_url(base) else catalog.openai_models(base, key), "chat model")
     body = {"model": model, "max_completion_tokens": max_tokens, "messages": [
         {"role": "system", "content": SYSTEM},
         {"role": "user", "content": [{"type": "text", "text": question},
@@ -68,12 +69,12 @@ def ask_gemini(png, question, model=None, max_tokens=4000):
     if not key:
         raise ProviderError("Gemini is not configured: set KRITA_MCP_GEMINI_API_KEY")
     base = env("KRITA_MCP_GEMINI_BASE_URL", GEMINI_BASE).rstrip("/")
-    model = model or env("KRITA_MCP_GEMINI_VISION_MODEL", "gemini-2.5-flash")
+    model = model or env("KRITA_MCP_GEMINI_VISION_MODEL") or gemini.pick(base, key, "chat")
     body = {"systemInstruction": {"parts": [{"text": SYSTEM}]},
             "contents": [{"parts": [{"inline_data": {"mime_type": "image/png", "data": base64.b64encode(png).decode()}},
                                     {"text": question}]}],
             "generationConfig": {"maxOutputTokens": max_tokens}}
-    r = http.post_json("%s/models/%s:generateContent" % (base, model), body, {"x-goog-api-key": key})
+    r, model = gemini.post(base, key, model, "generateContent", body)
     parts = ((r.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
     return "".join(p.get("text", "") for p in parts), {"model": model}
 

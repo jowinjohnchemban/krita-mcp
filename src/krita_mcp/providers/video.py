@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from . import http
+from . import catalog, gemini, http
 from .http import ProviderError, env, secret
 from .images import GEMINI_BASE, Fal, Replicate, collect_urls
 
@@ -81,8 +81,13 @@ class HeyGen:
     def generate(self, job):
         if not (job.script or job.prompt):
             raise ProviderError("HeyGen needs `script` (what the avatar says)")
-        if not job.voice_id:
-            raise ProviderError("HeyGen needs voice_id (list them with video_backends(details=true))")
+        if not job.voice_id or (job.character != "photo" and not job.avatar_id):
+            listing = self.status(details=True)  # the account's own avatars and voices, listed now
+            job.voice_id = job.voice_id or catalog.first([v["voice_id"] for v in listing.get("voices", [])],
+                                                          "HeyGen voice")
+            if job.character != "photo":
+                job.avatar_id = job.avatar_id or catalog.first(
+                    [a["avatar_id"] for a in listing.get("avatars", [])], "HeyGen avatar")
         if job.character == "photo":
             if job.image is None:
                 raise ProviderError("character=photo animates the canvas; the canvas image is missing")
@@ -121,13 +126,13 @@ class Sora:
     def __init__(self):
         self.base = http.service_url("KRITA_MCP_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
         self.key = secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY")
-        self.model = env("KRITA_MCP_OPENAI_VIDEO_MODEL", "sora-2")
+        self.model = env("KRITA_MCP_OPENAI_VIDEO_MODEL")  # None: the newest video model this key can use
 
     def configured(self):
         return bool(self.key)
 
     def status(self, details=False):
-        return {"configured": self.configured(), "model": self.model}
+        return {"configured": self.configured(), "model": self.model or "auto (newest)"}
 
     def generate(self, job):
         if not self.key:
@@ -135,7 +140,9 @@ class Sora:
         hdr = {"Authorization": "Bearer " + self.key}
         size = http.nearest_size(job.width, job.height, ["1280x720", "720x1280"])
         secs = min((4, 8, 12), key=lambda s: abs(s - (job.seconds or 4)))
-        fields = [("model", job.model or self.model), ("prompt", job.prompt), ("size", size), ("seconds", str(secs))]
+        model = job.model or self.model or catalog.first(catalog.openai_models(self.base, self.key, "video"),
+                                                         "OpenAI video model")
+        fields = [("model", model), ("prompt", job.prompt), ("size", size), ("seconds", str(secs))]
         fields += [(k, v if isinstance(v, str) else json.dumps(v)) for k, v in job.extra.items()]
         files = [("input_reference", "frame.png", job.image, "image/png")] if job.image is not None else []
         body, ctype = http.multipart(fields, files)
@@ -154,13 +161,13 @@ class Veo:
     def __init__(self):
         self.key = secret("KRITA_MCP_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
         self.base = env("KRITA_MCP_GEMINI_BASE_URL", GEMINI_BASE).rstrip("/")
-        self.model = env("KRITA_MCP_GEMINI_VIDEO_MODEL", "veo-3.0-generate-001")
+        self.model = env("KRITA_MCP_GEMINI_VIDEO_MODEL")  # None: the newest Veo model this key can use
 
     def configured(self):
         return bool(self.key)
 
     def status(self, details=False):
-        return {"configured": self.configured(), "model": self.model}
+        return {"configured": self.configured(), "model": self.model or "auto (newest)"}
 
     def generate(self, job):
         if not self.key:
@@ -173,9 +180,9 @@ class Veo:
         if job.negative:
             params["negativePrompt"] = job.negative
         params.update(job.extra)
-        model = job.model or self.model
-        op = http.post_json("%s/models/%s:predictLongRunning" % (self.base, model),
-                            {"instances": [inst], "parameters": params}, hdr)
+        model = job.model or self.model or gemini.pick(self.base, self.key, "video")
+        op, model = gemini.post(self.base, self.key, model, "predictLongRunning",
+                                {"instances": [inst], "parameters": params})
         name = op["name"]
         op = _poll(lambda: http.get_json("%s/%s" % (self.base, name), hdr), lambda r: r.get("done"),
                    lambda r: None, "Veo video")
