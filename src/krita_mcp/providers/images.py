@@ -112,7 +112,7 @@ class A1111(Backend):
     native_control = True
 
     def __init__(self):
-        self.url = env("KRITA_MCP_A1111_URL", "http://127.0.0.1:7860").rstrip("/")
+        self.url = http.service_url("KRITA_MCP_A1111_URL", "a1111", "http://127.0.0.1:7860")
         auth = env("KRITA_MCP_A1111_AUTH")  # user:password when the WebUI runs with --api-auth
         self.headers = {"Authorization": "Basic " + _b64(auth.encode())} if auth else {}
 
@@ -207,7 +207,7 @@ class ComfyUI(Backend):
     native_control = True
 
     def __init__(self):
-        self.url = env("KRITA_MCP_COMFYUI_URL", "http://127.0.0.1:8188").rstrip("/")
+        self.url = http.service_url("KRITA_MCP_COMFYUI_URL", "comfyui", "http://127.0.0.1:8188")
         self.timeout = int(env("KRITA_MCP_GEN_TIMEOUT", "900"))
 
     def _choices(self, node, inp, timeout=10):
@@ -383,7 +383,7 @@ class OpenAIImages(Backend):
     mask_format = "alpha"
 
     def __init__(self):
-        self.base = env("KRITA_MCP_OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+        self.base = http.service_url("KRITA_MCP_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
         self.key = secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY")
         self.model = env("KRITA_MCP_OPENAI_IMAGE_MODEL", "gpt-image-1")
         self.sizes = env("KRITA_MCP_OPENAI_SIZES", "1024x1024,1536x1024,1024x1536").split(",")

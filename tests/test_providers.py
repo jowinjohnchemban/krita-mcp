@@ -380,3 +380,40 @@ def test_cloud_backends_use_the_guide_image(mock, monkeypatch):
     assert inp["control_image"].startswith("data:image/png") and inp["control_strength"] == 0.4
     with pytest.raises(ProviderError, match="no control-image input"):
         rep.inputs_for(images.ImageJob(prompt="p", controls=[{"image": PNG}]), {"prompt": {}})
+
+
+
+# ---------------------------------------------------------------- asset libraries
+def test_polyhaven_search_and_fetch(mock, monkeypatch):
+    from krita_mcp.providers import assets
+    monkeypatch.setenv("KRITA_MCP_POLYHAVEN_URL", mock.url)
+    mock.json("GET", "/assets", {
+        "rock_wall": {"name": "Rock Wall", "tags": ["stone", "cliff"], "categories": ["rock"], "authors": {"A": "All"}},
+        "oak_bark": {"name": "Oak Bark", "tags": ["tree", "wood"], "categories": ["wood"]},
+        "grey_rock": {"name": "Grey Rock", "tags": ["rock"], "categories": ["rock", "natural"]}})
+    found = assets.search("rock", "textures", 5)
+    assert [r["id"] for r in found["results"]] == ["grey_rock", "rock_wall"] and "CC0" in found["licence"]
+    assert mock.calls[-1][2]["user-agent"].startswith("krita-mcp")
+    mock.json("GET", "/files/rock_wall", {"Diffuse": {"1k": {"jpg": {"url": mock.url + "/t/rock_1k.jpg"}},
+                                                      "2k": {"jpg": {"url": mock.url + "/t/rock_2k.jpg"}}}})
+    mock.json("GET", "/info/rock_wall", {"name": "Rock Wall"})
+    mock.raw("GET", "/t/rock_2k.jpg", PNG, "image/jpeg")
+    data, name, credit = assets.fetch("rock_wall", "textures", "2k")
+    assert data == PNG and name == "Rock Wall" and "CC0" in credit
+    with pytest.raises(ProviderError, match="no normal map"):
+        assets.fetch("rock_wall", "textures", "2k", "normal")
+
+
+def test_openverse_photos_carry_attribution(mock, monkeypatch):
+    from krita_mcp.providers import assets
+    monkeypatch.setenv("KRITA_MCP_OPENVERSE_URL", mock.url + "/v1")
+    mock.json("GET", "/v1/images/", {"results": [{"id": "abc", "title": "Granite", "creator": "Ana",
+                                                  "license": "by", "license_version": "2.0", "width": 800,
+                                                  "height": 600, "attribution": "Granite by Ana is CC BY 2.0"}]})
+    r = assets.search("granite", "photos", 3, licence="by")
+    assert r["results"][0]["licence"] == "BY 2.0" and "Ana" in r["results"][0]["attribution"]
+    assert "mature=false" in mock.calls[-1][1] and "license=by" in mock.calls[-1][1]
+    mock.json("GET", "/v1/images/abc/", {"url": mock.url + "/img/abc.jpg", "title": "Granite",
+                                         "attribution": "Granite by Ana is CC BY 2.0", "mature": False})
+    mock.raw("GET", "/img/abc.jpg", PNG, "image/jpeg")
+    assert assets.fetch("abc", "photos")[2] == "Granite by Ana is CC BY 2.0"

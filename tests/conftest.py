@@ -17,6 +17,8 @@ def bridge(monkeypatch, tmp_path):
 
     def fake(method, params):
         calls.append((method, params))
+        if method == "canvas.snapshot":
+            return {"png_base64": B64, "width": 1, "height": 1, "region": [0, 0, 1, 1]}
         if method == "app.info":
             return {"workspace": str(tmp_path), "documents": []}
         if method == "gen.context":

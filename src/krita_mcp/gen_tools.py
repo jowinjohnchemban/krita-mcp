@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from . import presets
 from .providers import ProviderError
+from .providers import assets as gen_assets
 from .providers import images as gen_images
 from .providers import video as gen_video
 from .providers import vision as gen_vision
@@ -381,6 +382,41 @@ async def camera_move(move: str = "dolly_in", seconds: float = 3.0, fps: int = 2
     if render_path:
         r["render"] = await _call("video.render", path=render_path)
     return r
+
+
+# ------------------------------------------------------------------ asset libraries
+@tool
+async def search_assets(query: str = "", kind: str = "textures", limit: int = 12,
+                        licence: Optional[str] = None) -> dict:
+    """Find free real-world material to make work realistic. kind:
+    textures - Poly Haven CC0 photo textures (rock, wood, bark, fabric, leather, skin, metal, ground, ...),
+    hdris    - Poly Haven CC0 HDRI panoramas as photographic skies and backdrops,
+    photos   - Openverse openly licensed photos for reference or compositing (licence: e.g. 'cc0,pdm' for no
+               attribution, or 'by,by-sa'); results include the attribution text.
+    Then import_asset(id, kind)."""
+    return await _provider(gen_assets.search, query, kind, limit, licence)
+
+
+@tool
+async def import_asset(id: str, kind: str = "textures", resolution: str = "2k", texture_map: str = "diffuse",
+                       fit: Optional[str] = None, tile_size: Optional[int] = None, name: Optional[str] = None,
+                       blend_mode: Optional[str] = None, opacity: Optional[float] = None,
+                       parent: Optional[str] = None) -> dict:
+    """Put a search_assets result on a new layer. Textures tile across the canvas by default (tile_size = px per
+    tile; texture_map: diffuse, normal, roughness, ao, displacement); hdris and photos cover the canvas
+    (fit: cover, contain, stretch, tile, none). To texture a painted shape: import it, then
+    update_layer(clipped=true, blend_mode='overlay' or 'multiply') above the shape in the same group.
+    Returns the layer and the attribution to credit (photos)."""
+    data, title, credit = await _provider(gen_assets.fetch, id, kind, resolution, texture_map)
+    kind_n = gen_assets.KINDS.get(kind, kind)
+    fit = fit or ("tile" if kind_n == "textures" else "cover")
+    label = name or ("%s (%s)" % (title, credit.split(" by ")[-1].split(" is licensed")[0]) if kind_n == "photos"
+                     and credit else title)
+    layer = await _call("layer.import_image", data_base64=base64.b64encode(data).decode(), name=label[:100],
+                        fit=fit, width=tile_size if fit == "tile" else None, parent=parent)
+    if blend_mode or opacity is not None:
+        layer = await _call("layer.update", layer=layer["id"], blend_mode=blend_mode, opacity=opacity)
+    return {"layer": layer, "attribution": credit, "source": "polyhaven" if kind_n != "photos" else "openverse"}
 
 
 # ------------------------------------------------------------------ prompts

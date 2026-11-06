@@ -119,7 +119,7 @@ class Sora:
     name = "openai"
 
     def __init__(self):
-        self.base = env("KRITA_MCP_OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+        self.base = http.service_url("KRITA_MCP_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
         self.key = secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY")
         self.model = env("KRITA_MCP_OPENAI_VIDEO_MODEL", "sora-2")
 

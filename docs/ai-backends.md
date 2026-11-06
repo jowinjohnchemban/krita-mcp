@@ -20,7 +20,9 @@ filters and tools.
 `ai_backends` shows what is connected, which models and samplers each service offers, and which
 ComfyUI workflows you have saved.
 
-The settings below are **environment variables for the MCP server** (`krita-mcp`). Most MCP clients
+The easiest way to connect a service is to sign in inside Krita: *AI Chat ▸ Services…* (see
+[AI Chat](ai-chat.md)). Keys saved there serve both the chat docker and MCP clients. Alternatively, the
+settings below are **environment variables for the MCP server** (`krita-mcp`). Most MCP clients
 let you set them in the server entry. For example, in Claude Desktop's config:
 
 ```json

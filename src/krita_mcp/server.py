@@ -774,8 +774,18 @@ def main(argv=None):
     ap.add_argument("--host", default="127.0.0.1",
                     help="HTTP bind address (default 127.0.0.1; others need KRITA_MCP_HTTP_TOKEN)")
     ap.add_argument("--port", type=int, default=8765, help="HTTP port (default 8765)")
+    ap.add_argument("--agent", action="store_true",
+                    help="run the in-Krita assistant service for the AI Chat docker instead of an MCP server")
+    ap.add_argument("--agent-port", type=int, default=None,
+                    help="assistant service port (default 5680 or KRITA_MCP_AGENT_PORT)")
     ap.add_argument("--version", action="version", version="krita-mcp " + __version__)
     args = ap.parse_args(argv)
+
+    if args.agent:
+        from . import agent
+        print("krita-mcp assistant on 127.0.0.1:%d" % (args.agent_port or agent.DEFAULT_PORT), file=sys.stderr)
+        agent.serve(args.agent_port)
+        return
 
     if args.transport == "stdio":
         mcp.run("stdio")

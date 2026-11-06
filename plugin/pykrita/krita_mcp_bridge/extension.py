@@ -155,3 +155,8 @@ def register():
         register_docker()
     except Exception:  # noqa: BLE001 - the bridge must work even if the panel cannot load
         _log("MCP docker unavailable:\n" + traceback.format_exc())
+    try:
+        from .chat import register_docker as register_chat
+        register_chat()
+    except Exception:  # noqa: BLE001
+        _log("AI Chat docker unavailable:\n" + traceback.format_exc())

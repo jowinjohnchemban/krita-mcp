@@ -46,7 +46,7 @@ def ask_anthropic(png, question, model=None, max_tokens=4000):
 
 
 def ask_openai(png, question, model=None, max_tokens=4000):
-    base = env("KRITA_MCP_OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    base = http.service_url("KRITA_MCP_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
     key = secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY") or ("local" if http.is_loopback_url(base) else None)
     if not key:
         raise ProviderError("OpenAI is not configured: set KRITA_MCP_OPENAI_API_KEY (or a local "

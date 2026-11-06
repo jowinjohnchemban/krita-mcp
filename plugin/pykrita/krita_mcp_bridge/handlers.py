@@ -891,6 +891,25 @@ def layer_import_image(p):
     fit = p.get("fit") or ("none" if explicit else "contain")
     if fit == "selection":
         return _import_into_selection(doc, img, p)
+    if fit == "tile":  # repeat across the canvas (photo textures); width/height = size of one tile
+        tw = _num(p, "width", iw, 1, MAX_DIM, True)
+        th = _num(p, "height", max(1, round(ih * tw / float(iw))), 1, MAX_DIM, True)
+        tile = img if (tw, th) == (iw, ih) else img.scaled(tw, th, _enum(Qt, "AspectRatioMode",
+                                                                         "IgnoreAspectRatio"), SMOOTH)
+        img = QImage(W, H, FMT_ARGB32)
+        img.fill(TRANSPARENT)
+        pt = QPainter(img)
+        for ty in range(0, H, th):
+            for tx in range(0, W, tw):
+                pt.drawImage(tx, ty, tile)
+        pt.end()
+        parent = doc.rootNode() if not p.get("parent") else find_layer(doc, p["parent"])
+        node = doc.createNode(str(p.get("name") or "Texture")[:120], "paintlayer")
+        parent.addChildNode(node, None)
+        write_image(node, img, 0, 0)
+        doc.setActiveNode(node)
+        _refresh(doc)
+        return node_info(node)
     if fit == "contain":
         s = min(W / float(iw), H / float(ih)); nw, nh = int(iw * s), int(ih * s)
     elif fit == "cover":
@@ -900,7 +919,7 @@ def layer_import_image(p):
     elif fit == "none":
         nw, nh = iw, ih
     else:
-        raise BridgeError("fit must be contain, cover, stretch, none or selection")
+        raise BridgeError("fit must be contain, cover, stretch, none, tile or selection")
     if "width" in p or "height" in p:
         nw = _num(p, "width", nw, 1, MAX_DIM, True)
         nh = _num(p, "height", nh, 1, MAX_DIM, True)

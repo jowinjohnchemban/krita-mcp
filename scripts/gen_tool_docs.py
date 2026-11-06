@@ -28,6 +28,7 @@ GROUPS = [
                               "list_vector_shapes", "remove_vector_shapes", "colorize_lineart"]),
     ("Generative AI", ["ai_backends", "generate_image", "pick_variation", "outpaint", "upscale_image",
                        "remove_background", "match_colors", "generate_video", "ask_vision"]),
+    ("Asset libraries", ["search_assets", "import_asset"]),
     ("Photo editing", ["adjust_image", "auto_enhance", "add_vignette", "apply_filter", "list_filters",
                        "describe_filter"]),
     ("Selections", ["set_selection", "modify_selection", "fill_selection", "export_selection_mask"]),

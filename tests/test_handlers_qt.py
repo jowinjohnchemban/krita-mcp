@@ -227,7 +227,8 @@ def H(tmp_path_factory):
     sys.modules["krita"] = mod
     global _QAPP
     _QAPP = QGuiApplication.instance() or QGuiApplication([])  # must stay referenced; text needs it
-    sys.modules.pop("krita_mcp_bridge", None)
+    for name in [m for m in sys.modules if m.startswith("krita_mcp_bridge")]:  # import fresh, with this fake
+        sys.modules.pop(name)
     import importlib
     return importlib.import_module("krita_mcp_bridge.handlers")
 
@@ -659,3 +660,11 @@ def test_camera_moves_cover_the_frame(H):
     assert genai.camera_at("crash_zoom", 0.5)[0] < 1.1 < genai.camera_at("crash_zoom", 1.0)[0]
     with pytest.raises(H.BridgeError):
         genai.camera_at("barrel_roll", 0.5)
+
+
+def test_import_image_tiles_a_texture(H):
+    H.dispatch("document.new", {"width": 50, "height": 30, "background": "white"})
+    r = H.dispatch("layer.import_image", {"data_base64": _png_b64(10, 10, "#336699"), "fit": "tile",
+                                          "width": 20, "name": "Rock"})
+    node = H.find_layer(H.active_doc(), r["id"])
+    assert r["name"] == "Rock" and node.pixelData(45, 25, 1, 1) == bytes([0x99, 0x66, 0x33, 255])

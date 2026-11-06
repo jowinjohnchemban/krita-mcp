@@ -15,7 +15,7 @@ It works with any MCP client: Claude, ChatGPT, Gemini, Cursor, VS Code Copilot, 
 AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
 ```
 
-## What the AI can do (82 tools + 7 workflow prompts)
+## What the AI can do (84 tools + 7 workflow prompts)
 
 - **Paint like an artist.** It uses Krita's real brush engine with any preset, pressure and eraser,
   plus crisp shapes and gradients, editable SVG vectors and text, procedural SeExpr textures,
@@ -26,6 +26,12 @@ AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token�
 - **Edit photos.** Exact levels, curves, exposure and temperature; hue/saturation, colour balance,
   sharpen, denoise, blur and about 25 more; auto-enhance; vignette; non-destructive filter masks;
   16-bit colour spaces.
+- **Chat with an AI inside Krita.** The *AI Chat* docker lets you sign in to Gemini, Claude, OpenAI or
+  a local model (Ollama, LM Studio), type what you want and watch it work in your document. One
+  **Services** list holds every key and server URL, and AI apps connected through MCP use the same
+  sign-in.
+- **Real-world materials.** CC0 photo textures and HDRI skies from Poly Haven, and openly licensed photos
+  from Openverse (with attribution), tiled or placed on layers to make work look real.
 - **Just give it a prompt.** `create_artwork` decides: realistic or photographic requests are
   **generated** (with looks like `photo`, `cinematic`, `portrait` or `product`, plus negative prompts
   that remove AI artefacts). Hand-made requests, or setups with no model connected, are **painted**
@@ -79,7 +85,7 @@ Details: [installation](docs/installation.md) · [clients](docs/clients.md) · [
 ## Command-line flags
 
 ```
-krita-mcp [--transport {stdio,http}] [--host HOST] [--port PORT] [--version]
+krita-mcp [--transport {stdio,http}] [--host HOST] [--port PORT] [--agent [--agent-port N]] [--version]
 ```
 
 | Flag | Default | Meaning |
@@ -87,6 +93,8 @@ krita-mcp [--transport {stdio,http}] [--host HOST] [--port PORT] [--version]
 | `--transport` | `stdio` | `stdio` for local clients (Claude Code/Desktop, Cursor, VS Code, Gemini CLI, Codex). `http` for clients that need a URL. |
 | `--host` | `127.0.0.1` | HTTP bind address. Binding anything other than loopback requires `KRITA_MCP_HTTP_TOKEN`. |
 | `--port` | `8765` | HTTP port (the endpoint is `http://HOST:PORT/mcp`). |
+| `--agent` | | Run the in-Krita assistant service for the *AI Chat* docker instead of an MCP server. The docker starts it by itself. |
+| `--agent-port` | `5680` | Port of that service (loopback only, bridge-token auth). Also `KRITA_MCP_AGENT_PORT`. |
 | `--version` | | Print the version and exit. |
 
 Environment variables:
@@ -115,9 +123,10 @@ See [Connecting AI services](docs/ai-backends.md).
 
 | | |
 |---|---|
+| [AI Chat inside Krita](docs/ai-chat.md) | The chat docker, signing in to services, asset libraries |
 | [Connecting AI services](docs/ai-backends.md) | ComfyUI, A1111, OpenAI, Gemini, Stability, Replicate, fal, HeyGen, Sora, Veo, Claude |
 | [Workflows](docs/workflows.md) | Painting, photo retouching, inpainting, line art, animation, video |
-| [Tool reference](docs/tools.md) | All 82 tools, their parameters, and the prompts |
+| [Tool reference](docs/tools.md) | All 84 tools, their parameters, and the prompts |
 | [Undo, safety and limits](docs/undo-and-safety.md) | How undo works, the security model, access modes |
 | [Development](docs/development.md) | Architecture, tests, real-Krita smoke test, adding tools |
 | [Krita upstream](docs/krita-upstream.md) | Proposing the plugin for bundling with Krita itself |

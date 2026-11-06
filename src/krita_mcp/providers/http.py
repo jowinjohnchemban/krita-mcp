@@ -27,12 +27,23 @@ def secret(own, *generic):
     v = env(own)
     if v:
         return v
+    from . import keys  # signed in from Krita's AI Chat > Services
+    service = keys.ENV_TO_SERVICE.get(own)
+    v = keys.saved(service) if service else None
+    if v:
+        return v
     if env("KRITA_MCP_USE_ENV_KEYS") in ("1", "true", "yes"):
         for g in generic:
             v = env(g)
             if v:
                 return v
     return None
+
+
+def service_url(env_name, service, default):
+    """A server URL: environment variable, else the one saved in Krita's Services dialog, else the default."""
+    from . import keys
+    return (env(env_name) or keys.saved(service, "base_url") or default).rstrip("/")
 
 
 def is_loopback_url(url):
