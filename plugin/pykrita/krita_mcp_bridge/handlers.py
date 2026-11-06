@@ -24,7 +24,7 @@ except ImportError:  # Krita 5
 from . import history, pixels
 from .util import DOC_EXTS, IMAGE_EXTS, OPEN_EXTS, BridgeError, parse_color, safe_path, workspace_root
 
-BRIDGE_VERSION = "0.3.0"
+BRIDGE_VERSION = "1.0.0"
 MAX_DIM = 16384
 MAX_PIXELS = 100_000_000
 MAX_SHAPES = 5000

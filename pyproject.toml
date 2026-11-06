@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "krita-mcp"
-version = "0.3.0"
+version = "1.0.0"
 description = "MCP server + Krita plugin so any AI agent (Claude, ChatGPT, Gemini, ...) can paint, edit and generate art, photos, animation and video in Krita, with ComfyUI, A1111, OpenAI, Gemini, Stability, Replicate, fal and HeyGen"
 readme = "README.md"
 license = { file = "LICENSE" }
