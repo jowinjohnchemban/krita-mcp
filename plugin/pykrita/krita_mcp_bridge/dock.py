@@ -207,7 +207,8 @@ class McpDocker(DockWidget):
     def _load(self):
         ext = self._ext()
         self.port.setValue(ext.port() if ext else protocol.DEFAULT_PORT)
-        self.autostart.setChecked(extension.setting("autostart", "true") == "true")
+        self.autostart.setChecked(extension.setting("autostart", "true" if extension.AUTOSTART_DEFAULT else "false")
+                                  == "true")
         self.command.setText(extension.setting("client_command", "krita-mcp"))
         idx = [k for k, _ in ACCESS_MODES].index(handlers.ACCESS["mode"])
         self.access.setCurrentIndex(idx)

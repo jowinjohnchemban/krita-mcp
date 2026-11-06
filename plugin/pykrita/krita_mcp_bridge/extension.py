@@ -15,6 +15,11 @@ from .handlers import dispatch
 from .protocol import DEFAULT_PORT, BridgeServer
 
 SETTINGS = "krita_mcp"
+# A copy bundled with Krita itself sets both to False (scripts/krita_upstream.py): nothing listens and no
+# panel pops up until the user presses Start in Settings > Dockers > AI Bridge (MCP).
+AUTOSTART_DEFAULT = True
+INTRODUCE_PANEL = True
+
 INSTANCE = None  # the running extension, for the docker
 
 
@@ -45,7 +50,8 @@ class KritaMcpBridge(Extension):
         mode = setting("access", "full")
         handlers.ACCESS["mode"] = mode if mode in ("full", "read_only", "paused") else "full"
         env = os.environ.get("KRITA_MCP_AUTOSTART")
-        autostart = env != "0" if env is not None else setting("autostart", "true") == "true"
+        default = "true" if AUTOSTART_DEFAULT else "false"
+        autostart = env != "0" if env is not None else setting("autostart", default) == "true"
         if autostart:
             self.start()
 
@@ -56,7 +62,7 @@ class KritaMcpBridge(Extension):
         info.triggered.connect(self.show_info)
         panel = window.createAction("krita_mcp_panel", "Krita MCP Bridge: show panel", "tools/scripts")
         panel.triggered.connect(lambda: self.show_panel())
-        if setting("panel_introduced", "false") != "true":  # open the panel once so new users find it
+        if INTRODUCE_PANEL and setting("panel_introduced", "false") != "true":  # open it once for new users
             QTimer.singleShot(3000, lambda: self.show_panel(first_time=True))
 
     def show_panel(self, first_time=False):

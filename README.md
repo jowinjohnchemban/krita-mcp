@@ -114,6 +114,7 @@ See [Connecting AI services](docs/ai-backends.md).
 | [Tool reference](docs/tools.md) | All 80 tools, their parameters, and the prompts |
 | [Undo, safety and limits](docs/undo-and-safety.md) | How undo works, the security model, access modes |
 | [Development](docs/development.md) | Architecture, tests, real-Krita smoke test, adding tools |
+| [Krita upstream](docs/krita-upstream.md) | Proposing the plugin for bundling with Krita itself |
 | [Releasing](docs/releasing.md) | How plugin zips, wheels and GitHub/PyPI releases are published |
 
 ## Safety in one paragraph
@@ -125,7 +126,7 @@ the AI to read-only or pause it from the panel at any time. Full details:
 
 ## Status
 
-The project is tested against **Krita 5.3.4 on Windows**. `scripts/smoke_krita.py` runs 53 end-to-end
+The project is tested against **Krita 5.3.4 on Windows**. `scripts/smoke_krita.py` runs 54 end-to-end
 checks against a running Krita, including an undo matrix over every kind of edit. Unit tests run on
 Linux and Windows with PyQt5 and PyQt6 in CI. Krita 6 is covered by the PyQt6 unit tests but has not
 yet been run end to end.
