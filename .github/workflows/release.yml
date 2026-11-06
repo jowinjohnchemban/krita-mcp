@@ -1,39 +1,103 @@
 name: Release
 
-# Push a tag like v0.2.0 (matching the version in pyproject.toml) to publish:
-#   git tag v0.2.0 && git push origin v0.2.0
+# Releases publish themselves:
+#   1. bump the version (python scripts/bump_version.py 0.4.0), commit and push to main;
+#   2. when CI passes on main and that version has no release yet, this workflow tests, builds the Krita
+#      plugin zip + wheel + sdist, tags the commit vX.Y.Z and publishes the GitHub release (and PyPI if enabled).
+# Pushing a tag v* by hand still works, and "Run workflow" re-publishes an existing tag (or releases main).
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to (re)publish, e.g. v0.2.0"
-        required: true
+        description: "Existing tag to re-publish (e.g. v0.3.0). Empty = release the version on main if it is new."
+        required: false
+        default: ""
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  build:
+  prepare:
+    # After CI only when CI passed, and only for pushes to main (not pull requests from forks).
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     outputs:
+      sha: ${{ steps.v.outputs.sha }}
       version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      publish: ${{ steps.v.outputs.publish }}
     steps:
+      - name: Which commit
+        id: ref
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          case "$EVENT" in
+            workflow_run) echo "ref=$HEAD_SHA" >> "$GITHUB_OUTPUT" ;;
+            push)         echo "ref=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT" ;;
+            *)            echo "ref=${INPUT_TAG:-main}" >> "$GITHUB_OUTPUT" ;;
+          esac
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ steps.ref.outputs.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Check tag matches package version
+      - name: Version, tag and whether to publish
         id: v
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
           VERSION=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          if [ "$TAG" != "v$VERSION" ]; then echo "::error::tag $TAG does not match version $VERSION"; exit 1; fi
+          TAG="v$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = "push" ] || [ -n "$INPUT_TAG" ]; then
+            REQUESTED="${INPUT_TAG:-$GITHUB_REF_NAME}"
+            if [ "$REQUESTED" != "$TAG" ]; then
+              echo "::error::tag $REQUESTED does not match the package version $VERSION"; exit 1
+            fi
+            echo "publish=true" >> "$GITHUB_OUTPUT"                    # explicit request: (re)publish
+          elif gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::$TAG is already released; bump the version to publish a new release"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::releasing $TAG from $(git rev-parse --short HEAD)"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Versions agree (pyproject, server, plugin)
+        run: python -m pip install pytest && python -m pytest -q tests/test_meta.py -k version
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen
@@ -52,12 +116,9 @@ jobs:
           path: dist/*
 
   github-release:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/download-artifact@v4
         with:
           name: dist
@@ -65,31 +126,37 @@ jobs:
       - name: Create or update the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v${{ needs.build.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          SHA: ${{ needs.prepare.outputs.sha }}
         shell: bash
         run: |
-          NOTES="$(cat <<'NOTES_EOF'
+          cat > notes.md <<NOTES_EOF
           ## Install
 
-          **Krita plugin** - download `krita-mcp-bridge-*.zip`, then in Krita: *Tools > Scripts > Import Python
-          Plugin from File...*, pick the zip, enable it, restart Krita. Open *Settings > Dockers > AI Bridge (MCP)*.
+          **Krita plugin**: download \`krita-mcp-bridge-${TAG#v}.zip\`, then in Krita choose *Tools > Scripts >
+          Import Python Plugin from File...*, pick the zip, enable it and restart Krita. Open *Settings > Dockers >
+          AI Bridge (MCP)*.
 
-          **MCP server** - `pip install krita_mcp-*.whl` from this release (or `pip install krita-mcp` once on PyPI),
-          then connect your AI client with the snippet shown in the Krita panel.
+          **MCP server**: \`pip install krita_mcp-${TAG#v}-py3-none-any.whl\` from this release (or
+          \`pip install krita-mcp\` once it is on PyPI), then connect your AI client with the snippet shown in the
+          Krita panel. Image, video and vision services: https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/ai-backends.md
 
-          Docs: https://github.com/${{ github.repository }}/tree/main/docs
           NOTES_EOF
-          )"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --clobber
-          else
-            gh release create "$TAG" dist/* --title "krita-mcp $TAG" --notes "$NOTES" --verify-tag
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          elif git ls-remote --exit-code --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "krita-mcp $TAG" \
+              --notes-file notes.md --generate-notes --verify-tag
+          else  # creates the tag on exactly the commit that passed CI
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "krita-mcp $TAG" \
+              --notes-file notes.md --generate-notes --target "$SHA"
           fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '.url, (.assets[].name)'
 
   pypi:
     # Opt in: set the repository variable PUBLISH_PYPI=true and add this repo as a trusted publisher on PyPI.
     if: vars.PUBLISH_PYPI == 'true'
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

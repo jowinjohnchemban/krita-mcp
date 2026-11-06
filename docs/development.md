@@ -28,6 +28,7 @@ scripts/
   gen_tool_docs.py             regenerate docs/tools.md
   smoke_krita.py               end-to-end test against a real running Krita
   paint_sunset.py              agent scenario: paint a sunset with real brushes, look, improve, check
+  bump_version.py              set the version everywhere; the next push to main publishes it
 ```
 
 ## Tests

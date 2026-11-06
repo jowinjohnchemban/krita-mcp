@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Set the release version everywhere it lives, so the next push to main publishes it.
+
+    python scripts/bump_version.py 0.4.0      # or: patch | minor | major
+    git commit -am "Release 0.4.0" && git push
+
+When CI passes on main, .github/workflows/release.yml sees that v0.4.0 has no release yet, tags that commit
+and publishes the GitHub release with the plugin zip, wheel and sdist.
+"""
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+FILES = [
+    ("pyproject.toml", r'^(version\s*=\s*")([^"]+)(")'),
+    ("src/krita_mcp/__init__.py", r'^(__version__\s*=\s*")([^"]+)(")'),
+    ("plugin/pykrita/krita_mcp_bridge/handlers.py", r'^(BRIDGE_VERSION\s*=\s*")([^"]+)(")'),
+]
+
+
+def current():
+    text = (ROOT / FILES[0][0]).read_text(encoding="utf-8")
+    return re.search(FILES[0][1], text, re.M).group(2)
+
+
+def next_version(arg, cur):
+    if re.fullmatch(r"\d+\.\d+\.\d+([.-]?(a|b|rc|dev)\d*)?", arg):
+        return arg
+    major, minor, patch = (int(x) for x in re.match(r"(\d+)\.(\d+)\.(\d+)", cur).groups())
+    if arg == "patch":
+        return "%d.%d.%d" % (major, minor, patch + 1)
+    if arg == "minor":
+        return "%d.%d.0" % (major, minor + 1)
+    if arg == "major":
+        return "%d.0.0" % (major + 1)
+    sys.exit("give a version like 0.4.0, or patch / minor / major")
+
+
+def main():
+    if len(sys.argv) != 2:
+        sys.exit(__doc__)
+    cur = current()
+    new = next_version(sys.argv[1], cur)
+    for rel, pattern in FILES:
+        path = ROOT / rel
+        text = path.read_text(encoding="utf-8")
+        text, n = re.subn(pattern, lambda m: m.group(1) + new + m.group(3), text, count=1, flags=re.M)
+        if n != 1:
+            sys.exit("could not find the version in %s" % rel)
+        path.write_text(text, encoding="utf-8", newline="\n")
+    subprocess.run([sys.executable, str(ROOT / "scripts" / "gen_tool_docs.py")], check=True)
+    print("%s -> %s. Commit and push to main; the release is published when CI passes." % (cur, new))
+
+
+if __name__ == "__main__":
+    main()
