@@ -318,3 +318,65 @@ def test_vision_claude_through_the_sdk(mock, monkeypatch):
     mock.json("POST", "/v1/messages", reply)
     with pytest.raises(ProviderError, match="declined"):
         vision.ask(PNG, "q", provider="claude")
+
+
+# ---------------------------------------------------------------- control (sketch / ControlNet)
+def test_control_model_picking():
+    models = ["control_v11p_sd15_canny", "control_v11p_sd15_lineart", "t2i-depth"]
+    assert images.pick_control_model(models, "lineart") == "control_v11p_sd15_lineart"
+    assert images.pick_control_model(models, "sketch") == "control_v11p_sd15_lineart"
+    assert images.pick_control_model(models, "depth") == "t2i-depth"
+    assert images.pick_control_model(models, "pose", "mine") == "mine"
+    with pytest.raises(ProviderError, match="no ControlNet model"):
+        images.pick_control_model(models, "openpose")
+
+
+def test_a1111_controlnet_units(mock, monkeypatch):
+    monkeypatch.setenv("KRITA_MCP_A1111_URL", mock.url)
+    mock.json("GET", "/controlnet/model_list", {"model_list": ["control_v11p_sd15_lineart [43d4be0d]"]})
+    mock.json("POST", "/sdapi/v1/txt2img", {"images": [B64], "info": "{}"})
+    images.get("a1111").generate(images.ImageJob(prompt="cat", controls=[
+        {"image": PNG, "type": "lineart", "strength": 0.7, "end": 0.8}]))
+    unit = _body(mock.calls[-1])["alwayson_scripts"]["controlnet"]["args"][0]
+    assert unit["model"].startswith("control_v11p_sd15_lineart") and unit["image"] == B64
+    assert unit["weight"] == 0.7 and unit["guidance_end"] == 0.8 and unit["module"] == "none"
+
+
+def test_comfyui_controlnet_chain(mock, monkeypatch):
+    monkeypatch.setenv("KRITA_MCP_COMFYUI_URL", mock.url)
+    mock.json("GET", "/object_info/ControlNetLoader", {"ControlNetLoader": {"input": {"required": {
+        "control_net_name": [["sdxl-canny.safetensors", "sdxl-depth.safetensors"]]}}}})
+    mock.json("POST", "/upload/image", lambda h, b: {"name": "c%d.png" % len(mock.calls), "subfolder": ""})
+    mock.json("POST", "/prompt", {"prompt_id": "p", "node_errors": {}})
+    mock.json("GET", "/history/p", {"p": {"status": {"status_str": "success", "completed": True},
+                                          "outputs": {"9": {"images": [{"filename": "o.png"}]}}}})
+    mock.raw("GET", "/view", PNG, "image/png")
+    images.get("comfyui").generate(images.ImageJob(prompt="x", model="ck.safetensors", controls=[
+        {"image": PNG, "type": "canny"}, {"image": PNG, "type": "depth", "strength": 0.5}]))
+    g = _body([c for c in mock.calls if c[1] == "/prompt"][-1])["prompt"]
+    assert g["21"]["inputs"]["control_net_name"] == "sdxl-canny.safetensors"
+    assert g["24"]["inputs"]["control_net_name"] == "sdxl-depth.safetensors"
+    assert g["25"]["inputs"]["positive"] == ["22", 0] and g["25"]["inputs"]["strength"] == 0.5
+    assert g["3"]["inputs"]["positive"] == ["25", 0] and g["3"]["inputs"]["negative"] == ["25", 1]
+
+
+def test_cloud_backends_use_the_guide_image(mock, monkeypatch):
+    monkeypatch.setenv("KRITA_MCP_STABILITY_API_KEY", "s")
+    monkeypatch.setenv("KRITA_MCP_STABILITY_BASE_URL", mock.url)
+    mock.raw("POST", "/v2beta/stable-image/control/sketch", PNG, "image/png")
+    images.get("stability").generate(images.ImageJob(prompt="x", controls=[{"image": PNG, "type": "scribble",
+                                                                             "strength": 0.6}]))
+    assert mock.calls[-1][1] == "/v2beta/stable-image/control/sketch" and b"control_strength" in mock.calls[-1][3]
+    monkeypatch.setenv("KRITA_MCP_OPENAI_BASE_URL", mock.url + "/v1")
+    mock.json("POST", "/v1/images/edits", {"data": [{"b64_json": B64}]})
+    images.get("openai").generate(images.ImageJob(prompt="castle", controls=[{"image": PNG}]))
+    raw = mock.calls[-1][3]
+    assert mock.calls[-1][1] == "/v1/images/edits" and b"layout and line guide" in raw and b'name="mask"' not in raw
+    monkeypatch.setenv("KRITA_MCP_REPLICATE_API_TOKEN", "r")
+    monkeypatch.setenv("KRITA_MCP_REPLICATE_BASE_URL", mock.url + "/v1")
+    rep = images.get("replicate")
+    inp = rep.inputs_for(images.ImageJob(prompt="p", controls=[{"image": PNG, "strength": 0.4}]),
+                         {"prompt": {}, "control_image": {}, "control_strength": {}})
+    assert inp["control_image"].startswith("data:image/png") and inp["control_strength"] == 0.4
+    with pytest.raises(ProviderError, match="no control-image input"):
+        rep.inputs_for(images.ImageJob(prompt="p", controls=[{"image": PNG}]), {"prompt": {}})

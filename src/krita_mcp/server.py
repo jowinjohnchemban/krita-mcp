@@ -20,7 +20,9 @@ from .bridge_client import BridgeClient, KritaError
 from .netfetch import fetch_image
 
 INSTRUCTIONS = """\
-Controls a running Krita instance. Typical workflow:
+Controls a running Krita instance. When the user asks for a picture from a prompt, start with create_artwork:
+it decides whether to GENERATE it with an image model (realistic / photographic results) or set it up for
+you to PAINT it with Krita's brushes, and you finish the work. Typical workflow:
 1. krita_status (shows the workspace folder; all file paths must be inside it).
 2. document_new or document_open, then work on separate layers: draw_shapes (crisp geometry),
    brush_stroke (Krita's real brushes), add_svg (editable vector shapes/text), import_image, filters.

@@ -88,3 +88,11 @@ def parse_color(value, default=None):
             raise BridgeError("bad colour %r" % value)
         return tuple(nums + [255]) if len(nums) == 3 else tuple(nums)
     raise BridgeError("bad colour %r (use #rrggbb or #rrggbbaa)" % value)
+
+
+def i18n(text):
+    """Krita's translation function inside Krita (it installs builtins.i18n); the text itself elsewhere.
+    Format after translating: i18n("Port %d") % port."""
+    import builtins
+    fn = getattr(builtins, "i18n", None)
+    return fn(text) if callable(fn) and fn is not i18n else text

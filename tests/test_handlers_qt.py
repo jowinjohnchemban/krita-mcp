@@ -631,3 +631,31 @@ def test_match_colors_transfers_mean(H):
     r = H.dispatch("photo.match_colors", {"layer": "elem", "reference_layer": "ref"})
     assert r["before"]["mean"][0] == 100 and r["reference"]["mean"][0] == 200
     assert H.find_layer(H.active_doc(), "elem").pixelData(5, 5, 1, 1)[:3] == bytes([200, 200, 200])
+
+
+def test_gen_context_renders_control_guides(H):
+    H.dispatch("document.new", {"width": 40, "height": 20, "background": "white"})
+    H.dispatch("layer.create", {"name": "Sketch"})
+    H.dispatch("draw.shapes", {"layer": "Sketch", "shapes": [
+        {"type": "rect", "x": 0, "y": 0, "width": 20, "height": 20, "fill": "#000000"}]})
+    r = H.dispatch("gen.context", {"region": "canvas", "need_image": False, "target": 80, "multiple": 8,
+                                   "controls": [{"layer": "Sketch"}, {"layer": "Sketch", "invert": True}]})
+    plain, inverted = (_decode(b) for b in r["control_pngs"])
+    assert (plain.width(), plain.height()) == (80, 40) == tuple(r["size"])
+    assert plain.pixelColor(10, 20).getRgb()[:3] == (0, 0, 0) and plain.pixelColor(70, 20).getRgb()[:3] == (255, 255, 255)
+    assert inverted.pixelColor(10, 20).getRgb()[:3] == (255, 255, 255)
+    with pytest.raises(H.BridgeError):
+        H.dispatch("gen.context", {"controls": [{}] * 5})
+
+
+def test_camera_moves_cover_the_frame(H):
+    from krita_mcp_bridge import genai
+    for move in genai.CAMERA_MOVES:
+        for t in (0.0, 0.25, 0.5, 0.75, 1.0):
+            s, dx, dy, ang = genai.camera_at(move, t)
+            # a picture scaled by s and shifted by dx still covers the frame when s >= 1 + 2|shift|
+            assert s >= 1 + 2 * max(abs(dx), abs(dy)) - 1e-9 or abs(ang) > 0, (move, t, s, dx, dy)
+    assert genai.camera_at("dolly_in", 1.0)[0] > genai.camera_at("dolly_in", 0.0)[0]
+    assert genai.camera_at("crash_zoom", 0.5)[0] < 1.1 < genai.camera_at("crash_zoom", 1.0)[0]
+    with pytest.raises(H.BridgeError):
+        genai.camera_at("barrel_roll", 0.5)

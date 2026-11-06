@@ -80,6 +80,25 @@ def gen_context(p):
             img = flat
         img = _scaled(img, gw, gh)
         out["image_png"] = _b64png(img)
+    controls = p.get("controls") or []
+    if not isinstance(controls, list) or len(controls) > 4:
+        raise BridgeError("controls must be a list of at most 4 guides")
+    if controls:  # guide images (sketch / lines / depth ...) over the same region, at the same size
+        pngs = []
+        for c in controls:
+            if c.get("layer"):
+                src = _rgba_image(find_layer(doc, c["layer"]).projectionPixelData(x, y, w, h), w, h)
+            else:
+                src = doc.projection(x, y, w, h).convertToFormat(FMT_ARGB32)
+            flat = QImage(w, h, FMT_ARGB32)
+            flat.fill(QColor(255, 255, 255))
+            pt = QPainter(flat)
+            pt.drawImage(0, 0, src)
+            pt.end()
+            if c.get("invert"):  # ControlNet line models want white lines on black
+                flat.invertPixels()
+            pngs.append(_b64png(_scaled(flat, gw, gh)))
+        out["control_pngs"] = pngs
     if p.get("need_mask"):
         sel = doc.selection()
         if has_sel:
@@ -369,3 +388,103 @@ def photo_match_colors(p):
     _refresh(doc)
     fmt = lambda st: {"mean": [round(m, 1) for m, _ in st], "std": [round(s, 1) for _, s in st]}  # noqa: E731
     return {"layer": node_info(node), "before": fmt(src), "reference": fmt(ref), "strength": strength}
+
+
+# ---------------------------------------------------------------- camera moves (no AI needed)
+CAMERA_MOVES = ("static", "dolly_in", "dolly_out", "push_in", "pull_back", "zoom_in", "zoom_out", "crash_zoom",
+                "pan_left", "pan_right", "tilt_up", "tilt_down", "orbit_left", "orbit_right", "crane_up",
+                "crane_down", "handheld", "ken_burns")
+
+
+def camera_at(move, t, k=1.0):
+    """(scale, dx, dy, angle) of the virtual camera at time t in 0..1: scale >= 1 zooms in, dx/dy shift the
+    picture by a fraction of its size, angle in degrees. Scales always cover the frame (no empty borders)."""
+    import math
+    e = t * t * (3 - 2 * t)  # ease in/out
+    a = 0.08 * k
+    if move == "static":
+        return 1.0, 0.0, 0.0, 0.0
+    if move in ("dolly_in", "push_in", "zoom_in"):
+        return 1 + 0.35 * k * e, 0.0, 0.0, 0.0
+    if move in ("dolly_out", "pull_back", "zoom_out"):
+        return 1 + 0.35 * k * (1 - e), 0.0, 0.0, 0.0
+    if move == "crash_zoom":
+        return 1 + 1.2 * k * t ** 4, 0.0, 0.0, 0.0
+    if move in ("pan_left", "pan_right"):
+        d = -a + 2 * a * e
+        return 1 + 2.2 * a, d if move == "pan_left" else -d, 0.0, 0.0
+    if move in ("tilt_up", "tilt_down"):
+        d = -a + 2 * a * e
+        return 1 + 2.2 * a, 0.0, d if move == "tilt_up" else -d, 0.0
+    if move in ("orbit_left", "orbit_right"):
+        sgn = 1 if move == "orbit_left" else -1
+        return 1.18 + 0.05 * k, sgn * 0.06 * k * (2 * e - 1), 0.0, sgn * 3.0 * k * (2 * e - 1)
+    if move in ("crane_up", "crane_down"):
+        u = e if move == "crane_up" else 1 - e
+        return 1 + 2.2 * a + 0.17 * k * (1 - u), 0.0, -a + 2 * a * u, 0.0
+    if move == "handheld":
+        n = lambda f, ph: math.sin(2 * math.pi * (f * t + ph))  # noqa: E731
+        return (1.07, 0.012 * k * (n(0.7, 0) + 0.5 * n(2.3, 0.3)), 0.01 * k * (n(0.9, 0.5) + 0.5 * n(3.1, 0.1)),
+                0.5 * k * n(0.5, 0.2))
+    if move == "ken_burns":
+        return 1 + 0.25 * k * e, -0.05 * k * e, -0.03 * k * e, 0.0
+    raise BridgeError("move must be one of %s" % ", ".join(CAMERA_MOVES))
+
+
+@handler("camera.move", edit=True)
+def camera_move(p):
+    """Animate a still: render the picture through a moving virtual camera into frames of a new animated
+    document (or a new animated layer here), ready for render_video."""
+    import shutil
+    from .handlers import document_new
+    from .media import _frames_dir
+    doc = active_doc()
+    move = str(p.get("move") or "dolly_in")
+    camera_at(move, 0.0)  # validate early
+    fps = _num(p, "fps", 24, 1, 60, True)
+    frames = max(2, min(600, int(round(_num(p, "seconds", 3.0, 0.2, 30) * fps))))
+    k = _num(p, "intensity", 1.0, 0.1, 3.0)
+    _refresh(doc)
+    W, H = doc.width(), doc.height()
+    src = doc.projection(0, 0, W, H).convertToFormat(FMT_ARGB32)
+    ow = _num(p, "width", min(W, 1920), 16, 4096, True)
+    ow -= ow % 2
+    oh = max(2, int(round(H * ow / float(W))) // 2 * 2)
+    folder = _frames_dir("camera")
+    files = []
+    try:
+        for i in range(frames):
+            s, dx, dy, ang = camera_at(move, i / float(frames - 1), k)
+            img = QImage(ow, oh, FMT_ARGB32)
+            img.fill(QColor(0, 0, 0))
+            pt = QPainter(img)
+            pt.setRenderHint(_enum(QPainter, "RenderHint", "SmoothPixmapTransform"), True)
+            pt.translate(ow / 2.0 + dx * ow, oh / 2.0 + dy * oh)
+            pt.rotate(ang)
+            f = s * ow / float(W)
+            pt.scale(f, f)
+            pt.drawImage(int(-W / 2), int(-H / 2), src)
+            pt.end()
+            path = folder / ("c_%05d.png" % i)
+            img.save(str(path), "PNG")
+            files.append(str(path))
+        if p.get("new_document", True):
+            document_new({"width": ow, "height": oh, "background": "black",
+                          "name": ("%s - %s" % (doc.name() or "Untitled", move))[:120]})
+            doc = active_doc()
+        doc.setFramesPerSecond(fps)
+        if not doc.importAnimation(files, 0, 1):
+            raise BridgeError("Krita could not import the camera frames")
+        doc.setFullClipRangeStartTime(0)
+        doc.setFullClipRangeEndTime(frames - 1)
+        doc.setPlayBackRange(0, frames - 1)
+        doc.setCurrentTime(0)
+        node = doc.activeNode()
+        if node is not None:
+            node.setName(("Camera: %s" % move)[:120])
+        _refresh(doc)
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    return {"move": move, "frames": frames, "fps": fps, "size": [ow, oh],
+            "layer": node_info(doc.activeNode()) if doc.activeNode() else None,
+            "next": "render_video(path='shot.mp4') to export it"}

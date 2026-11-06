@@ -16,6 +16,7 @@ from krita_mcp import __version__, server  # noqa: E402
 TARGET = ROOT / "docs" / "tools.md"
 
 GROUPS = [
+    ("Start here", ["create_artwork"]),
     ("Documents", ["krita_status", "document_new", "document_open", "document_activate", "document_info",
                    "save_document", "export_image", "document_close", "resize_canvas", "scale_image",
                    "crop_image", "rotate_image", "flip", "flatten_image", "convert_color_space", "set_guides"]),
@@ -32,7 +33,7 @@ GROUPS = [
     ("Selections", ["set_selection", "modify_selection", "fill_selection", "export_selection_mask"]),
     ("Animation and video", ["animation_info", "animation_set", "keyframe", "list_keyframes", "import_frames",
                              "animation_contact_sheet", "export_animation_frames", "video_info", "import_video",
-                             "render_video", "for_each_frame"]),
+                             "render_video", "camera_move", "for_each_frame"]),
     ("Controls", ["krita_action", "view_control", "notify_user", "user_tool_state"]),
     ("Resources", ["list_resources", "palette_colors"]),
     ("History and batching", ["undo", "redo", "history", "batch"]),

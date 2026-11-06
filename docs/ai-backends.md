@@ -162,6 +162,60 @@ fallback, so a declined request is retried on a suitable model within the same c
 | `KRITA_MCP_GEN_TIMEOUT` | `900` | Seconds to wait for an image job |
 | `KRITA_MCP_*_BASE_URL` | the official API | Override any service's address (gateways, proxies, self-hosted) |
 
+## Just give it a prompt: `create_artwork`
+
+`create_artwork("realistic photo of a lighthouse at dusk", aspect="16:9")` creates the canvas and then
+decides how to make the picture:
+
+- **Generate** when the request is photographic or realistic, or when an image model is connected. It
+  makes several variations and a comparison sheet.
+- **Paint** when the request is hand-made or graphic ("paint it by hand", line art, pixel art, logos), or
+  when no model is connected. It sets up layers (Sketch, Base colours, Shading, Details, Light &
+  effects) and thirds guides, and returns a step-by-step painting plan. The agent then paints with
+  Krita's brushes.
+- **Hybrid** generates first, then adds paint-over layers for refining by hand.
+
+Pass `approach` to force one of these.
+
+## Looks (`style`)
+
+`generate_image`, `create_artwork` and `generate_video` accept a `style`. A style adds a proven prompt
+recipe and a matching negative prompt (which removes the plastic-skin and extra-finger failures of
+realistic images).
+
+| | Styles |
+|---|---|
+| Realistic | `photo`, `cinematic`, `portrait`, `product`, `fashion`, `street`, `landscape`, `macro`, `food`, `architecture`, `drone` |
+| Artistic | `concept_art`, `illustration`, `anime`, `watercolor`, `oil_painting`, `3d_render`, `pixel_art`, `comic`, `sketch` |
+
+For the most realistic results, use a photoreal checkpoint (for example an SDXL realism model in ComfyUI
+or A1111), or `gpt-image-1`, Gemini, Stability Ultra, or Flux on Replicate or fal.
+
+## Sketch to image (`control`)
+
+Paint a rough sketch, pose or depth layer and let the model follow it:
+
+```
+generate_image("a cozy log cabin in a pine forest", style="photo",
+               control=[{"layer": "Sketch", "type": "scribble", "strength": 0.8}])
+```
+
+| Backend | How the guide is used |
+|---|---|
+| ComfyUI, A1111 | Real ControlNet (up to 4 guides). The model is picked by `type` from the installed ControlNet models, or set with `model`. Line types are sent as white lines on black. `preprocess` runs an A1111 preprocessor (for example `depth_midas` on a photo layer). In your own ComfyUI workflows, use `{{control}}` and `{{control_1}}`, `{{control_2}}`, … |
+| Stability | Its *sketch* (line types) or *structure* control endpoint |
+| OpenAI, Gemini | The guide is sent as the image to follow |
+| Replicate | Models with a `control_image`-style input |
+
+## Camera moves
+
+- **Video models:** `generate_video(camera="dolly_in")` writes a cinematic camera instruction into the
+  prompt. The moves are dolly in/out, push in, pull back, crash zoom, pan, tilt, orbit, crane, handheld,
+  FPV drone, whip pan, bullet time, Ken Burns and static.
+- **No video model?** `camera_move("orbit_left", seconds=3)` animates the current picture inside Krita
+  with a virtual camera (zoom, pan, tilt, orbit, crane, handheld, crash zoom, Ken Burns) without any AI.
+  Add `render_path="shot.mp4"` to export it.
+
 ## How results come back
 
 - Every image result is placed on a **new layer**, stretched over the region it was generated for and

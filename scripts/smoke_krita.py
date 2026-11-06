@@ -847,6 +847,51 @@ def _generative_round_trip():
 
 
 @step
+def camera_move_animation():
+    """camera.move: a still becomes an animated shot in a new document, then renders to mp4."""
+    call("document.new", width=320, height=180, name="still", background="#204060")
+    lay = call("layer.create", name="Subject")["id"]
+    call("draw.shapes", layer=lay, shapes=[{"type": "ellipse", "cx": 160, "cy": 90, "rx": 30, "ry": 30,
+                                            "fill": "#ffcc00"}])
+    try:
+        r = call("camera.move", move="dolly_in", seconds=1, fps=12, width=320)
+        expect(r["frames"] == 12 and r["size"] == [320, 180], r)
+        info = call("animation.info")
+        expect(info["fps"] == 12, info)
+        call("animation.set", frame=0)
+        first = sample(125, 90)
+        call("animation.set", frame=11)
+        last = sample(125, 90)  # the sun grows: this point turns yellow by the end of the push-in
+        expect(near(first[:3], (0x20, 0x40, 0x60), 12) and last[0] > 200, (first, last))
+        out = call("video.render", path="camera_move.mp4")
+        expect(out["bytes"] > 1000, out)
+        call("document.close")
+        for move in ("orbit_left", "crane_up", "handheld"):
+            call("camera.move", move=move, seconds=0.5, fps=8, width=160)
+            call("document.close")
+        return {"frames": r["frames"], "first": first, "last": last, "mp4": out["bytes"]}
+    finally:
+        call("document.close")
+
+
+@step
+def paint_sunset_scenario():
+    """The README prompt as an agent would do it: paint a sunset over mountains with real brushes (1200x800),
+    look at it, improve it, and check the result numerically (scripts/paint_sunset.py)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import paint_sunset
+    lines = []
+    try:
+        result = paint_sunset.paint(call, OUT, log=lines.append)
+        problems = paint_sunset.check(result)
+        expect(not problems, "; ".join(problems))
+    finally:
+        call("document.close")
+    return {"layers": len(result["layers"]), "contrast": [round(result["before"]["contrast"], 2),
+                                                          round(result["after"]["contrast"], 2)]}
+
+
+@step
 def export_layer():
     r = call("document.export", path="layer_only.png", layer=STATE["shapes"])
     r2 = call("document.export", path="q.jpg", quality=40)

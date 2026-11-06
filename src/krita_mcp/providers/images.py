@@ -40,6 +40,9 @@ class ImageJob:
     mask_alpha: Optional[bytes] = None  # RGBA PNG, transparent = regenerate (OpenAI convention)
     workflow: Optional[dict] = None  # ComfyUI API-format graph with {{placeholders}}
     extra: dict = field(default_factory=dict)  # provider-specific inputs, passed through
+    # guidance images (ControlNet & co): [{"image": png, "type": "lineart", "model", "strength", "start",
+    # "end", "preprocess"}]
+    controls: list = field(default_factory=list)
 
     def strength_or_default(self):
         if self.strength is not None:
@@ -50,8 +53,27 @@ class ImageJob:
         return int(self.seed) if self.seed is not None else random.randint(0, 2**31 - 1)
 
 
+LINE_TYPES = ("lineart", "scribble", "sketch", "canny", "softedge", "mlsd", "lineart_anime")
+
+
+def pick_control_model(models, ctype, given=None):
+    """The ControlNet model to use: the one given, else the first whose name mentions the control type."""
+    if given:
+        return given
+    ctype = (ctype or "").lower()
+    aliases = {"sketch": ("scribble", "lineart", "sketch"), "lineart": ("lineart", "line"), "edges": ("canny",),
+               "pose": ("openpose", "pose")}.get(ctype, (ctype,))
+    for a in aliases:
+        for m in models:
+            if a and a in m.lower():
+                return m
+    raise ProviderError("no ControlNet model for type %r; pass control model=... (installed: %s)"
+                        % (ctype, ", ".join(models[:20]) or "none"))
+
+
 class Backend:
     name = ""
+    native_control = False  # True: real ControlNet (wants white lines on black for line types)
     kind = "cloud"  # local | cloud
     mask_format = "gray"  # gray | alpha
     multiple = 8  # generation sizes are rounded to this
@@ -78,9 +100,16 @@ def _b64(b):
     return base64.b64encode(b).decode()
 
 
+def _guided(job, prefix):
+    """A txt2img job with a guide image, turned into an edit of that image (for APIs without ControlNet)."""
+    from dataclasses import replace
+    return replace(job, mode="img2img", image=job.controls[0]["image"], prompt=prefix + job.prompt, controls=[])
+
+
 # ====================================================================== AUTOMATIC1111 / Forge / SD.Next
 class A1111(Backend):
     name, kind = "a1111", "local"
+    native_control = True
 
     def __init__(self):
         self.url = env("KRITA_MCP_A1111_URL", "http://127.0.0.1:7860").rstrip("/")
@@ -104,7 +133,26 @@ class A1111(Backend):
                 out[key] = [s.get("name") for s in self._get(path, 5)][:100]
             except ProviderError:
                 pass
+        try:  # sd-webui-controlnet extension
+            out["controlnet_models"] = self._get("/controlnet/model_list", 5).get("model_list", [])[:100]
+        except ProviderError:
+            pass
         return out
+
+    def _controlnet(self, job):
+        models = None
+        units = []
+        for c in job.controls:
+            model = c.get("model")
+            if not model:
+                if models is None:
+                    models = self._get("/controlnet/model_list", 10).get("model_list", [])
+                model = pick_control_model(models, c.get("type"))
+            units.append({"enabled": True, "image": _b64(c["image"]), "module": c.get("preprocess") or "none",
+                          "model": model, "weight": float(c.get("strength", 1.0)),
+                          "guidance_start": float(c.get("start", 0.0)), "guidance_end": float(c.get("end", 1.0)),
+                          "pixel_perfect": True, "resize_mode": "Crop and Resize"})
+        return {"controlnet": {"args": units}}
 
     def generate(self, job):
         body = {"prompt": job.prompt, "negative_prompt": job.negative, "width": job.width, "height": job.height,
@@ -117,6 +165,8 @@ class A1111(Backend):
         if job.model:
             body["override_settings"] = {"sd_model_checkpoint": job.model}
             body["override_settings_restore_afterwards"] = True
+        if job.controls:
+            body["alwayson_scripts"] = self._controlnet(job)
         if job.mode == "txt2img":
             body.update(job.extra)
             r = self._post("/sdapi/v1/txt2img", body)
@@ -154,6 +204,7 @@ class A1111(Backend):
 # ====================================================================== ComfyUI
 class ComfyUI(Backend):
     name, kind = "comfyui", "local"
+    native_control = True
 
     def __init__(self):
         self.url = env("KRITA_MCP_COMFYUI_URL", "http://127.0.0.1:8188").rstrip("/")
@@ -174,7 +225,8 @@ class ComfyUI(Backend):
             return {"configured": True, "reachable": False, "url": self.url, "error": str(e)}
         out = {"configured": True, "reachable": True, "url": self.url, "models": ckpts[:200]}
         for key, node, inp in (("samplers", "KSampler", "sampler_name"), ("schedulers", "KSampler", "scheduler"),
-                               ("upscalers", "UpscaleModelLoader", "model_name")):
+                               ("upscalers", "UpscaleModelLoader", "model_name"),
+                               ("controlnet_models", "ControlNetLoader", "control_net_name")):
             try:
                 out[key] = self._choices(node, inp)[:200]
             except (ProviderError, KeyError, IndexError, TypeError):
@@ -218,13 +270,24 @@ class ComfyUI(Backend):
             raise ProviderError("ComfyUI finished but produced no images (does the workflow have a SaveImage node?)")
         return imgs
 
-    def graph(self, job, ckpt, image_name=None, mask_name=None):
+    def graph(self, job, ckpt, image_name=None, mask_name=None, controls=()):
+        """controls: [(uploaded image name, control model, settings dict)]"""
         seed = job.seed_or_random()
         g = {
             "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": ckpt}},
             "6": {"class_type": "CLIPTextEncode", "inputs": {"text": job.prompt, "clip": ["4", 1]}},
             "7": {"class_type": "CLIPTextEncode", "inputs": {"text": job.negative or "", "clip": ["4", 1]}},
         }
+        pos, neg = ["6", 0], ["7", 0]
+        for i, (name, model, c) in enumerate(controls):
+            a, b, k = str(20 + 3 * i), str(21 + 3 * i), str(22 + 3 * i)
+            g[a] = {"class_type": "LoadImage", "inputs": {"image": name}}
+            g[b] = {"class_type": "ControlNetLoader", "inputs": {"control_net_name": model}}
+            g[k] = {"class_type": "ControlNetApplyAdvanced", "inputs": {
+                "positive": pos, "negative": neg, "control_net": [b, 0], "image": [a, 0],
+                "strength": float(c.get("strength", 1.0)), "start_percent": float(c.get("start", 0.0)),
+                "end_percent": float(c.get("end", 1.0))}}
+            pos, neg = [k, 0], [k, 1]
         if job.mode == "txt2img":
             g["5"] = {"class_type": "EmptyLatentImage",
                       "inputs": {"width": job.width, "height": job.height, "batch_size": job.count}}
@@ -243,7 +306,7 @@ class ComfyUI(Backend):
         g["3"] = {"class_type": "KSampler", "inputs": {
             "seed": seed, "steps": job.steps or 25, "cfg": job.cfg or 7.0, "sampler_name": job.sampler or "euler",
             "scheduler": job.scheduler or "normal", "denoise": job.strength_or_default(),
-            "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": latent}}
+            "model": ["4", 0], "positive": pos, "negative": neg, "latent_image": latent}}
         g["8"] = {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}}
         g["9"] = {"class_type": "SaveImage", "inputs": {"filename_prefix": "krita-mcp", "images": ["8", 0]}}
         return g, seed
@@ -251,13 +314,18 @@ class ComfyUI(Backend):
     def generate(self, job):
         image_name = self.upload(job.image) if job.image is not None and job.mode != "txt2img" else None
         mask_name = self.upload(job.mask) if job.mask is not None and job.mode == "inpaint" else None
+        control_names = [self.upload(c["image"]) for c in job.controls]
         if job.workflow:
             seed = job.seed_or_random()
-            graph = fill_workflow(job.workflow, {
+            values = {
                 "prompt": job.prompt, "negative": job.negative or "", "seed": seed, "width": job.width,
                 "height": job.height, "count": job.count, "steps": job.steps or 25, "cfg": job.cfg or 7.0,
                 "strength": job.strength_or_default(), "denoise": job.strength_or_default(),
-                "image": image_name or "", "mask": mask_name or "", "model": job.model or ""})
+                "image": image_name or "", "mask": mask_name or "", "model": job.model or "",
+                "control": control_names[0] if control_names else ""}
+            for i, name in enumerate(control_names, 1):
+                values["control_%d" % i] = name
+            graph = fill_workflow(job.workflow, values)
         else:
             ckpt = job.model
             if not ckpt:
@@ -265,7 +333,12 @@ class ComfyUI(Backend):
                 if not ckpts:
                     raise ProviderError("ComfyUI has no checkpoints in models/checkpoints")
                 ckpt = ckpts[0]
-            graph, seed = self.graph(job, ckpt, image_name, mask_name)
+            controls = []
+            if job.controls:
+                models = self._choices("ControlNetLoader", "control_net_name")
+                controls = [(name, pick_control_model(models, c.get("type"), c.get("model")), c)
+                            for name, c in zip(control_names, job.controls)]
+            graph, seed = self.graph(job, ckpt, image_name, mask_name, controls)
         imgs = self.run(graph)
         return imgs[:max(job.count, 1)] if not job.workflow else imgs, {"seed": seed,
                                                                          "model": job.model or "workflow"}
@@ -329,6 +402,8 @@ class OpenAIImages(Backend):
     def generate(self, job):
         if not self.key:
             raise ProviderError("OpenAI is not configured: set KRITA_MCP_OPENAI_API_KEY")
+        if job.mode == "txt2img" and job.controls:  # no ControlNet: give the sketch as the image to work from
+            job = _guided(job, "Use the provided image as the layout and line guide (keep its composition). ")
         model = job.model or self.model
         size = "%dx%d" % (job.width, job.height)
         prompt = job.prompt + ("\nAvoid: " + job.negative if job.negative else "")
@@ -387,6 +462,9 @@ class Gemini(Backend):
         model = job.model or self.model
         text = job.prompt + ("\nAvoid: " + job.negative if job.negative else "")
         parts = []
+        if job.mode == "txt2img" and job.controls:
+            parts.append({"inline_data": {"mime_type": "image/png", "data": _b64(job.controls[0]["image"])}})
+            text = "Follow the composition and lines of this guide image exactly. Create: " + text
         if job.mode != "txt2img":
             parts.append({"inline_data": {"mime_type": "image/png", "data": _b64(job.image)}})
             if job.mode == "inpaint":
@@ -451,6 +529,12 @@ class Stability(Backend):
                 data, s = self._post("/v2beta/stable-image/generate/sd3", fields + extra + [
                     ("mode", "image-to-image"), ("strength", job.strength_or_default()),
                     ("model", job.model or "sd3.5-large")], [("image", "image.png", job.image, "image/png")])
+            elif job.controls:
+                c = job.controls[0]
+                kind = "sketch" if (c.get("type") or "sketch") in LINE_TYPES else "structure"
+                data, s = self._post("/v2beta/stable-image/control/" + kind, fields + extra + [
+                    ("control_strength", c.get("strength", 0.7))],
+                    [("image", "control.png", c["image"], "image/png")])
             else:
                 aspect = ("aspect_ratio", http.nearest_aspect(job.width, job.height))
                 if job.model and job.model.startswith("sd3"):
@@ -579,6 +663,16 @@ class Replicate(Backend):
                 inp[name] = job.strength_or_default()
         if job.mode == "inpaint" and job.mask is not None:
             inp[_first(props, REPLICATE_FIELDS["mask"]) or "mask"] = http.data_uri(job.mask)
+        if job.controls:
+            name = _first(props, ("control_image", "control", "structure_image", "sketch_image", "conditioning_image"))
+            if not name:
+                raise ProviderError("this Replicate model has no control-image input; choose a ControlNet model "
+                                    "or pass the input name via extra")
+            inp[name] = http.data_uri(job.controls[0]["image"])
+            for key in ("control_strength", "controlnet_conditioning_scale", "conditioning_scale"):
+                if key in props:
+                    inp[key] = job.controls[0].get("strength", 1.0)
+                    break
         inp.update(job.extra)
         return inp
 
@@ -637,6 +731,9 @@ class Fal(Backend):
 
     def generate(self, job):
         model = job.model or self.defaults[job.mode]
+        if job.controls and not job.extra:
+            raise ProviderError("fal: pass the control model's own input names via extra (e.g. a ControlNet "
+                                "endpoint's control image field), or use comfyui / a1111 / stability for control")
         inp = {"prompt": job.prompt, "num_images": job.count, "output_format": "png"}
         if job.mode == "txt2img":
             inp["image_size"] = {"width": job.width, "height": job.height}

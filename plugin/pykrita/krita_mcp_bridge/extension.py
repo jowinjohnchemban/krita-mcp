@@ -11,6 +11,7 @@ except ImportError:  # Krita 5
     from PyQt5.QtCore import QTimer
 
 from . import handlers, util
+from .util import i18n
 from .handlers import dispatch
 from .protocol import DEFAULT_PORT, BridgeServer
 
@@ -56,11 +57,11 @@ class KritaMcpBridge(Extension):
             self.start()
 
     def createActions(self, window):
-        toggle = window.createAction("krita_mcp_toggle", "Krita MCP Bridge: start / stop", "tools/scripts")
+        toggle = window.createAction("krita_mcp_toggle", i18n("Krita MCP Bridge: start / stop"), "tools/scripts")
         toggle.triggered.connect(self.toggle)
-        info = window.createAction("krita_mcp_info", "Krita MCP Bridge: show status", "tools/scripts")
+        info = window.createAction("krita_mcp_info", i18n("Krita MCP Bridge: show status"), "tools/scripts")
         info.triggered.connect(self.show_info)
-        panel = window.createAction("krita_mcp_panel", "Krita MCP Bridge: show panel", "tools/scripts")
+        panel = window.createAction("krita_mcp_panel", i18n("Krita MCP Bridge: show panel"), "tools/scripts")
         panel.triggered.connect(lambda: self.show_panel())
         if INTRODUCE_PANEL and setting("panel_introduced", "false") != "true":  # open it once for new users
             QTimer.singleShot(3000, lambda: self.show_panel(first_time=True))
@@ -125,17 +126,17 @@ class KritaMcpBridge(Extension):
     def toggle(self):
         if self.running:
             self.stop()
-            self._status("Krita MCP bridge stopped")
+            self._status(i18n("Krita MCP bridge stopped"))
         else:
             self.start()
             self.show_info()
 
     def show_info(self):
         if self.running:
-            self._status("Krita MCP bridge listening on %s:%d (token in ~/.krita-mcp/token)"
+            self._status(i18n("Krita MCP bridge listening on %s:%d (token in ~/.krita-mcp/token)")
                          % (self.server.host, self.server.port))
         else:
-            self._status("Krita MCP bridge is NOT running")
+            self._status(i18n("Krita MCP bridge is NOT running"))
 
     def _status(self, msg):
         _log(msg)

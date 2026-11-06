@@ -27,6 +27,7 @@ scripts/
   build_plugin.py              build the installable plugin zip
   gen_tool_docs.py             regenerate docs/tools.md
   smoke_krita.py               end-to-end test against a real running Krita
+  paint_sunset.py              agent scenario: paint a sunset with real brushes, look, improve, check
 ```
 
 ## Tests
@@ -48,7 +49,8 @@ current.
 With the plugin installed and Krita running:
 
 ```bash
-python scripts/smoke_krita.py               # every command, ~50 checks, snapshots in smoke_out/
+python scripts/smoke_krita.py               # every command, 56 checks, snapshots in smoke_out/
+python scripts/paint_sunset.py --out DIR    # the sunset scenario on its own (--keep leaves it open)
 python scripts/smoke_krita.py --only video  # one step (plus app_info)
 ```
 

@@ -57,13 +57,13 @@ up to the Krita maintainers. This page covers how to propose it and what they ar
 >   by hand in the meantime.
 >
 > **Tests:** unit tests run with PyQt5 and PyQt6 against a fake `krita` module. There is also an
-> end-to-end smoke test with 54 steps, last run against Krita 5.3.4 on Windows. Upstream project:
+> end-to-end smoke test with 56 steps, last run against Krita 5.3.4 on Windows. Upstream project:
 > https://github.com/jowinjohnchemban/krita-mcp (MIT; Krita's `LICENSES/` already contains MIT).
 
 ## What reviewers are likely to ask
 
-- **Translations.** Bundled plugins wrap user-visible strings in `i18n()`. The docker's strings are not
-  wrapped yet; expect to be asked for this.
+- **Translations.** The docker's and actions' strings go through Krita's `i18n()`, like other bundled
+  plugins. Reviewers may still ask for context strings (`i18nc`) in places.
 - **Scope.** This is a large plugin (about 5,000 lines). Maintainers may prefer it to stay a separately
   installed plugin. In that case, share the release zip on
   [krita-artists.org](https://krita-artists.org) (*Resources ▸ Plugins*) and the KDE Store. Users

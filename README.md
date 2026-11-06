@@ -15,7 +15,7 @@ It works with any MCP client: Claude, ChatGPT, Gemini, Cursor, VS Code Copilot, 
 AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
 ```
 
-## What the AI can do (80 tools + 6 workflow prompts)
+## What the AI can do (82 tools + 7 workflow prompts)
 
 - **Paint like an artist.** It uses Krita's real brush engine with any preset, pressure and eraser,
   plus crisp shapes and gradients, editable SVG vectors and text, procedural SeExpr textures,
@@ -26,15 +26,21 @@ AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token�
 - **Edit photos.** Exact levels, curves, exposure and temperature; hue/saturation, colour balance,
   sharpen, denoise, blur and about 25 more; auto-enhance; vignette; non-destructive filter masks;
   16-bit colour spaces.
+- **Just give it a prompt.** `create_artwork` decides: realistic or photographic requests are
+  **generated** (with looks like `photo`, `cinematic`, `portrait` or `product`, plus negative prompts
+  that remove AI artefacts). Hand-made requests, or setups with no model connected, are **painted**
+  in Krita, with prepared layers, guides and a painting plan.
 - **Generate with any image model, right on the canvas.** It works with ComfyUI (including your own
   workflows: Flux, ControlNet, IP-Adapter, …), AUTOMATIC1111/Forge, OpenAI, Gemini, Stability AI,
   Replicate and fal.ai. You can generate from text, rework a region (img2img), inpaint a selection,
   outpaint beyond the edges, upscale, and remove backgrounds. Several variations at once come with a
-  numbered comparison sheet. `match_colors` blends a generated element into the scene. Results always
+  numbered comparison sheet. You can also paint a sketch layer and let ControlNet follow it.
+  `match_colors` blends a generated element into the scene. Results always
   land on new layers, cut to your selection, and each placement is one undo step.
 - **Video and a second opinion.** Generate video with Sora, Veo, HeyGen talking avatars (they can even
   make your painted character talk) or any Replicate/fal video model. It opens in Krita as an animation
-  you can edit. `ask_vision` gets a critique, caption or prompt from Claude, GPT or Gemini (or a local
+  you can edit. Cinematic camera moves (dolly, orbit, crane, FPV, crash zoom…) steer video models,
+  and `camera_move` animates any still inside Krita without AI. `ask_vision` gets a critique, caption or prompt from Claude, GPT or Gemini (or a local
   Ollama model).
 - **Animate and edit video.** Keyframes, onion skin, frame contact sheets, importing video from
   mp4/mov/webm/gif, grading every frame (`for_each_frame`), and rendering to mp4/webm/gif/ProRes with
@@ -46,7 +52,7 @@ AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token�
   own work.
 - **`batch` and `for_each_frame`** let the AI do many steps in one call.
 
-Built-in **prompts** (`generative_inpaint`, `concept_variations`, `retouch_photo`, `product_shot`,
+Built-in **prompts** (`create`, `generative_inpaint`, `concept_variations`, `retouch_photo`, `product_shot`,
 `paint_scene`, `animate`) appear as slash commands in clients that support MCP prompts.
 
 An **AI Bridge (MCP)** panel inside Krita shows the status and a live activity log. From it you can
@@ -111,7 +117,7 @@ See [Connecting AI services](docs/ai-backends.md).
 |---|---|
 | [Connecting AI services](docs/ai-backends.md) | ComfyUI, A1111, OpenAI, Gemini, Stability, Replicate, fal, HeyGen, Sora, Veo, Claude |
 | [Workflows](docs/workflows.md) | Painting, photo retouching, inpainting, line art, animation, video |
-| [Tool reference](docs/tools.md) | All 80 tools, their parameters, and the prompts |
+| [Tool reference](docs/tools.md) | All 82 tools, their parameters, and the prompts |
 | [Undo, safety and limits](docs/undo-and-safety.md) | How undo works, the security model, access modes |
 | [Development](docs/development.md) | Architecture, tests, real-Krita smoke test, adding tools |
 | [Krita upstream](docs/krita-upstream.md) | Proposing the plugin for bundling with Krita itself |
@@ -126,8 +132,10 @@ the AI to read-only or pause it from the panel at any time. Full details:
 
 ## Status
 
-The project is tested against **Krita 5.3.4 on Windows**. `scripts/smoke_krita.py` runs 54 end-to-end
-checks against a running Krita, including an undo matrix over every kind of edit. Unit tests run on
+The project is tested against **Krita 5.3.4 on Windows**. `scripts/smoke_krita.py` runs 56 end-to-end
+checks against a running Krita, including an undo matrix over every kind of edit and the Quick start's
+sunset prompt. `scripts/paint_sunset.py` paints the sunset with real brushes, looks at it, improves it and
+checks the result. Unit tests run on
 Linux and Windows with PyQt5 and PyQt6 in CI. Krita 6 is covered by the PyQt6 unit tests but has not
 yet been run end to end.
 

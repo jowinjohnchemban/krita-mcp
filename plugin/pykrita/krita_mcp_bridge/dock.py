@@ -26,6 +26,7 @@ except ImportError:  # Krita 5
     _RICH = Qt.RichText
 
 from . import extension, handlers, history, protocol, util
+from .util import i18n
 
 ACCESS_MODES = [("full", "Full access"), ("read_only", "Read only (AI can look, not edit)"),
                 ("paused", "Paused (AI blocked)")]
@@ -69,7 +70,7 @@ def client_snippet(client, cmd, port):
 class McpDocker(DockWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("AI Bridge (MCP)")
+        self.setWindowTitle(i18n("AI Bridge (MCP)"))
         root = QWidget(self)
         lay = QVBoxLayout(root)
 
@@ -85,55 +86,56 @@ class McpDocker(DockWidget):
 
         self.access = QComboBox()
         for key, label in ACCESS_MODES:
+            label = i18n(label)
             self.access.addItem(label, key)
         self.access.currentIndexChanged.connect(self._access_changed)
         form = QFormLayout()
-        form.addRow("AI access", self.access)
+        form.addRow(i18n("AI access"), self.access)
         lay.addLayout(form)
 
         # --- settings
-        box = QGroupBox("Settings")
+        box = QGroupBox(i18n("Settings"))
         f = QFormLayout(box)
         self.port = QSpinBox()
         self.port.setRange(1024, 65535)
         self.port.editingFinished.connect(self._port_changed)
-        f.addRow("Port", self.port)
-        self.autostart = QCheckBox("Start with Krita")
+        f.addRow(i18n("Port"), self.port)
+        self.autostart = QCheckBox(i18n("Start with Krita"))
         self.autostart.toggled.connect(lambda v: extension.set_setting("autostart", "true" if v else "false"))
         f.addRow("", self.autostart)
         ws_row = QHBoxLayout()
         self.workspace = QLineEdit()
         self.workspace.setReadOnly(True)
         browse = QPushButton("…")
-        browse.setToolTip("Choose the folder the AI may read and write")
+        browse.setToolTip(i18n("Choose the folder the AI may read and write"))
         browse.clicked.connect(self._choose_workspace)
-        open_ws = QPushButton("Open")
+        open_ws = QPushButton(i18n("Open"))
         open_ws.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(util.workspace_root()))))
         ws_row.addWidget(self.workspace, 1)
         ws_row.addWidget(browse)
         ws_row.addWidget(open_ws)
-        f.addRow("Workspace", ws_row)
+        f.addRow(i18n("Workspace"), ws_row)
         tok_row = QHBoxLayout()
         tok_row.setSpacing(2)
         self.token = QLineEdit()
         self.token.setReadOnly(True)
         self.token.setEchoMode(_PASSWORD)
         self.token.setMinimumWidth(80)
-        show = QPushButton("Show")
+        show = QPushButton(i18n("Show"))
         show.setCheckable(True)
         show.toggled.connect(lambda v: self.token.setEchoMode(_NORMAL if v else _PASSWORD))
-        copy_tok = QPushButton("Copy")
+        copy_tok = QPushButton(i18n("Copy"))
         copy_tok.clicked.connect(lambda: QGuiApplication.clipboard().setText(self.token.text()))
-        regen = QPushButton("New")
-        regen.setToolTip("Generate a new token (connected clients must restart)")
+        regen = QPushButton(i18n("New"))
+        regen.setToolTip(i18n("Generate a new token (connected clients must restart)"))
         regen.clicked.connect(self._regenerate)
         for w in (self.token, show, copy_tok, regen):
             tok_row.addWidget(w, 1 if w is self.token else 0)
-        f.addRow("Token", tok_row)
+        f.addRow(i18n("Token"), tok_row)
         lay.addWidget(box)
 
         # --- connect a client
-        box = QGroupBox("Connect an AI client")
+        box = QGroupBox(i18n("Connect an AI client"))
         v = QVBoxLayout(box)
         self.client = QComboBox()
         self.client.addItems(CLIENTS)
@@ -144,25 +146,25 @@ class McpDocker(DockWidget):
         self.snippet = QPlainTextEdit()
         self.snippet.setReadOnly(True)
         self.snippet.setMaximumHeight(130)
-        copy_snip = QPushButton("Copy")
+        copy_snip = QPushButton(i18n("Copy"))
         copy_snip.clicked.connect(lambda: QGuiApplication.clipboard().setText(self.snippet.toPlainText()))
         v.addWidget(self.client)
         cf = QFormLayout()
-        cf.addRow("Server command", self.command)
+        cf.addRow(i18n("Server command"), self.command)
         v.addLayout(cf)
         v.addWidget(self.snippet)
         v.addWidget(copy_snip)
         lay.addWidget(box)
 
         # --- AI edits
-        box = QGroupBox("AI edits in this document")
+        box = QGroupBox(i18n("AI edits in this document"))
         v = QVBoxLayout(box)
         self.edits = QLabel("-")
         self.edits.setWordWrap(True)
         row = QHBoxLayout()
-        undo = QPushButton("Undo AI edit")
+        undo = QPushButton(i18n("Undo AI edit"))
         undo.clicked.connect(lambda: self._history("history.undo"))
-        redo = QPushButton("Redo")
+        redo = QPushButton(i18n("Redo"))
         redo.clicked.connect(lambda: self._history("history.redo"))
         row.addWidget(undo)
         row.addWidget(redo)
@@ -171,11 +173,11 @@ class McpDocker(DockWidget):
         lay.addWidget(box)
 
         # --- activity
-        box = QGroupBox("Activity")
+        box = QGroupBox(i18n("Activity"))
         v = QVBoxLayout(box)
         self.log = QListWidget()
         self.log.setMinimumHeight(120)
-        clear = QPushButton("Clear")
+        clear = QPushButton(i18n("Clear"))
         clear.clicked.connect(self._clear_log)
         v.addWidget(self.log)
         v.addWidget(clear)
@@ -218,13 +220,13 @@ class McpDocker(DockWidget):
         ext = self._ext()
         running = bool(ext and ext.running)
         if running:
-            self.status.setText("<b style='color:#3c3'>●</b> Running on %s:%d" % (ext.server.host, ext.server.port))
-            self.toggle_btn.setText("Stop")
+            self.status.setText("<b style='color:#3c3'>●</b> " + i18n("Running on %s:%d") % (ext.server.host, ext.server.port))
+            self.toggle_btn.setText(i18n("Stop"))
             self.token.setText(ext.server.token)
         else:
             err = (" - " + ext.last_error) if ext and ext.last_error else ""
-            self.status.setText("<b style='color:#c33'>●</b> Stopped%s" % err)
-            self.toggle_btn.setText("Start")
+            self.status.setText("<b style='color:#c33'>●</b> " + i18n("Stopped") + err)
+            self.toggle_btn.setText(i18n("Start"))
             try:
                 self.token.setText(protocol.load_or_create_token())
             except OSError:
@@ -234,9 +236,9 @@ class McpDocker(DockWidget):
         if doc is not None:
             h = history.listing(doc, 5)
             last = ", ".join(e["command"] for e in h["ai_edits"][-3:]) or "none yet"
-            self.edits.setText("Undoable: %d (last: %s) · redoable: %d" % (h["undo_count"], last, h["redo_count"]))
+            self.edits.setText(i18n("Undoable: %d (last: %s) · redoable: %d") % (h["undo_count"], last, h["redo_count"]))
         else:
-            self.edits.setText("No document open")
+            self.edits.setText(i18n("No document open"))
         self._append_activity()
 
     def _append_activity(self):
@@ -259,14 +261,14 @@ class McpDocker(DockWidget):
     def _toggle(self):
         ext = self._ext()
         if ext is None:
-            return self._say("The bridge extension is not loaded.")
+            return self._say(i18n("The bridge extension is not loaded."))
         if ext.running:
             ext.stop()
-            self._say("Stopped. AI clients cannot reach Krita now.")
+            self._say(i18n("Stopped. AI clients cannot reach Krita now."))
         elif ext.start():
-            self._say("Started.")
+            self._say(i18n("Started."))
         else:
-            self._say("Could not start: %s" % ext.last_error)
+            self._say(i18n("Could not start: %s") % ext.last_error)
         self.refresh()
 
     def _port_changed(self):
@@ -276,7 +278,7 @@ class McpDocker(DockWidget):
         extension.set_setting("port", self.port.value())
         if ext.running:
             ok = ext.restart()
-            self._say("Restarted on port %d." % self.port.value() if ok else "Could not start: %s" % ext.last_error)
+            self._say(i18n("Restarted on port %d.") % self.port.value() if ok else i18n("Could not start: %s") % ext.last_error)
         self._update_snippet()
         self.refresh()
 
@@ -284,15 +286,15 @@ class McpDocker(DockWidget):
         key = self.access.itemData(idx)
         handlers.ACCESS["mode"] = key
         extension.set_setting("access", key)
-        self._say(dict(ACCESS_MODES)[key])
+        self._say(i18n(dict(ACCESS_MODES)[key]))
 
     def _choose_workspace(self):
-        d = QFileDialog.getExistingDirectory(self, "Folder the AI may read and write", str(util.workspace_root()))
+        d = QFileDialog.getExistingDirectory(self, i18n("Folder the AI may read and write"), str(util.workspace_root()))
         if d:
             util.WORKSPACE_OVERRIDE = d
             extension.set_setting("workspace", d)
             self.refresh()
-            self._say("Workspace set. (KRITA_MCP_WORKSPACE, if set, still takes priority.)")
+            self._say(i18n("Workspace set. (KRITA_MCP_WORKSPACE, if set, still takes priority.)"))
 
     def _regenerate(self):
         tok = protocol.write_new_token()
@@ -300,7 +302,7 @@ class McpDocker(DockWidget):
         if ext and ext.server:
             ext.server.token = tok
         self.refresh()
-        self._say("New token written to ~/.krita-mcp/token. Restart connected AI clients.")
+        self._say(i18n("New token written to ~/.krita-mcp/token. Restart connected AI clients."))
 
     def _command_changed(self):
         extension.set_setting("client_command", self.command.text().strip() or "krita-mcp")
@@ -313,7 +315,7 @@ class McpDocker(DockWidget):
     def _history(self, method):
         try:
             r = handlers.HANDLERS[method]({})
-            self._say("%s: %s" % ("Undone" if method.endswith("undo") else "Redone",
+            self._say("%s: %s" % (i18n("Undone") if method.endswith("undo") else i18n("Redone"),
                                   ", ".join(e["command"] for e in r.get("undone", r.get("redone", [])))))
         except Exception as e:  # noqa: BLE001
             self._say(str(e))

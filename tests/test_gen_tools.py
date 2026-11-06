@@ -16,36 +16,6 @@ import krita_mcp.server as S  # noqa: E402
 from krita_mcp import gen_tools as G  # noqa: E402
 
 
-@pytest.fixture()
-def bridge(monkeypatch, tmp_path):
-    calls = []
-    state = {"has_selection": True}
-
-    def fake(method, params):
-        calls.append((method, params))
-        if method == "app.info":
-            return {"workspace": str(tmp_path), "documents": []}
-        if method == "gen.context":
-            out = {"region": [10, 20, 100, 50], "size": [512, 256], "has_selection": state["has_selection"],
-                   "canvas": [400, 300]}
-            if params.get("need_image", True):
-                out["image_png"] = B64
-            if params.get("need_mask"):
-                out["mask_png"] = B64
-            return out
-        if method == "gen.place":
-            n = len(params["images"])
-            out = {"layers": [{"id": "L%d" % i, "name": "v%d" % i} for i in range(n)], "region": params["region"],
-                   "sheet_png": B64}
-            if n > 1:
-                out["group"] = {"id": "G", "name": params["name"]}
-            return out
-        return {"ok": method}
-
-    monkeypatch.setattr(S._client, "call", fake)
-    return calls, state
-
-
 def test_tool_parameter_named_method_reaches_the_bridge(bridge):
     calls, _ = bridge
     asyncio.run(S.scale_image(width=10, height=20, method="NearestNeighbor"))
@@ -106,3 +76,33 @@ def test_prompts_are_registered():
     names = [p.name for p in asyncio.run(S.mcp.list_prompts())]
     assert {"generative_inpaint", "concept_variations", "retouch_photo", "product_shot"} <= set(names)
     assert base64.b64decode(B64)
+
+
+def test_control_guides_are_inverted_only_for_controlnet_backends(bridge, monkeypatch):
+    calls, state = bridge
+    state["has_selection"] = False
+    m = Mock()
+    try:
+        m.json("GET", "/controlnet/model_list", {"model_list": ["lineart-model"]})
+        m.json("POST", "/sdapi/v1/txt2img", {"images": [B64], "info": "{}"})
+        m.json("POST", "/v1/images/edits", {"data": [{"b64_json": B64}]})
+        monkeypatch.setenv("KRITA_MCP_A1111_URL", m.url)
+        monkeypatch.setenv("KRITA_MCP_OPENAI_BASE_URL", m.url + "/v1")
+        orig = S._client.call
+
+        def with_controls(method, params):
+            out = orig(method, params)
+            if method == "gen.context" and params.get("controls"):
+                out["control_pngs"] = [B64] * len(params["controls"])
+            return out
+        monkeypatch.setattr(S._client, "call", with_controls)
+        asyncio.run(G.generate_image("x", backend="a1111", control=[{"layer": "Sketch", "type": "lineart"}]))
+        assert dict(calls)["gen.context"]["controls"] == [{"layer": "Sketch", "invert": True}]
+        assert json.loads(m.calls[-1][3])["alwayson_scripts"]["controlnet"]["args"][0]["model"] == "lineart-model"
+        asyncio.run(G.generate_image("x", backend="openai", control={"layer": "Sketch", "type": "lineart"}))
+        ctx = [p for meth, p in calls if meth == "gen.context"][-1]
+        assert ctx["controls"] == [{"layer": "Sketch", "invert": False}]
+    finally:
+        m.srv.shutdown()
+    with pytest.raises(S.ToolError, match="unknown control keys"):
+        asyncio.run(G.generate_image("x", control={"layr": "Sketch"}))
