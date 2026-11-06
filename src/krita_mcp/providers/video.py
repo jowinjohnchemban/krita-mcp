@@ -138,12 +138,18 @@ class Sora:
         if not self.key:
             raise ProviderError("OpenAI is not configured: set KRITA_MCP_OPENAI_API_KEY")
         hdr = {"Authorization": "Bearer " + self.key}
-        size = http.nearest_size(job.width, job.height, ["1280x720", "720x1280"])
-        secs = min((4, 8, 12), key=lambda s: abs(s - (job.seconds or 4)))
+        # OpenAI cannot be asked which sizes / lengths a video model accepts: they are settings (with today's
+        # values as defaults), and a size or seconds given in `extra` is sent exactly as given.
+        sizes = env("KRITA_MCP_OPENAI_VIDEO_SIZES", "1280x720,720x1280").split(",")
+        lengths = [float(x) for x in env("KRITA_MCP_OPENAI_VIDEO_SECONDS", "4,8,12").split(",")]
+        size = http.nearest_size(job.width, job.height, sizes)
+        secs = min(lengths, key=lambda s: abs(s - (job.seconds or lengths[0])))
         model = job.model or self.model or catalog.first(catalog.openai_models(self.base, self.key, "video"),
                                                          "OpenAI video model")
-        fields = [("model", model), ("prompt", job.prompt), ("size", size), ("seconds", str(secs))]
-        fields += [(k, v if isinstance(v, str) else json.dumps(v)) for k, v in job.extra.items()]
+        extra = dict(job.extra)
+        size, secs = extra.pop("size", size), extra.pop("seconds", secs)
+        fields = [("model", model), ("prompt", job.prompt), ("size", size), ("seconds", "%g" % float(secs))]
+        fields += [(k, v if isinstance(v, str) else json.dumps(v)) for k, v in extra.items()]
         files = [("input_reference", "frame.png", job.image, "image/png")] if job.image is not None else []
         body, ctype = http.multipart(fields, files)
         data, _ = http.request("POST", self.base + "/videos", body, dict(hdr, **{"Content-Type": ctype}))

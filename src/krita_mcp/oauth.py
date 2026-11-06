@@ -16,7 +16,7 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .providers import http, keys
+from .providers import compat, http, keys
 from .providers.http import ProviderError, env
 
 TIMEOUT = 600  # OpenRouter codes expire after 10 minutes
@@ -148,6 +148,8 @@ def verify(provider, key):
                                     "https://api.openai.com/v1" if provider == "openai"
                                     else "https://openrouter.ai/api/v1")
             http.get_json(base + "/models", {"Authorization": "Bearer " + key}, timeout=20)
+        elif provider in compat.COMPAT:
+            http.get_json(compat.base_url(provider) + "/models", {"Authorization": "Bearer " + key}, timeout=20)
         elif provider == "anthropic":
             try:
                 import anthropic

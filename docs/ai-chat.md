@@ -14,6 +14,7 @@ the chat, and its edits can be undone like any other AI edit.
 | Anthropic Claude | An API key from the [Anthropic Console](https://console.anthropic.com/settings/keys) (needs `pip install "krita-mcp[anthropic]"`) |
 | OpenAI / compatible | An OpenAI key, or the URL of any OpenAI-compatible service (a gateway, …) |
 | OpenRouter | **Sign in with browser**, no key to copy. One account reaches Gemini, Claude, GPT and hundreds of other models; leave the model empty to use your OpenRouter default, or enter one such as `anthropic/claude-sonnet-4.6` |
+| Mistral, Groq, DeepSeek, xAI Grok, Together, Fireworks, Cerebras, Hugging Face, NVIDIA, Qwen, Moonshot | An API key (**Get a key in the browser**); see [more providers](ai-backends.md#more-providers-openai-compatible) |
 | Local model | Nothing: point it at [Ollama](https://ollama.com) (`http://127.0.0.1:11434/v1`) or LM Studio (`http://127.0.0.1:1234/v1`) |
 
 The model box lists the models your account can use, loaded live from the provider (⟳ reloads it).
@@ -39,8 +40,10 @@ answers.
 
 **Services…** lists every AI service krita-mcp can use:
 
-- **Chat models:** Gemini, Claude, OpenAI, local models.
-- **Image and video generators:** Stability, Replicate, fal.ai, HeyGen.
+- **Chat models:** Gemini, Claude, OpenAI, OpenRouter, Mistral, Groq, DeepSeek, xAI, Together, Fireworks,
+  Cerebras, Hugging Face, NVIDIA, Qwen, Moonshot, local models. The provider list comes from the assistant
+  service, so new providers appear without updating the plugin.
+- **Image and video generators:** Stability, Replicate, fal.ai, HeyGen, xAI, Together.
 - **Local servers:** ComfyUI and AUTOMATIC1111/Forge, configured by URL.
 
 Click **Sign in** next to a service and paste its key, or its server URL.

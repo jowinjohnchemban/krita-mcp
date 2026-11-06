@@ -366,8 +366,27 @@ class ChatDocker(DockWidget):
     # ---------------------------------------------------------------- sign in
     def _got_health(self, health):
         self.providers = (health or {}).get("providers", {})
+        self._sync_providers()
         self._show_account()
         self._refresh_models()
+
+    def _sync_providers(self):
+        """The chat providers come from the assistant service, so new ones appear without a plugin update."""
+        chats = [(k, v.get("label", k)) for k, v in self.providers.items() if v.get("chat")]
+        if not chats or [self.provider.itemData(i) for i in range(self.provider.count())] == [k for k, _ in chats]:
+            return
+        current = self._key()
+        self.provider.blockSignals(True)
+        try:
+            self.provider.clear()
+            for key, label in chats:
+                self.provider.addItem(label, key)
+            idx = self.provider.findData(current)
+            self.provider.setCurrentIndex(idx if idx >= 0 else 0)
+        finally:
+            self.provider.blockSignals(False)
+        if self._key() != current:
+            self._provider_changed()
 
     # ---------------------------------------------------------------- live model list
     AUTO = "Auto (newest)"
@@ -484,6 +503,7 @@ class ChatDocker(DockWidget):
 
     def _signed(self, result):
         self.providers = (result or {}).get("providers", self.providers)
+        self._sync_providers()
         self._show_account()
         self._refresh_models()
         if getattr(self, "services_dialog", None) is not None:

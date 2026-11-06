@@ -3,7 +3,7 @@ endpoint such as Ollama / LM Studio / OpenRouter) and get text back - critique, 
 image model, an art-direction checklist."""
 import base64
 
-from . import catalog, gemini, http
+from . import catalog, compat, gemini, http
 from .http import ProviderError, env, secret
 from .images import GEMINI_BASE
 
@@ -45,9 +45,14 @@ def ask_anthropic(png, question, model=None, max_tokens=4000):
     return text, {"model": resp.model}
 
 
-def ask_openai(png, question, model=None, max_tokens=4000):
-    base = http.service_url("KRITA_MCP_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
-    key = secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY") or ("local" if http.is_loopback_url(base) else None)
+def ask_openai(png, question, model=None, max_tokens=4000, service="openai"):
+    if service in compat.COMPAT:
+        base, key = compat.base_url(service), compat.need_key(service)
+        model = model or catalog.first(compat.chat_models(service), "%s model" % service)
+    else:
+        base = http.service_url("KRITA_MCP_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
+        key = secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY") or ("local" if http.is_loopback_url(base)
+                                                                     else None)
     if not key:
         raise ProviderError("OpenAI is not configured: set KRITA_MCP_OPENAI_API_KEY (or a local "
                             "KRITA_MCP_OPENAI_BASE_URL such as Ollama's http://127.0.0.1:11434/v1)")
@@ -80,6 +85,8 @@ def ask_gemini(png, question, model=None, max_tokens=4000):
 
 
 PROVIDERS = {"anthropic": ask_anthropic, "openai": ask_openai, "gemini": ask_gemini}
+for _name in compat.COMPAT:
+    PROVIDERS[_name] = (lambda n: lambda png, q, model=None: ask_openai(png, q, model, service=n))(_name)
 ALIASES = {"claude": "anthropic", "gpt": "openai", "chatgpt": "openai", "google": "gemini", "ollama": "openai"}
 
 
@@ -87,7 +94,8 @@ def configured():
     base = env("KRITA_MCP_OPENAI_BASE_URL", "")
     return {"anthropic": bool(secret("KRITA_MCP_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")),
             "openai": bool(secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY")) or http.is_loopback_url(base or "x:"),
-            "gemini": bool(secret("KRITA_MCP_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"))}
+            "gemini": bool(secret("KRITA_MCP_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")),
+            **{n: bool(compat.api_key(n)) for n in compat.COMPAT}}
 
 
 def ask(png, question, provider=None, model=None):

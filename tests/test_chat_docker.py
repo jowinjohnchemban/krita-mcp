@@ -221,3 +221,13 @@ def test_starting_the_assistant_service_for_real(chat, monkeypatch):
     assert c.extension.bridge_port() == 5676
     monkeypatch.setattr(c.extension, "INSTANCE", None)
     assert c.extension.bridge_port() == 5679  # nothing running: the configured / default port
+
+
+def test_provider_list_comes_from_the_service(chat):
+    app, c, dock, sent = chat
+    dock.providers = {"gemini": {"chat": True, "label": "Google Gemini"},
+                      "mistral": {"chat": True, "label": "Mistral AI"},
+                      "fal": {"label": "fal.ai"}}  # not a chat provider
+    dock._sync_providers()
+    assert [dock.provider.itemText(i) for i in range(dock.provider.count())] == ["Google Gemini", "Mistral AI"]
+    assert dock._key() == "gemini"  # the current choice is kept

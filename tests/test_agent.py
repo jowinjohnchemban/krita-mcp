@@ -315,3 +315,29 @@ def test_openrouter_chat_omits_model_and_sends_attribution(home, bridge, monkeyp
     body, headers = json.loads(m.calls[-1][3]), m.calls[-1][2]
     assert events[-1]["text"] == "hi" and "model" not in body  # the account's default model
     assert headers["x-openrouter-title"] == "Krita MCP" and headers["authorization"] == "Bearer sk-or-v1-x"
+
+
+def test_chat_with_a_compatible_service(home, bridge, monkeypatch):
+    m = Mock()
+    try:
+        m.json("GET", "/mistral/models", {"data": [{"id": "mistral-embed", "created": 50},
+                                                   {"id": "mistral-large-2611", "created": 40},
+                                                   {"id": "ministral-8b", "created": 45}]})
+        m.json("POST", "/mistral/chat/completions", {"choices": [{"message": {"content": "Bonjour."}}]})
+        monkeypatch.setenv("KRITA_MCP_MISTRAL_BASE_URL", m.url + "/mistral")
+        agent.save_key("mistral", "m-key")
+        assert agent.available_models("mistral") == ["mistral-large-2611", "ministral-8b"]
+        events = _wait(agent.chat(None, "mistral", None, "hello"))
+    finally:
+        m.srv.shutdown()
+    assert [e["text"] for e in events if e["type"] == "note"] == ["Model: mistral-large-2611"]
+    assert events[-1]["text"] == "Bonjour." and agent.status()["mistral"]["chat"] is True
+    from krita_mcp import oauth
+    m2 = Mock()
+    try:
+        m2.routes[("GET", "/mistral/models")] = lambda h, b: (
+            200 if h.headers.get("Authorization") == "Bearer good" else 401, "application/json", b'{"data": []}')
+        monkeypatch.setenv("KRITA_MCP_MISTRAL_BASE_URL", m2.url + "/mistral")
+        assert oauth.verify("mistral", "good")[0] is True and oauth.verify("mistral", "bad")[0] is False
+    finally:
+        m2.srv.shutdown()

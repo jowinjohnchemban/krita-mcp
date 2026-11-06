@@ -22,7 +22,8 @@ def _openai_list(base, key, extra_headers=None):
     headers.update(extra_headers or {})
     r = http.get_json(base.rstrip("/") + "/models", headers, timeout=20)
     items = r.get("data") if isinstance(r, dict) else r
-    out = [{"id": m.get("id"), "created": m.get("created") or 0} for m in items or [] if m.get("id")]
+    out = [{"id": m.get("id"), "created": m.get("created") or 0, "type": (m.get("type") or "").lower()}
+           for m in items or [] if m.get("id")]
     return sorted(out, key=lambda m: m["created"], reverse=True)
 
 
@@ -30,17 +31,19 @@ def openai_models(base, key, purpose="chat"):
     """Model ids for a purpose (chat | image | video), newest first; full-size chat models before small ones."""
     models = _openai_list(base, key)
     if purpose == "image":
-        ids = [m["id"] for m in models if re.search(r"(gpt-image|dall-e)", m["id"])]
+        ids = [m["id"] for m in models if m["type"] == "image" or re.search(r"(gpt-image|dall-e|-image\b|image-)",
+                                                                              m["id"])]
     elif purpose == "video":
-        ids = [m["id"] for m in models if "sora" in m["id"]]
+        ids = [m["id"] for m in models if m["type"] == "video" or "sora" in m["id"]]
     else:
-        chat = [m for m in models if not NOT_CHAT.search(m["id"])]
+        chat = [m for m in models if not NOT_CHAT.search(m["id"])
+                and m["type"] in ("", "chat", "language", "code", "model", "vlm", "llm")]
         ids = [m["id"] for m in chat if not SMALL.search(m["id"])] + [m["id"] for m in chat if SMALL.search(m["id"])]
     return ids
 
 
 def local_models(base):
-    return [m["id"] for m in _openai_list(base, None)]
+    return [m["id"] for m in _openai_list(base, None) if not re.search(r"(embed|whisper|tts|rerank)", m["id"], re.I)]
 
 
 def openrouter_models(base, key):

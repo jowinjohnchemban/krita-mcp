@@ -455,3 +455,35 @@ def test_openverse_photos_carry_attribution(mock, monkeypatch):
                                          "attribution": "Granite by Ana is CC BY 2.0", "mature": False})
     mock.raw("GET", "/img/abc.jpg", PNG, "image/jpeg")
     assert assets.fetch("abc", "photos")[2] == "Granite by Ana is CC BY 2.0"
+
+
+# ---------------------------------------------------------------- OpenAI-compatible services
+def test_compatible_services_list_models_live(mock, monkeypatch):
+    from krita_mcp.providers import compat
+    monkeypatch.setenv("KRITA_MCP_TOGETHER_API_KEY", "t-key")
+    monkeypatch.setenv("KRITA_MCP_TOGETHER_BASE_URL", mock.url + "/tg")
+    mock.json("GET", "/tg/models", [  # Together answers with a bare list and labels each model's type
+        {"id": "meta-llama/Llama-5-70B", "type": "chat", "created": 300},
+        {"id": "black-forest-labs/FLUX.3-pro", "type": "image", "created": 310},
+        {"id": "black-forest-labs/FLUX.2-dev", "type": "image", "created": 200},
+        {"id": "togethercomputer/m2-bert", "type": "embedding", "created": 400}])
+    assert compat.chat_models("together") == ["meta-llama/Llama-5-70B"]
+    mock.json("POST", "/tg/images/generations", {"data": [{"b64_json": B64}]})
+    imgs, meta = images.get("together").generate(images.ImageJob(prompt="a fox", width=768, height=512))
+    sent = _body(mock.calls[-1])
+    assert imgs == [PNG] and meta["model"] == "black-forest-labs/FLUX.3-pro"
+    assert (sent["width"], sent["height"], sent["response_format"]) == (768, 512, "b64_json")
+    with pytest.raises(ProviderError, match="text-to-image only"):
+        images.get("together").generate(images.ImageJob(mode="inpaint", prompt="x", image=PNG, mask=PNG))
+    assert "together" in images.all_status() and images.all_status()["xai"]["configured"] is False
+
+
+def test_vision_through_a_compatible_service(mock, monkeypatch):
+    monkeypatch.setenv("KRITA_MCP_GROQ_API_KEY", "g-key")
+    monkeypatch.setenv("KRITA_MCP_GROQ_BASE_URL", mock.url + "/groq")
+    mock.json("GET", "/groq/models", {"data": [{"id": "whisper-large-v4", "created": 9},
+                                               {"id": "llama-5-vision", "created": 8}]})
+    mock.json("POST", "/groq/chat/completions", {"choices": [{"message": {"content": "balanced"}}]})
+    text, meta = vision.ask(PNG, "how is the composition?", provider="groq")
+    body = _body(mock.calls[-1])
+    assert text == "balanced" and body["model"] == "llama-5-vision" and mock.calls[-1][2]["authorization"] == "Bearer g-key"

@@ -158,6 +158,29 @@ one model write a detailed prompt for an image model.
 `KRITA_MCP_VISION_PROVIDER` sets the default. Claude requests use Anthropic's server-side refusal
 fallback, so a declined request is retried on a suitable model within the same call.
 
+## More providers (OpenAI-compatible)
+
+These services speak the OpenAI API, so one connector serves them all: chat with tools in AI Chat,
+`ask_vision`, and image generation where the service offers it. Sign in under *AI Chat ▸ Services…*, or set
+the variable. Models are listed live from each service; **KRITA_MCP_<NAME>_BASE_URL** changes the address
+(for a proxy, or a regional endpoint).
+
+| Service | Variable | Offers |
+|---|---|---|
+| Mistral AI | `KRITA_MCP_MISTRAL_API_KEY` | chat, vision |
+| Groq | `KRITA_MCP_GROQ_API_KEY` | very fast chat |
+| DeepSeek | `KRITA_MCP_DEEPSEEK_API_KEY` | chat |
+| xAI Grok | `KRITA_MCP_XAI_API_KEY` | chat, vision, **images** (`backend="xai"`) |
+| Together AI | `KRITA_MCP_TOGETHER_API_KEY` | chat, **images** with open models (`backend="together"`) |
+| Fireworks AI | `KRITA_MCP_FIREWORKS_API_KEY` | chat with open models |
+| Cerebras | `KRITA_MCP_CEREBRAS_API_KEY` | very fast chat |
+| Hugging Face Inference Providers | `KRITA_MCP_HUGGINGFACE_API_KEY` | chat with thousands of open models |
+| NVIDIA NIM | `KRITA_MCP_NVIDIA_API_KEY` | chat |
+| Alibaba Qwen (Model Studio) | `KRITA_MCP_QWEN_API_KEY` | chat, vision |
+| Moonshot Kimi | `KRITA_MCP_MOONSHOT_API_KEY` | chat |
+
+xAI and Together image generation is text-to-image; use another backend to edit or inpaint.
+
 ## Models are never hard-coded
 
 When you do not name a model, krita-mcp asks the provider **at that moment** which models your account can
@@ -167,7 +190,7 @@ account has it, and a retired model is never requested again:
 | Provider | How the model is chosen |
 |---|---|
 | Gemini | Google's model list: the newest Flash (chat, vision), Flash Image, or Veo model |
-| OpenAI and compatible | `/models`, ranked by release date: newest chat, image (`gpt-image…`) or video (`sora…`) model |
+| OpenAI and compatible services | `/models`, ranked by release date (or the model type the service reports): newest chat, image or video model; embedding, speech and similar models are skipped |
 | Claude | Anthropic's model list: the newest Opus, then the newest other model |
 | OpenRouter | Your account's default model |
 | Local servers (Ollama, LM Studio) | The newest installed model |
@@ -176,6 +199,11 @@ account has it, and a retired model is never requested again:
 | AUTOMATIC1111, ComfyUI | Your loaded checkpoint and the first upscaler, sampler and scheduler the server offers |
 | HeyGen | The first avatar and voice on your account |
 | fal.ai | Must be chosen (fal has no model list API) |
+
+Some limits cannot be looked up from a provider and are settings instead (today's values are the defaults):
+OpenAI image sizes (`KRITA_MCP_OPENAI_SIZES`) and Sora video sizes and lengths
+(`KRITA_MCP_OPENAI_VIDEO_SIZES`, `KRITA_MCP_OPENAI_VIDEO_SECONDS`). A `size` or `seconds` passed in `extra`
+is sent exactly as given.
 
 If Google answers that a model is no longer available and names its replacement, the request is retried
 with that model and the chat says so. In the AI Chat panel, the model box lists your account's models

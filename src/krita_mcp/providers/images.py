@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
-from . import catalog, gemini, http
+from . import catalog, compat, gemini, http
 from .http import ProviderError, env, secret
 
 MAX_COUNT = 8
@@ -815,6 +815,10 @@ class Fal(Backend):
 # ====================================================================== registry
 BACKENDS = {"comfyui": ComfyUI, "a1111": A1111, "openai": OpenAIImages, "gemini": Gemini,
             "stability": Stability, "replicate": Replicate, "fal": Fal}
+for _name, _info in compat.COMPAT.items():
+    if _info[5]:  # services with an images API
+        BACKENDS[_name] = type("%sImages" % _name.title(), (compat.CompatImages,),
+                               {"__init__": (lambda n: lambda self: compat.CompatImages.__init__(self, n))(_name)})
 ALIASES = {"forge": "a1111", "sdnext": "a1111", "automatic1111": "a1111", "comfy": "comfyui", "google": "gemini",
            "dalle": "openai", "gpt-image": "openai", "stabilityai": "stability"}
 
@@ -836,7 +840,8 @@ def pick(name=None):
         b = cls()
         if b.status().get("reachable"):
             return b
-    for cls in (OpenAIImages, Gemini, Stability, Replicate, Fal):
+    for cls in [OpenAIImages, Gemini, Stability, Replicate, Fal] + [
+            BACKENDS[n] for n, i in compat.COMPAT.items() if i[5]]:
         b = cls()
         if b.configured():
             return b

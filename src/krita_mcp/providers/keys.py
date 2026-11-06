@@ -29,6 +29,10 @@ SERVICES = {
     "a1111": ("AUTOMATIC1111 / Forge (local)", "images on your GPU", None,
               "https://github.com/lllyasviel/stable-diffusion-webui-forge", True),
 }
+from .compat import COMPAT  # noqa: E402
+
+for _name, (_label, _base, _env, _url, _use, _images) in COMPAT.items():
+    SERVICES[_name] = (_label, _use, _env, _url, True)
 ENV_TO_SERVICE = {v[2]: k for k, v in SERVICES.items() if v[2]}
 BROWSER_SIGN_IN = {"openrouter"}  # real OAuth; the others get a browser-assisted key flow
 

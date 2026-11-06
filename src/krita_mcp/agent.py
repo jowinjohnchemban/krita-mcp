@@ -17,7 +17,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import oauth
-from .providers import catalog, gemini, http, keys
+from .providers import catalog, compat, gemini, http, keys
 from .providers.http import ProviderError, env, secret
 
 DEFAULT_PORT = 5680
@@ -37,6 +37,9 @@ PROVIDERS = {
     "ollama": {"label": "Local model (Ollama / LM Studio)", "model": "", "key_url": "",
                "env": ()},
 }
+
+for _name, (_label, _base, _env, _url, _use, _images) in compat.COMPAT.items():
+    PROVIDERS[_name] = {"label": _label, "model": "", "key_url": _url, "env": (_env,)}
 
 SYSTEM = """You are an AI art assistant working inside the user's Krita, controlling it through tools.
 Do what the user asks directly in their open document (or create one). Work in steps: plan, act with tools,
@@ -68,6 +71,8 @@ def base_url_for(provider):
         return http.service_url("KRITA_MCP_OPENROUTER_BASE_URL", "openrouter", "https://openrouter.ai/api/v1")
     if provider == "gemini":
         return env("KRITA_MCP_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+    if provider in compat.COMPAT:
+        return compat.base_url(provider)
     return None
 
 
@@ -239,6 +244,8 @@ class OpenAICompat:
         """The user's model, else the newest suitable one listed now (OpenRouter: the account's default)."""
         if self.chosen or self.provider == "openrouter":
             self.model = self.chosen or None
+        elif self.provider in compat.COMPAT:
+            self.model = catalog.first(compat.chat_models(self.provider), "%s chat model" % self.provider)
         elif self.provider == "ollama" or http.is_loopback_url(self.base):
             self.model = catalog.first(catalog.local_models(self.base), "local model (install one first)")
         else:
@@ -359,6 +366,8 @@ def available_models(provider):
         return catalog.openrouter_models(base_url_for("openrouter"), key_for("openrouter"))
     if provider == "ollama":
         return catalog.local_models(base_url_for("ollama"))
+    if provider in compat.COMPAT:
+        return compat.chat_models(provider)
     if provider == "openai":
         base = base_url_for("openai")
         key = key_for("openai") or ("local" if http.is_loopback_url(base) else None)
