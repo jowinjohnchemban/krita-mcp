@@ -15,6 +15,7 @@ except ImportError:  # MCP Python SDK v1
     from mcp.server.fastmcp import FastMCP as _Server, Image
     from mcp.server.fastmcp.exceptions import ToolError
 
+from . import __version__
 from .bridge_client import BridgeClient, KritaError
 from .netfetch import fetch_image
 
@@ -758,9 +759,12 @@ class _BearerAuth:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="krita-mcp", description=__doc__)
-    ap.add_argument("--transport", choices=["stdio", "http"], default="stdio")
-    ap.add_argument("--host", default="127.0.0.1", help="HTTP bind address (default loopback)")
-    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--transport", choices=["stdio", "http"], default="stdio",
+                    help="stdio for local clients (default); http for clients that need a URL")
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="HTTP bind address (default 127.0.0.1; others need KRITA_MCP_HTTP_TOKEN)")
+    ap.add_argument("--port", type=int, default=8765, help="HTTP port (default 8765)")
+    ap.add_argument("--version", action="version", version="krita-mcp " + __version__)
     args = ap.parse_args(argv)
 
     if args.transport == "stdio":

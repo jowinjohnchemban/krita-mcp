@@ -3,10 +3,10 @@
 [![CI](https://github.com/jowinjohnchemban/krita-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jowinjohnchemban/krita-mcp/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/jowinjohnchemban/krita-mcp?sort=semver)](https://github.com/jowinjohnchemban/krita-mcp/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/jowinjohnchemban/krita-mcp/total)](https://github.com/jowinjohnchemban/krita-mcp/releases)
-[![Krita](https://img.shields.io/badge/Krita-5.2%20%7C%205.3%20%7C%206-3daee9?logo=krita&logoColor=white)](https://krita.org)
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)](pyproject.toml)
-[![MCP](https://img.shields.io/badge/MCP-server-6b4fbb)](https://modelcontextprotocol.io)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Tested on Krita 5.3.4](https://img.shields.io/badge/tested%20on-Krita%205.3.4-3daee9?logo=krita&logoColor=white)](#status)
+[![Python](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjowinjohnchemban%2Fkrita-mcp%2Fmain%2Fpyproject.toml&query=%24.project%5B'requires-python'%5D&label=python&logo=python&logoColor=white&color=3776ab)](pyproject.toml)
+[![MCP SDK](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjowinjohnchemban%2Fkrita-mcp%2Fmain%2Fpyproject.toml&query=%24.project.dependencies%5B0%5D&label=MCP%20SDK&color=6b4fbb)](https://modelcontextprotocol.io)
+[![License](https://img.shields.io/github/license/jowinjohnchemban/krita-mcp)](LICENSE)
 
 **Let AI agents create and edit art, photos, animation and video inside a running [Krita](https://krita.org).**
 It works with any MCP client: Claude, ChatGPT, Gemini, Cursor, VS Code Copilot, Codex and others.
@@ -59,6 +59,34 @@ config for your AI client.
    improve it."*
 
 Details: [installation](docs/installation.md) · [clients](docs/clients.md) · [the panel](docs/krita-panel.md)
+
+## Command-line flags
+
+```
+krita-mcp [--transport {stdio,http}] [--host HOST] [--port PORT] [--version]
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--transport` | `stdio` | `stdio` for local clients (Claude Code/Desktop, Cursor, VS Code, Gemini CLI, Codex). `http` for clients that need a URL. |
+| `--host` | `127.0.0.1` | HTTP bind address. Binding anything other than loopback requires `KRITA_MCP_HTTP_TOKEN`. |
+| `--port` | `8765` | HTTP port (the endpoint is `http://HOST:PORT/mcp`). |
+| `--version` | | Print the version and exit. |
+
+Environment variables:
+
+| Variable | Used by | Default | Meaning |
+|---|---|---|---|
+| `KRITA_MCP_HTTP_TOKEN` | server | random, printed at start | Bearer token HTTP clients must send (`Authorization: Bearer …`) |
+| `KRITA_MCP_PORT` | server + plugin | `5679` | Port of the Krita bridge (not the HTTP port above) |
+| `KRITA_MCP_HOST` | server | `127.0.0.1` | Host of the Krita bridge |
+| `KRITA_MCP_HOME` | server + plugin | `~/.krita-mcp` | Folder holding the bridge token |
+| `KRITA_MCP_TOKEN` | server | read from `KRITA_MCP_HOME` | Bridge token, instead of reading the file |
+| `KRITA_MCP_WORKSPACE` | plugin | `~/KritaMCP` | The only folder the AI may read/write (overrides the panel setting) |
+| `KRITA_MCP_AUTOSTART` | plugin | on | `0` = don't start the bridge with Krita |
+| `KRITA_MCP_FFMPEG` | plugin | Krita's bundled copy | Folder with `ffmpeg`/`ffprobe` for video |
+
+Plugin settings can also be changed in Krita's *AI Bridge (MCP)* panel; environment variables take priority.
 
 ## Documentation
 

@@ -1,6 +1,7 @@
 # Installation
 
-You need **Krita 5.2 or newer** (Krita 6 is supported) and **Python 3.10 or newer** for the MCP server.
+You need **Krita 5.2 or newer** and **Python 3.10 or newer** for the MCP server. End-to-end testing is done
+on Krita 5.3.4; Krita 6 (PyQt6) is covered by unit tests only.
 
 ## 1. Install the Krita plugin
 
