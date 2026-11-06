@@ -49,6 +49,34 @@ KEY_PATTERNS = {
     "replicate": r"r8_[0-9A-Za-z]{20,}", "stability": r"sk-[0-9A-Za-z]{20,}",
     "fal": r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{20,}",
     "heygen": r"[0-9A-Za-z_\-=]{24,}"}
+# Built-in facts about each service, so sign-in works before the assistant service is running
+# (anything the service reports overrides these).
+SERVICE_INFO = {
+    "gemini": {"label": "Google Gemini", "key_url": "https://aistudio.google.com/apikey"},
+    "anthropic": {"label": "Anthropic Claude", "key_url": "https://console.anthropic.com/settings/keys"},
+    "openai": {"label": "OpenAI / compatible", "key_url": "https://platform.openai.com/api-keys", "has_url": True},
+    "openrouter": {"label": "OpenRouter", "key_url": "https://openrouter.ai/settings/keys",
+                   "browser_sign_in": True},
+    "ollama": {"label": "Local model (Ollama, LM Studio)", "key_url": "https://ollama.com/download",
+               "needs_key": False, "has_url": True},
+    "stability": {"label": "Stability AI", "key_url": "https://platform.stability.ai/account/keys"},
+    "replicate": {"label": "Replicate", "key_url": "https://replicate.com/account/api-tokens"},
+    "fal": {"label": "fal.ai", "key_url": "https://fal.ai/dashboard/keys"},
+    "heygen": {"label": "HeyGen", "key_url": "https://app.heygen.com/settings"},
+    "comfyui": {"label": "ComfyUI (local)", "key_url": "https://www.comfy.org/", "needs_key": False,
+                "has_url": True},
+    "a1111": {"label": "AUTOMATIC1111 / Forge (local)", "needs_key": False, "has_url": True,
+              "key_url": "https://github.com/lllyasviel/stable-diffusion-webui-forge"},
+}
+
+
+def service_info(name, reported=None):
+    info = {"label": name, "needs_key": True}
+    info.update(SERVICE_INFO.get(name, {}))
+    info.update({k: v for k, v in (reported or {}).items() if v is not None})
+    return info
+
+
 SHORT = {"gemini": "Gemini", "anthropic": "Claude", "openai": "GPT", "openrouter": "AI", "ollama": "AI"}
 _SERVICE = {"proc": None}
 
@@ -333,7 +361,7 @@ class ChatDocker(DockWidget):
         self._show_account()
 
     def _show_account(self):
-        info = self.providers.get(self._key(), {})
+        info = service_info(self._key(), self.providers.get(self._key()))
         signed = info.get("signed_in")
         self.account.setText("✓ " + i18n("signed in") if signed else i18n("not signed in"))
         self.signin.setText(i18n("Sign out") if signed and info.get("needs_key") else i18n("Sign in"))
@@ -354,7 +382,7 @@ class ChatDocker(DockWidget):
         self.services_dialog = None
 
     def sign_in_service(self, name, parent=None):
-        info = self.providers.get(name, {"label": name, "needs_key": True})
+        info = service_info(name, self.providers.get(name))
         if info.get("signed_in") and info.get("needs_key"):
             self._background(lambda: _ensure_service() and _request("POST", "/signout", {"provider": name}),
                              self._signed)

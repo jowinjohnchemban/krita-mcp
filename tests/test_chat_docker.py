@@ -174,3 +174,17 @@ def test_key_detection_and_browser_flows(chat, monkeypatch):
     assert ("POST", "/oauth/start", {"provider": "openrouter"}) in sent
     assert "https://openrouter.ai/auth?x=1" in opened and not dock.oauth_timer.isActive()
     assert "approve Krita" in dock.log.toPlainText()
+
+
+def test_key_page_button_without_a_running_service(chat):
+    """Opening Krita does not start the assistant service: sign-in must still offer the key page."""
+    app, c, dock, sent = chat
+    dock.providers = {}  # nothing reported yet
+    for name, expected in (("gemini", "Get a key in the browser"), ("anthropic", "Get a key in the browser"),
+                           ("fal", "Get a key in the browser"), ("openrouter", "Sign in with browser")):
+        dlg = c.SignInDialog(dock, name, c.service_info(name))
+        assert expected in [b.text() for b in dlg.findChildren(qtw.QPushButton)], name
+    assert c.service_info("gemini")["key_url"] == "https://aistudio.google.com/apikey"
+    assert c.service_info("gemini", {"signed_in": True, "key_url": None})["key_url"]  # reported None keeps ours
+    local = [w.text() for w in c.SignInDialog(dock, "ollama", c.service_info("ollama")).findChildren(qtw.QLabel)]
+    assert "API key" not in local and "Server URL" in local
