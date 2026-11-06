@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
-from . import http
+from . import catalog, gemini, http
 from .http import ProviderError, env, secret
 
 MAX_COUNT = 8
@@ -190,14 +190,21 @@ class A1111(Backend):
         return imgs, meta
 
     def upscale(self, png, factor, model=None):
+        if not model:  # the first real upscaler this WebUI offers
+            names = [u.get("name") for u in self._get("/sdapi/v1/upscalers", 10)]
+            model = catalog.first([n for n in names if n and n not in ("None", "Lanczos", "Nearest")],
+                                  "AUTOMATIC1111 upscaler")
         r = self._post("/sdapi/v1/extra-single-image", {"image": _b64(png), "upscaling_resize": factor,
-                                                         "upscaler_1": model or "R-ESRGAN 4x+"})
+                                                         "upscaler_1": model})
         if not r.get("image"):
             raise ProviderError("A1111 returned no image")
         return base64.b64decode(r["image"])
 
     def remove_background(self, png, model=None):  # needs the sd-webui-rembg extension
-        r = self._post("/rembg", {"input_image": _b64(png), "model": model or "u2net", "return_mask": False})
+        body = {"input_image": _b64(png), "return_mask": False}
+        if model:
+            body["model"] = model  # otherwise the extension's own default
+        r = self._post("/rembg", body)
         return base64.b64decode(r["image"])
 
 
@@ -304,8 +311,8 @@ class ComfyUI(Backend):
                 g["14"] = {"class_type": "RepeatLatentBatch", "inputs": {"samples": latent, "amount": job.count}}
                 latent = ["14", 0]
         g["3"] = {"class_type": "KSampler", "inputs": {
-            "seed": seed, "steps": job.steps or 25, "cfg": job.cfg or 7.0, "sampler_name": job.sampler or "euler",
-            "scheduler": job.scheduler or "normal", "denoise": job.strength_or_default(),
+            "seed": seed, "steps": job.steps or 25, "cfg": job.cfg or 7.0, "sampler_name": job.sampler,
+            "scheduler": job.scheduler, "denoise": job.strength_or_default(),
             "model": ["4", 0], "positive": pos, "negative": neg, "latent_image": latent}}
         g["8"] = {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}}
         g["9"] = {"class_type": "SaveImage", "inputs": {"filename_prefix": "krita-mcp", "images": ["8", 0]}}
@@ -333,6 +340,10 @@ class ComfyUI(Backend):
                 if not ckpts:
                     raise ProviderError("ComfyUI has no checkpoints in models/checkpoints")
                 ckpt = ckpts[0]
+            if not job.sampler:
+                job.sampler = catalog.first(self._choices("KSampler", "sampler_name"), "ComfyUI sampler")
+            if not job.scheduler:
+                job.scheduler = catalog.first(self._choices("KSampler", "scheduler"), "ComfyUI scheduler")
             controls = []
             if job.controls:
                 models = self._choices("ControlNetLoader", "control_net_name")
@@ -385,7 +396,7 @@ class OpenAIImages(Backend):
     def __init__(self):
         self.base = http.service_url("KRITA_MCP_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
         self.key = secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY")
-        self.model = env("KRITA_MCP_OPENAI_IMAGE_MODEL", "gpt-image-1")
+        self.model = env("KRITA_MCP_OPENAI_IMAGE_MODEL")  # None: the newest image model this key can use
         self.sizes = env("KRITA_MCP_OPENAI_SIZES", "1024x1024,1536x1024,1024x1536").split(",")
         if self.key is None and http.is_loopback_url(self.base):
             self.key = "local"
@@ -394,7 +405,8 @@ class OpenAIImages(Backend):
         return bool(self.key)
 
     def status(self):
-        return {"configured": self.configured(), "base_url": self.base, "model": self.model, "sizes": self.sizes}
+        return {"configured": self.configured(), "base_url": self.base,
+                "model": self.model or "auto (newest image model)", "sizes": self.sizes}
 
     def _hdr(self):
         return {"Authorization": "Bearer " + self.key}
@@ -404,7 +416,8 @@ class OpenAIImages(Backend):
             raise ProviderError("OpenAI is not configured: set KRITA_MCP_OPENAI_API_KEY")
         if job.mode == "txt2img" and job.controls:  # no ControlNet: give the sketch as the image to work from
             job = _guided(job, "Use the provided image as the layout and line guide (keep its composition). ")
-        model = job.model or self.model
+        model = job.model or self.model or catalog.first(catalog.openai_models(self.base, self.key, "image"),
+                                                         "OpenAI image model")
         size = "%dx%d" % (job.width, job.height)
         prompt = job.prompt + ("\nAvoid: " + job.negative if job.negative else "")
         legacy = model.startswith("dall-e")
@@ -448,18 +461,18 @@ class Gemini(Backend):
     def __init__(self):
         self.key = secret("KRITA_MCP_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
         self.base = env("KRITA_MCP_GEMINI_BASE_URL", GEMINI_BASE).rstrip("/")
-        self.model = env("KRITA_MCP_GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+        self.model = env("KRITA_MCP_GEMINI_IMAGE_MODEL")  # None: the newest Flash Image model the key can use
 
     def configured(self):
         return bool(self.key)
 
     def status(self):
-        return {"configured": self.configured(), "model": self.model}
+        return {"configured": self.configured(), "model": self.model or "auto (newest Flash Image)"}
 
     def generate(self, job):
         if not self.key:
             raise ProviderError("Gemini is not configured: set KRITA_MCP_GEMINI_API_KEY")
-        model = job.model or self.model
+        model = job.model or self.model or gemini.pick(self.base, self.key, "image")
         text = job.prompt + ("\nAvoid: " + job.negative if job.negative else "")
         parts = []
         if job.mode == "txt2img" and job.controls:
@@ -480,8 +493,7 @@ class Gemini(Backend):
         body.update(job.extra)
         imgs, notes = [], []
         for _ in range(job.count):
-            r = http.post_json("%s/models/%s:generateContent" % (self.base, model), body,
-                               {"x-goog-api-key": self.key})
+            r, model = gemini.post(self.base, self.key, model, "generateContent", body)
             for c in r.get("candidates") or []:
                 for p in (c.get("content") or {}).get("parts") or []:
                     d = p.get("inlineData") or p.get("inline_data")
@@ -528,7 +540,7 @@ class Stability(Backend):
             elif job.mode == "img2img":
                 data, s = self._post("/v2beta/stable-image/generate/sd3", fields + extra + [
                     ("mode", "image-to-image"), ("strength", job.strength_or_default()),
-                    ("model", job.model or "sd3.5-large")], [("image", "image.png", job.image, "image/png")])
+                    ("model", job.model)], [("image", "image.png", job.image, "image/png")])
             elif job.controls:
                 c = job.controls[0]
                 kind = "sketch" if (c.get("type") or "sketch") in LINE_TYPES else "structure"
@@ -585,8 +597,13 @@ def collect_urls(out):
 class Replicate(Backend):
     name = "replicate"
     multiple = 16
-    defaults = {"txt2img": "black-forest-labs/flux-schnell", "img2img": "black-forest-labs/flux-dev",
-                "inpaint": "black-forest-labs/flux-fill-dev"}
+    # Replicate's curated collections to look in, and the inputs a model must have, per task
+    DISCOVER = {"txt2img": (("text-to-image",), ()),
+                "img2img": (("image-editing", "text-to-image"), ("image",)),
+                "inpaint": (("inpainting", "image-editing", "text-to-image"), ("image", "mask")),
+                "upscale": (("super-resolution",), ("image",)),
+                "rembg": (("remove-backgrounds",), ("image",)),
+                "video": (("text-to-video", "image-to-video"), ())}
 
     def __init__(self):
         self.key = secret("KRITA_MCP_REPLICATE_API_TOKEN", "REPLICATE_API_TOKEN")
@@ -676,8 +693,31 @@ class Replicate(Backend):
         inp.update(job.extra)
         return inp
 
+    def discover(self, task):
+        """A model for `task` from Replicate's live collections whose inputs fit the task."""
+        slugs, needs = self.DISCOVER[task]
+        tried = []
+        for slug in slugs:
+            try:
+                col = http.get_json("%s/collections/%s" % (self.base, slug), self._hdr())
+            except ProviderError:
+                continue
+            for m in (col.get("models") or [])[:12]:
+                name = "%s/%s" % (m.get("owner"), m.get("name"))
+                tried.append(name)
+                lv = m.get("latest_version") or {}
+                props = (((lv.get("openapi_schema") or {}).get("components") or {}).get("schemas")
+                         or {}).get("Input", {}).get("properties")
+                if props is None:
+                    props, _ = self.schema(name)
+                fits = all(_first(props, REPLICATE_FIELDS[n]) for n in needs)
+                if fits:
+                    return name
+        raise ProviderError("found no Replicate model for %s (looked at: %s); choose one with model='owner/name'"
+                            % (task, ", ".join(tried[:8]) or "nothing"))
+
     def generate(self, job):
-        model = job.model or self.defaults[job.mode]
+        model = job.model or self.discover(job.mode)
         props, _ = self.schema(model)
         out = self.predict(model, self.inputs_for(job, props))
         urls = collect_urls(out)
@@ -686,12 +726,12 @@ class Replicate(Backend):
         return [http.download(u) for u in urls], {"model": model}
 
     def upscale(self, png, factor, model=None):
-        model = model or "nightmareai/real-esrgan"
+        model = model or self.discover("upscale")
         out = self.predict(model, {"image": http.data_uri(png), "scale": factor})
         return http.download(collect_urls(out)[0])
 
     def remove_background(self, png, model=None):
-        out = self.predict(model or "851-labs/background-remover", {"image": http.data_uri(png)})
+        out = self.predict(model or self.discover("rembg"), {"image": http.data_uri(png)})
         return http.download(collect_urls(out)[0])
 
 
@@ -699,8 +739,6 @@ class Replicate(Backend):
 class Fal(Backend):
     name = "fal"
     multiple = 16
-    defaults = {"txt2img": "fal-ai/flux/dev", "img2img": "fal-ai/flux/dev/image-to-image",
-                "inpaint": "fal-ai/flux-pro/v1/fill"}
 
     def __init__(self):
         self.key = secret("KRITA_MCP_FAL_KEY", "FAL_KEY")
@@ -729,8 +767,14 @@ class Fal(Backend):
             time.sleep(1.5)
         return http.get_json(response_url, hdr)
 
+    def need_model(self, model, task):
+        if not model:
+            raise ProviderError("fal.ai has no model-listing API: choose an endpoint for %s with model='fal-ai/...' "
+                                "(browse https://fal.ai/models)" % task)
+        return model
+
     def generate(self, job):
-        model = job.model or self.defaults[job.mode]
+        model = self.need_model(job.model, job.mode)
         if job.controls and not job.extra:
             raise ProviderError("fal: pass the control model's own input names via extra (e.g. a ControlNet "
                                 "endpoint's control image field), or use comfyui / a1111 / stability for control")
@@ -759,11 +803,12 @@ class Fal(Backend):
         return [http.download(u) for u in urls], {"model": model, "seed": out.get("seed")}
 
     def upscale(self, png, factor, model=None):
-        out = self.run(model or "fal-ai/clarity-upscaler", {"image_url": http.data_uri(png), "upscale_factor": factor})
+        out = self.run(self.need_model(model, "upscaling"), {"image_url": http.data_uri(png),
+                                                             "upscale_factor": factor})
         return http.download(collect_urls(out.get("image") or out)[0])
 
     def remove_background(self, png, model=None):
-        out = self.run(model or "fal-ai/birefnet", {"image_url": http.data_uri(png)})
+        out = self.run(self.need_model(model, "background removal"), {"image_url": http.data_uri(png)})
         return http.download(collect_urls(out.get("image") or out)[0])
 
 

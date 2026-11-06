@@ -274,12 +274,20 @@ class ChatDocker(DockWidget):
         lay.addLayout(top)
 
         row = QHBoxLayout()
-        self.model = QLineEdit(extension.setting("chat_model_" + self._key(), ""))
-        self.model.setPlaceholderText(i18n("model (default)"))
-        self.model.editingFinished.connect(lambda: extension.set_setting("chat_model_" + self._key(),
-                                                                         self.model.text().strip()))
+        # model: Auto (the newest, chosen fresh for every message) or any model the account offers right now
+        self._populating = False
+        self.model = QComboBox()
+        self.model.setEditable(True)
+        self.model.setToolTip(i18n("Auto picks the newest model your account can use, every time. The list is "
+                                   "loaded live from the provider; you can also type a model name."))
+        self._set_models([], saved=extension.setting("chat_model_" + self._key(), ""))
+        self.model.currentTextChanged.connect(self._model_chosen)
+        self.refresh_models = QPushButton("⟳")
+        self.refresh_models.setToolTip(i18n("Reload the models available to this account"))
+        self.refresh_models.clicked.connect(lambda: self._refresh_models(start=True))
         self.account = QLabel()
         row.addWidget(self.model, 1)
+        row.addWidget(self.refresh_models)
         row.addWidget(self.account)
         lay.addLayout(row)
 
@@ -359,6 +367,53 @@ class ChatDocker(DockWidget):
     def _got_health(self, health):
         self.providers = (health or {}).get("providers", {})
         self._show_account()
+        self._refresh_models()
+
+    # ---------------------------------------------------------------- live model list
+    AUTO = "Auto (newest)"
+
+    def _model_text(self):
+        t = self.model.currentText().strip()
+        return "" if t in (self.AUTO, i18n(self.AUTO)) else t
+
+    def _set_models(self, models, saved=None):
+        current = self._model_text() if saved is None else saved
+        self._populating = True
+        try:
+            self.model.clear()
+            self.model.addItem(i18n(self.AUTO))
+            for m in models:
+                self.model.addItem(m)
+            if current:
+                self.model.setEditText(current)
+            else:
+                self.model.setCurrentIndex(0)
+        finally:
+            self._populating = False
+
+    def _model_chosen(self, _text):
+        if not self._populating:
+            extension.set_setting("chat_model_" + self._key(), self._model_text())
+
+    def _refresh_models(self, start=False):
+        """Ask the provider which models this account can use, now (never cached)."""
+        key = self._key()
+
+        def fetch():
+            if start:
+                _ensure_service()
+            return _request("GET", "/models?provider=%s" % key, timeout=30)
+
+        def done(r):
+            if key != self._key():
+                return  # the user switched provider meanwhile
+            self._set_models(r.get("models") or [])
+            if start and r.get("error"):
+                self._error(r["error"])
+            elif start:
+                self._append("<p style='color:#999; font-size:small'>%s</p>" % html.escape(
+                    i18n("%d models available") % len(r.get("models") or [])))
+        self._background(fetch, done, quiet=not start)
 
     def _show_account(self):
         info = service_info(self._key(), self.providers.get(self._key()))
@@ -366,11 +421,12 @@ class ChatDocker(DockWidget):
         self.account.setText("✓ " + i18n("signed in") if signed else i18n("not signed in"))
         self.signin.setText(i18n("Sign out") if signed and info.get("needs_key") else i18n("Sign in"))
         if info.get("default_model"):
-            self.model.setPlaceholderText(info["default_model"])
+            self.model.lineEdit().setPlaceholderText(i18n("Auto: %s") % info["default_model"])
 
     def _provider_changed(self):
         extension.set_setting("chat_provider", self._key())
-        self.model.setText(extension.setting("chat_model_" + self._key(), ""))
+        self._set_models([], saved=extension.setting("chat_model_" + self._key(), ""))
+        self._refresh_models()
         self.session = None
         self._show_account()
 
@@ -429,6 +485,7 @@ class ChatDocker(DockWidget):
     def _signed(self, result):
         self.providers = (result or {}).get("providers", self.providers)
         self._show_account()
+        self._refresh_models()
         if getattr(self, "services_dialog", None) is not None:
             self.services_dialog.refresh()
         self._append("<p style='color:#8a8'>%s</p>" % html.escape(
@@ -441,7 +498,7 @@ class ChatDocker(DockWidget):
             return
         self.input.clear()
         self._set_busy(True)
-        body = {"session": self.session, "provider": self._key(), "model": self.model.text().strip() or None,
+        body = {"session": self.session, "provider": self._key(), "model": self._model_text() or None,
                 "text": text}
         self._background(lambda: _ensure_service() and _request("POST", "/chat", body), self._started)
 
@@ -470,6 +527,8 @@ class ChatDocker(DockWidget):
             elif kind == "assistant":
                 self._append("<p><b>%s:</b> %s</p>" % (SHORT.get(self._key(), "AI"),
                                                        html.escape(ev["text"]).replace("\n", "<br>")))
+            elif kind == "note":
+                self._append("<p style='color:#999; font-size:small'>%s</p>" % html.escape(ev.get("text", "")))
             elif kind == "tool":
                 self._append("<p style='color:#999; font-size:small'>🔧 %s %s</p>" % (
                     html.escape(ev["name"]), html.escape(ev.get("args", ""))))

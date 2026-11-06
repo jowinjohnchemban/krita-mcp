@@ -17,6 +17,26 @@ from krita_mcp.providers import images, video, vision  # noqa: E402
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 B64 = base64.b64encode(PNG).decode()
 MP4 = b"\x00\x00\x00\x18ftypmp42fake-video"
+# model lists as the providers return them: the newest must be found, retired / special models skipped
+GEMINI_MODELS = {"models": [
+    {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+    {"name": "models/gemini-3.8-flash", "supportedGenerationMethods": ["generateContent", "countTokens"]},
+    {"name": "models/gemini-3.8-flash-lite", "supportedGenerationMethods": ["generateContent"]},
+    {"name": "models/gemini-2.5-flash-image", "supportedGenerationMethods": ["generateContent"]},
+    {"name": "models/gemini-3.1-flash-image", "supportedGenerationMethods": ["generateContent"]},
+    {"name": "models/veo-3.0-generate-001", "supportedGenerationMethods": ["predictLongRunning"]},
+    {"name": "models/veo-4.1-generate-preview", "supportedGenerationMethods": ["predictLongRunning"]},
+    {"name": "models/text-embedding-005", "supportedGenerationMethods": ["embedContent"]}]}
+OPENAI_MODELS = {"object": "list", "data": [
+    {"id": "gpt-5", "created": 400}, {"id": "gpt-6", "created": 500}, {"id": "gpt-6-mini", "created": 510},
+    {"id": "gpt-image-2", "created": 505}, {"id": "sora-3", "created": 506},
+    {"id": "text-embedding-4", "created": 520}]}
+ANTHROPIC_MODELS = {"data": [
+    {"type": "model", "id": "claude-sonnet-6", "display_name": "Claude Sonnet 6", "created_at": "2026-10-01T00:00:00Z"},
+    {"type": "model", "id": "claude-opus-6", "display_name": "Claude Opus 6", "created_at": "2026-09-01T00:00:00Z"},
+    {"type": "model", "id": "claude-opus-5-5", "display_name": "Claude Opus 5.5",
+     "created_at": "2026-06-01T00:00:00Z"}],
+    "has_more": False, "first_id": "claude-sonnet-6", "last_id": "claude-opus-5-5"}
 
 
 class Mock:
@@ -56,7 +76,17 @@ class Mock:
 
         self.srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = "http://127.0.0.1:%d" % self.srv.server_address[1]
+        self.serve_model_lists()
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+
+    def serve_model_lists(self):
+        """What real providers answer when asked which models exist (tests may override any route)."""
+        self.json("GET", "/models", GEMINI_MODELS)
+        self.routes[("GET", "/v1/models")] = lambda h, b: (200, "application/json", json.dumps(
+            ANTHROPIC_MODELS if h.headers.get("anthropic-version") else OPENAI_MODELS).encode())
+        self.json("GET", "/sdapi/v1/upscalers", [{"name": "None"}, {"name": "Lanczos"}, {"name": "R-ESRGAN 4x+"}])
+        self.json("GET", "/object_info/KSampler", {"KSampler": {"input": {"required": {
+            "sampler_name": [["euler", "dpmpp_2m"]], "scheduler": [["normal", "karras"]]}}}})
 
     def json(self, method, path, obj, status=200):
         self.routes[(method, path)] = lambda h, b: (status, "application/json", obj(h, b) if callable(obj) else obj)
@@ -70,6 +100,8 @@ def mock(monkeypatch):
     m = Mock()
     monkeypatch.setattr(http, "_public", lambda host: None)  # results come from 127.0.0.1 in tests
     for k in list(__import__("os").environ):
+        if k == "KRITA_MCP_HOME":  # keep the isolated key folder from conftest - never the user's real keys
+            continue
         if k.startswith("KRITA_MCP_") or k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
             monkeypatch.delenv(k, raising=False)
     yield m
@@ -180,7 +212,7 @@ def test_openai_generations_and_masked_edit(mock, monkeypatch):
 def test_gemini_image(mock, monkeypatch):
     monkeypatch.setenv("KRITA_MCP_GEMINI_API_KEY", "g-key")
     monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", mock.url)
-    mock.json("POST", "/models/gemini-2.5-flash-image:generateContent",
+    mock.json("POST", "/models/gemini-3.1-flash-image:generateContent",  # the newest image model listed
               {"candidates": [{"content": {"parts": [{"text": "here"}, {"inlineData": {"data": B64}}]}}]})
     imgs, meta = images.get("google").generate(images.ImageJob(mode="inpaint", prompt="add a bird", image=PNG,
                                                                 mask=PNG, width=1600, height=900))
@@ -230,7 +262,10 @@ def test_fal_queue(mock, monkeypatch):
                                              "response_url": mock.url + "/q/r"})
     mock.json("GET", "/q/s", {"status": "COMPLETED"})
     mock.json("GET", "/q/r", {"images": [{"url": "data:image/png;base64," + B64}], "seed": 9})
-    imgs, meta = images.get("fal").generate(images.ImageJob(prompt="p", width=512, height=512))
+    with pytest.raises(ProviderError, match="no model-listing API"):  # fal: never a guessed model name
+        images.get("fal").generate(images.ImageJob(prompt="p"))
+    imgs, meta = images.get("fal").generate(images.ImageJob(prompt="p", width=512, height=512,
+                                                            model="fal-ai/flux/dev"))
     assert imgs == [PNG] and meta["seed"] == 9 and mock.calls[0][2]["authorization"] == "Key f-key"
 
 
@@ -254,11 +289,14 @@ def test_heygen_talking_avatar(mock, monkeypatch):
     mock.json("POST", "/v2/video/generate", {"error": None, "data": {"video_id": "v9"}})
     mock.json("GET", "/v1/video_status.get", {"data": {"status": "completed", "video_url": mock.url + "/out.mp4"}})
     mock.raw("GET", "/out.mp4", MP4, "video/mp4")
+    mock.json("GET", "/v2/avatars", {"data": {"avatars": [{"avatar_id": "av-first", "avatar_name": "Ana"}]}})
+    mock.json("GET", "/v2/voices", {"data": {"voices": [{"voice_id": "vo-first", "name": "Sam"}]}})
     b = video.get("heygen")
-    with pytest.raises(ProviderError, match="voice_id"):
-        b.generate(video.VideoJob(script="hi"))
+    b.generate(video.VideoJob(script="hi"))  # nothing chosen: the account's own first avatar and voice
+    first = _body([c for c in mock.calls if c[1] == "/v2/video/generate"][0])["video_inputs"][0]
+    assert first["character"]["avatar_id"] == "av-first" and first["voice"]["voice_id"] == "vo-first"
     data, meta = b.generate(video.VideoJob(script="Hello!", avatar_id="a1", voice_id="v1", image=PNG))
-    gen = _body([c for c in mock.calls if c[1] == "/v2/video/generate"][0])["video_inputs"][0]
+    gen = _body([c for c in mock.calls if c[1] == "/v2/video/generate"][-1])["video_inputs"][0]
     assert data == MP4 and gen["background"] == {"type": "image", "image_asset_id": "asset1"}
     assert gen["voice"]["input_text"] == "Hello!" and mock.calls[-2][2]["x-api-key"] == "h-key"
 
@@ -266,7 +304,7 @@ def test_heygen_talking_avatar(mock, monkeypatch):
 def test_veo_video(mock, monkeypatch):
     monkeypatch.setenv("KRITA_MCP_GEMINI_API_KEY", "g")
     monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", mock.url)
-    mock.json("POST", "/models/veo-3.0-generate-001:predictLongRunning", {"name": "operations/op1"})
+    mock.json("POST", "/models/veo-4.1-generate-preview:predictLongRunning", {"name": "operations/op1"})
     mock.json("GET", "/operations/op1", {"done": True, "response": {"generateVideoResponse": {
         "generatedSamples": [{"video": {"uri": mock.url + "/v.mp4"}}]}}})
     mock.raw("GET", "/v.mp4", MP4, "video/mp4")
@@ -284,7 +322,7 @@ def test_vision_openai_compatible_and_gemini(mock, monkeypatch):
     assert body["messages"][1]["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
     monkeypatch.setenv("KRITA_MCP_GEMINI_API_KEY", "g")
     monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", mock.url)
-    mock.json("POST", "/models/gemini-2.5-flash:generateContent",
+    mock.json("POST", "/models/gemini-3.8-flash:generateContent",
               {"candidates": [{"content": {"parts": [{"text": "warm "}, {"text": "palette"}]}}]})
     assert vision.ask(PNG, "q", provider="gemini")[0] == "warm palette"
 
@@ -311,7 +349,7 @@ def test_vision_claude_through_the_sdk(mock, monkeypatch):
     body = json.loads(call[3])
     assert text == "Strong focal point; lift the shadows." and meta == {"model": "claude-opus-5-5", "provider": "anthropic"}
     assert "sk-ant-test" in (call[2].get("x-api-key", "") + call[2].get("authorization", ""))
-    assert body["model"] == "claude-opus-5-5"
+    assert body["model"] == "claude-opus-6"  # the newest Opus listed, not a built-in name
     assert body["messages"][0]["content"][0]["source"]["data"] == B64
     assert body.get("fallbacks") == "default" and "server-side-fallback" in call[2].get("anthropic-beta", "")
     reply["stop_reason"] = "refusal"

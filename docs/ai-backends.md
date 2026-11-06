@@ -71,7 +71,7 @@ If you use `--api-auth`, also set `KRITA_MCP_A1111_AUTH=user:password`.
 
 - Supports txt2img, img2img and inpainting.
 - `model` overrides the checkpoint for one request.
-- Upscaling uses the WebUI's upscalers (default `R-ESRGAN 4x+`).
+- Upscaling uses the WebUI's upscalers (by default the first one it offers; `model=` picks one).
 - Background removal needs the *sd-webui-rembg* extension.
 
 ### OpenAI and OpenAI-compatible APIs
@@ -80,7 +80,7 @@ If you use `--api-auth`, also set `KRITA_MCP_A1111_AUTH=user:password`.
 |---|---|
 | `KRITA_MCP_OPENAI_API_KEY` | (none) |
 | `KRITA_MCP_OPENAI_BASE_URL` | `https://api.openai.com/v1` |
-| `KRITA_MCP_OPENAI_IMAGE_MODEL` | `gpt-image-1` |
+| `KRITA_MCP_OPENAI_IMAGE_MODEL` | the newest image model your key can use (listed live) |
 | `KRITA_MCP_OPENAI_SIZES` | `1024x1024,1536x1024,1024x1536` |
 
 - Masked edits use `/images/edits`.
@@ -90,7 +90,7 @@ If you use `--api-auth`, also set `KRITA_MCP_A1111_AUTH=user:password`.
 ### Google Gemini
 
 Set `KRITA_MCP_GEMINI_API_KEY`. The image model is set by `KRITA_MCP_GEMINI_IMAGE_MODEL` (default
-`gemini-2.5-flash-image`).
+the newest Gemini image model your key can use, listed live).
 
 Gemini edits by instruction and has no mask input. krita-mcp sends the mask as a second image, then cuts
 the result back to your selection, so nothing outside the selection changes.
@@ -115,15 +115,17 @@ Set `KRITA_MCP_REPLICATE_API_TOKEN`.
 - krita-mcp reads the model's input schema and maps the prompt, image, mask, size or aspect ratio, seed,
   output count, strength, steps and guidance onto the input names that model uses. `extra` adds or
   overrides inputs.
-- Defaults: `black-forest-labs/flux-schnell` (txt2img), `flux-dev` (img2img), `flux-fill-dev` (inpaint).
+- Without `model`, a model is found in Replicate's own curated collections (text-to-image, image editing,
+  inpainting, super-resolution, background removal, text-to-video), checking each model's inputs so that it
+  fits the task (for example, inpainting needs an image and a mask input).
 
 ### fal.ai
 
 Set `KRITA_MCP_FAL_KEY`.
 
 - Pass any endpoint as `model="fal-ai/..."`. Requests go through fal's queue, so long jobs are fine.
-- Defaults: `fal-ai/flux/dev`, `fal-ai/flux/dev/image-to-image`, `fal-ai/flux-pro/v1/fill`.
-- Upscaling uses `fal-ai/clarity-upscaler`; background removal uses `fal-ai/birefnet`.
+- fal.ai has no API for listing models, so choose the endpoint with `model` for every task (browse
+  [fal.ai/models](https://fal.ai/models)). krita-mcp never guesses a fal model name.
 
 ## Video backends
 
@@ -134,8 +136,8 @@ animation, so the agent can paint over it, grade it (`for_each_frame`) and rende
 | Backend | Variables | Notes |
 |---|---|---|
 | `heygen` | `KRITA_MCP_HEYGEN_API_KEY` | Talking avatars. Needs `script`, `avatar_id` and `voice_id` (list them with `ai_backends(details=true)`). The canvas becomes the background. With `character="photo"`, the character painted on the canvas itself talks. |
-| `openai` | `KRITA_MCP_OPENAI_API_KEY`, `KRITA_MCP_OPENAI_VIDEO_MODEL` (default `sora-2`) | 4, 8 or 12 seconds, landscape or portrait. |
-| `gemini` | `KRITA_MCP_GEMINI_API_KEY`, `KRITA_MCP_GEMINI_VIDEO_MODEL` (default `veo-3.0-generate-001`) | Veo; text-to-video or image-to-video. |
+| `openai` | `KRITA_MCP_OPENAI_API_KEY`, `KRITA_MCP_OPENAI_VIDEO_MODEL` (default: newest video model listed) | 4, 8 or 12 seconds, landscape or portrait. |
+| `gemini` | `KRITA_MCP_GEMINI_API_KEY`, `KRITA_MCP_GEMINI_VIDEO_MODEL` (default: newest Veo listed) | Veo; text-to-video or image-to-video. |
 | `replicate` / `fal` | as for images | Any text- or image-to-video model; pass `model`. |
 
 `KRITA_MCP_VIDEO_BACKEND` sets the default video backend. `KRITA_MCP_VIDEO_TIMEOUT` (seconds, default
@@ -147,14 +149,38 @@ animation, so the agent can paint over it, grade it (`for_each_frame`) and rende
 returns its answer as text. Use it for a second opinion from a different AI, for captions, or to have
 one model write a detailed prompt for an image model.
 
-| Provider | Variables | Default model |
+| Provider | Variables | Model when none is chosen (listed live) |
 |---|---|---|
-| `anthropic` (Claude) | `KRITA_MCP_ANTHROPIC_API_KEY`; needs `pip install "krita-mcp[anthropic]"` | `claude-opus-5-5` (`KRITA_MCP_ANTHROPIC_MODEL`) |
-| `openai` | `KRITA_MCP_OPENAI_API_KEY` or a local `KRITA_MCP_OPENAI_BASE_URL` (Ollama: `http://127.0.0.1:11434/v1`) | `gpt-5-mini` (`KRITA_MCP_OPENAI_VISION_MODEL`) |
-| `gemini` | `KRITA_MCP_GEMINI_API_KEY` | `gemini-2.5-flash` (`KRITA_MCP_GEMINI_VISION_MODEL`) |
+| `anthropic` (Claude) | `KRITA_MCP_ANTHROPIC_API_KEY`; needs `pip install "krita-mcp[anthropic]"` | newest Claude, Opus first (`KRITA_MCP_ANTHROPIC_MODEL`) |
+| `openai` | `KRITA_MCP_OPENAI_API_KEY` or a local `KRITA_MCP_OPENAI_BASE_URL` (Ollama: `http://127.0.0.1:11434/v1`) | newest chat model, or the newest installed local model (`KRITA_MCP_OPENAI_VISION_MODEL`) |
+| `gemini` | `KRITA_MCP_GEMINI_API_KEY` | newest Gemini Flash (`KRITA_MCP_GEMINI_VISION_MODEL`) |
 
 `KRITA_MCP_VISION_PROVIDER` sets the default. Claude requests use Anthropic's server-side refusal
 fallback, so a declined request is retried on a suitable model within the same call.
+
+## Models are never hard-coded
+
+When you do not name a model, krita-mcp asks the provider **at that moment** which models your account can
+use, and picks the newest suitable one. Nothing is cached, so a newly released model is used as soon as your
+account has it, and a retired model is never requested again:
+
+| Provider | How the model is chosen |
+|---|---|
+| Gemini | Google's model list: the newest Flash (chat, vision), Flash Image, or Veo model |
+| OpenAI and compatible | `/models`, ranked by release date: newest chat, image (`gpt-image…`) or video (`sora…`) model |
+| Claude | Anthropic's model list: the newest Opus, then the newest other model |
+| OpenRouter | Your account's default model |
+| Local servers (Ollama, LM Studio) | The newest installed model |
+| Replicate | Its curated collections, checked against each model's inputs |
+| Stability | The service's own default for each endpoint |
+| AUTOMATIC1111, ComfyUI | Your loaded checkpoint and the first upscaler, sampler and scheduler the server offers |
+| HeyGen | The first avatar and voice on your account |
+| fal.ai | Must be chosen (fal has no model list API) |
+
+If Google answers that a model is no longer available and names its replacement, the request is retried
+with that model and the chat says so. In the AI Chat panel, the model box lists your account's models
+live (it reloads when you switch provider, sign in, or click ⟳). **Auto (newest)** keeps the automatic
+choice.
 
 ## Other settings
 
@@ -191,7 +217,7 @@ realistic images).
 | Artistic | `concept_art`, `illustration`, `anime`, `watercolor`, `oil_painting`, `3d_render`, `pixel_art`, `comic`, `sketch` |
 
 For the most realistic results, use a photoreal checkpoint (for example an SDXL realism model in ComfyUI
-or A1111), or `gpt-image-1`, Gemini, Stability Ultra, or Flux on Replicate or fal.
+or A1111), or a current hosted model from OpenAI, Gemini, Stability, Replicate or fal.
 
 ## Sketch to image (`control`)
 

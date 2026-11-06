@@ -10,6 +10,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_providers import B64  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def isolated_keys(monkeypatch, tmp_path_factory):
+    """Never read the user's real ~/.krita-mcp (saved API keys!) from tests - and never call real services."""
+    monkeypatch.setenv("KRITA_MCP_HOME", str(tmp_path_factory.mktemp("krita-mcp-home")))
+    for name in ("KRITA_MCP_USE_ENV_KEYS", "KRITA_MCP_GEMINI_API_KEY", "KRITA_MCP_OPENAI_API_KEY",
+                 "KRITA_MCP_ANTHROPIC_API_KEY", "KRITA_MCP_OPENROUTER_API_KEY", "KRITA_MCP_STABILITY_API_KEY",
+                 "KRITA_MCP_REPLICATE_API_TOKEN", "KRITA_MCP_FAL_KEY", "KRITA_MCP_HEYGEN_API_KEY",
+                 "KRITA_MCP_IMAGE_BACKEND", "KRITA_MCP_VIDEO_BACKEND", "KRITA_MCP_VISION_PROVIDER"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture()
 def bridge(monkeypatch, tmp_path):
     calls = []

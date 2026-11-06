@@ -17,7 +17,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import oauth
-from .providers import http, keys
+from .providers import catalog, gemini, http, keys
 from .providers.http import ProviderError, env, secret
 
 DEFAULT_PORT = 5680
@@ -25,16 +25,16 @@ MAX_STEPS = 40
 MAX_RESULT_CHARS = 12000
 
 PROVIDERS = {
-    "gemini": {"label": "Google Gemini", "model": "gemini-2.5-flash", "key_url": "https://aistudio.google.com/apikey",
+    "gemini": {"label": "Google Gemini", "model": "", "key_url": "https://aistudio.google.com/apikey",
                "env": ("KRITA_MCP_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")},
-    "anthropic": {"label": "Anthropic Claude", "model": "claude-opus-5-5",
+    "anthropic": {"label": "Anthropic Claude", "model": "",
                   "key_url": "https://console.anthropic.com/settings/keys",
                   "env": ("KRITA_MCP_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")},
-    "openai": {"label": "OpenAI (or compatible)", "model": "gpt-5-mini", "key_url": "https://platform.openai.com/api-keys",
+    "openai": {"label": "OpenAI (or compatible)", "model": "", "key_url": "https://platform.openai.com/api-keys",
                "env": ("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY")},
     "openrouter": {"label": "OpenRouter", "model": "", "key_url": "https://openrouter.ai/settings/keys",
                    "env": ("KRITA_MCP_OPENROUTER_API_KEY",)},
-    "ollama": {"label": "Local model (Ollama / LM Studio)", "model": "qwen3:8b", "key_url": "",
+    "ollama": {"label": "Local model (Ollama / LM Studio)", "model": "", "key_url": "",
                "env": ()},
 }
 
@@ -75,7 +75,8 @@ def status():
     """Every service (chat models and generative services), with the chat default models."""
     out = keys.status()
     for name, info in PROVIDERS.items():
-        out[name]["default_model"] = info["model"]
+        out[name]["default_model"] = info["model"] or ("your OpenRouter default" if name == "openrouter"
+                                                         else "newest available")
         out[name]["chat"] = True
     return out
 
@@ -164,8 +165,14 @@ class Gemini:
         self.key = key_for("gemini")
         if not self.key:
             raise ProviderError("Sign in to Gemini first (an API key from https://aistudio.google.com/apikey)")
-        self.model, self.base = model, base_url_for("gemini")
+        self.chosen, self.model, self.base = model, None, base_url_for("gemini")
         self.json_schema = True
+        self.note = None
+
+    def prepare(self):
+        """Pick the model for this turn: the user's choice, else the newest Gemini Flash available now."""
+        self.model = self.chosen or gemini.pick(self.base, self.key, "chat")
+        return self.model
 
     def start(self, specs):
         self.specs = specs
@@ -185,9 +192,13 @@ class Gemini:
 
     def step(self, history):
         body = {"systemInstruction": {"parts": [{"text": SYSTEM}]}, "contents": history, "tools": self._tools()}
-        url = "%s/models/%s:generateContent" % (self.base, self.model)
         try:
-            r = http.post_json(url, body, {"x-goog-api-key": self.key})
+            r, used = gemini.post(self.base, self.key, self.model, "generateContent", body)
+            if used != self.model:  # Google retired the model and named its replacement
+                self.note = "Gemini model %s is no longer available; switched to %s." % (self.model, used)
+                self.model = used
+                if self.chosen:
+                    self.chosen = used
         except ProviderError as e:
             if self.json_schema and "parametersJsonSchema" in str(e):
                 self.json_schema = False
@@ -218,11 +229,21 @@ class OpenAICompat:
         self.key = key_for(provider) or ("local" if http.is_loopback_url(self.base) else None)
         if not self.key:
             raise ProviderError("Sign in to %s first (Services... > Sign in)" % PROVIDERS[provider]["label"])
-        self.model = model
+        self.provider, self.chosen, self.model, self.note = provider, model, None, None
         self.headers = {"Authorization": "Bearer " + self.key}
         if provider == "openrouter":  # app attribution, as OpenRouter suggests
             self.headers.update({"HTTP-Referer": "https://github.com/jowinjohnchemban/krita-mcp",
                                  "X-OpenRouter-Title": "Krita MCP"})
+
+    def prepare(self):
+        """The user's model, else the newest suitable one listed now (OpenRouter: the account's default)."""
+        if self.chosen or self.provider == "openrouter":
+            self.model = self.chosen or None
+        elif self.provider == "ollama" or http.is_loopback_url(self.base):
+            self.model = catalog.first(catalog.local_models(self.base), "local model (install one first)")
+        else:
+            self.model = catalog.first(catalog.openai_models(self.base, self.key), "OpenAI chat model")
+        return self.model or "your OpenRouter default model"
 
     def start(self, specs):
         self.tools = [{"type": "function", "function": {"name": s["name"], "description": s["description"],
@@ -272,7 +293,12 @@ class Claude:
             raise ProviderError("install the Anthropic SDK: pip install 'krita-mcp[anthropic]'") from None
         self.anthropic = anthropic
         self.client = anthropic.Anthropic(api_key=key)
-        self.model = model
+        self.key, self.chosen, self.model, self.note = key, model, None, None
+
+    def prepare(self):
+        """The user's model, else the newest Claude (Opus first) listed now."""
+        self.model = self.chosen or catalog.first(catalog.anthropic_models(self.key), "Claude model")
+        return self.model
 
     def start(self, specs):
         self.tools = [{"name": s["name"], "description": s["description"], "input_schema": s["schema"]}
@@ -317,10 +343,35 @@ class Claude:
         history.append({"role": "user", "content": blocks})
 
 
+def available_models(provider):
+    """The chat models this account can use right now, newest first (for the panel's model list)."""
+    if provider == "gemini":
+        key = key_for("gemini")
+        if not key:
+            raise ProviderError("sign in to Gemini to list its models")
+        return catalog.gemini_models(base_url_for("gemini"), key, "chat")
+    if provider == "anthropic":
+        key = key_for("anthropic")
+        if not key:
+            raise ProviderError("sign in to Claude to list its models")
+        return catalog.anthropic_models(key)
+    if provider == "openrouter":
+        return catalog.openrouter_models(base_url_for("openrouter"), key_for("openrouter"))
+    if provider == "ollama":
+        return catalog.local_models(base_url_for("ollama"))
+    if provider == "openai":
+        base = base_url_for("openai")
+        key = key_for("openai") or ("local" if http.is_loopback_url(base) else None)
+        if not key:
+            raise ProviderError("sign in to OpenAI to list its models")
+        return catalog.openai_models(base, key)
+    raise ProviderError("unknown provider %r" % provider)
+
+
 def make_model(provider, model=None):
     if provider not in PROVIDERS:
         raise ProviderError("unknown provider %r; choose from %s" % (provider, ", ".join(PROVIDERS)))
-    model = model or env("KRITA_MCP_%s_CHAT_MODEL" % provider.upper(), PROVIDERS[provider]["model"])
+    model = model or env("KRITA_MCP_%s_CHAT_MODEL" % provider.upper()) or None
     if provider == "gemini":
         return Gemini(model)
     if provider == "anthropic":
@@ -355,12 +406,17 @@ async def run_turn(sess, text):
         sess.model = make_model(sess.provider, sess.model_name)
         sess.history = sess.model.start(await tool_specs())
     m = sess.model
+    used = await asyncio.to_thread(m.prepare)  # models are listed fresh for every message
+    sess.emit("note", text="Model: %s" % used)
     m.user(sess.history, text)
     for step in range(MAX_STEPS):
         if sess.stop:
             sess.emit("assistant", text="(stopped)")
             return
         reply, calls = await asyncio.to_thread(m.step, sess.history)
+        if getattr(m, "note", None):
+            sess.emit("note", text=m.note)
+            m.note = None
         if reply.strip():
             sess.emit("assistant", text=reply.strip())
         if not calls:
@@ -445,6 +501,11 @@ class Handler(BaseHTTPRequestHandler):
         q = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
         if path == "/health":
             return self._send(200, {"ok": True, "providers": status()})
+        if path == "/models":
+            try:
+                return self._send(200, {"models": available_models(q.get("provider", "gemini"))})
+            except ProviderError as e:
+                return self._send(200, {"models": [], "error": str(e)})
         if path == "/oauth/status":
             return self._send(200, oauth.poll(q.get("id", "")))
         if path == "/events":
@@ -497,9 +558,19 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(404, {"error": "not found"})
 
 
+class _ExclusiveServer(ThreadingHTTPServer):
+    # Windows' SO_REUSEADDR would let a second service share the port with a running one (and requests
+    # would go to either); one service per port, and a clear error if it is taken.
+    allow_reuse_address = False
+
+
 def serve(port=None, host="127.0.0.1", ready=None):
-    port = int(port or env("KRITA_MCP_AGENT_PORT", str(DEFAULT_PORT)))
-    srv = ThreadingHTTPServer((host, port), Handler)
+    if port is None:  # 0 is valid: a free port chosen by the OS (tests)
+        port = int(env("KRITA_MCP_AGENT_PORT", str(DEFAULT_PORT)))
+    try:
+        srv = _ExclusiveServer((host, int(port)), Handler)
+    except OSError as e:
+        raise SystemExit("the assistant service cannot use %s:%s (%s); is it already running?" % (host, port, e))
     if ready:
         ready(srv)
     try:

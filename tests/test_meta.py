@@ -30,3 +30,11 @@ def test_tool_reference_is_current():
     r = subprocess.run([sys.executable, str(ROOT / "scripts" / "gen_tool_docs.py"), "--check"],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_tests_never_see_the_users_real_keys():
+    """conftest isolates every test: the key store must not be the real ~/.krita-mcp."""
+    sys.path.insert(0, str(ROOT / "src"))
+    from krita_mcp.providers import keys
+    real = (Path.home() / ".krita-mcp").resolve()
+    assert real not in keys.path().resolve().parents

@@ -67,7 +67,7 @@ def chat(monkeypatch, tmp_path):
         if path == "/health":
             return {"providers": {
                 "gemini": {"signed_in": True, "needs_key": True, "chat": True, "label": "Google Gemini",
-                           "use": "chat", "default_model": "gemini-2.5-flash"},
+                           "use": "chat", "default_model": "newest available"},
                 "fal": {"signed_in": False, "needs_key": True, "label": "fal.ai", "use": "images"},
                 "comfyui": {"signed_in": False, "needs_key": False, "has_url": True, "label": "ComfyUI"}}}
         if path == "/chat":
@@ -100,7 +100,7 @@ def pump(app, seconds):
 def test_chat_round_trip_renders_the_conversation(chat):
     app, c, dock, sent = chat
     pump(app, 0.5)
-    assert "signed in" in dock.account.text() and dock.model.placeholderText() == "gemini-2.5-flash"
+    assert "signed in" in dock.account.text() and "newest" in dock.model.lineEdit().placeholderText()
     dock.input.setPlainText("paint a fox")
     dock._send()
     assert not dock.send_btn.isEnabled()
