@@ -427,10 +427,11 @@ def test_each_service_is_set_up_the_way_it_works(chat):
     labels, buttons, title = parts(_setup_dialog(c, dock, "openrouter", label="OpenRouter", setup="browser",
                                                  browser_sign_in=True))
     assert "Sign in with browser" in buttons and "Address" not in labels
-    labels, buttons, title = parts(_setup_dialog(c, dock, "ollama", label="Local model", use="chat",
-                                                 setup="local"))
+    local = _setup_dialog(c, dock, "ollama", label="Local model", use="chat", setup="local")
+    labels, buttons, title = parts(local)
     assert "Address" in labels and "API key" not in labels and "Test connection" in buttons
-    assert title == "Set up Local model" and "Save" in buttons
+    assert title == "Set up Local model" and local.save_btn.text() == "Save"
+    assert local.save_btn in local.findChildren(qtw.QPushButton) and local.save_btn.isDefault()
     labels, buttons, title = parts(_setup_dialog(c, dock, "kilo", label="Kilo", use="chat", setup="free",
                                                  optional_key=True, key_url="https://app.kilo.ai"))
     assert "API key" in labels and any("no account needed" in t for t in labels)
