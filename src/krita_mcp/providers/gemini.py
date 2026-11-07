@@ -50,6 +50,10 @@ def pick(base, key, family):
     try:
         name = newest(list_models(base, key), family)
     except ProviderError as e:
+        if "HTTP 401" in str(e) or "HTTP 403" in str(e) or "API key not valid" in str(e):
+            raise ProviderError("Google rejected the Gemini API key saved for Krita. Sign out and sign in "
+                                "again (AI Chat > Services... > Google Gemini) with a new key from "
+                                "https://aistudio.google.com/apikey") from None
         raise ProviderError("could not list Gemini models (%s); choose a model by name" % e) from None
     if not name:
         raise ProviderError("no %s is available to this key; choose a model by name" % LABEL[family])

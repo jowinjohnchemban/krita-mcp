@@ -84,7 +84,11 @@ def request(method, url, body=None, headers=None, timeout=600, raw=False):
             return r.read(MAX_DOWNLOAD + 1), r.headers
     except urllib.error.HTTPError as e:
         detail = e.read(4000).decode("utf-8", "replace")
-        raise ProviderError("%s %s -> HTTP %d: %s" % (method, _redact(url), e.code, detail[:800])) from None
+        hint = ""
+        if e.code in (401, 403):
+            hint = (" -- the service rejected the API key saved for Krita: sign out and sign in again "
+                    "(AI Chat > Services...) with a new key")
+        raise ProviderError("%s %s -> HTTP %d: %s%s" % (method, _redact(url), e.code, detail[:600], hint)) from None
     except (urllib.error.URLError, OSError) as e:
         raise ProviderError("cannot reach %s (%s)" % (_redact(url), getattr(e, "reason", e))) from None
 

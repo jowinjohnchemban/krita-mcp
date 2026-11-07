@@ -11,6 +11,7 @@ import asyncio
 import base64
 import hmac
 import json
+import re
 import threading
 import time
 import uuid
@@ -265,7 +266,20 @@ class OpenAICompat:
         body = {"messages": history, "tools": self.tools}
         if self.model:
             body["model"] = self.model
-        r = http.post_json(self.base + "/chat/completions", body, self.headers)
+        limit_key = "max_completion_tokens" if self.provider == "openai" else "max_tokens"
+        body[limit_key] = int(env("KRITA_MCP_CHAT_MAX_TOKENS", "4096"))
+        try:
+            r = http.post_json(self.base + "/chat/completions", body, self.headers)
+        except ProviderError as e:
+            m = re.search(r"can only afford (\d+)", str(e))
+            if not m or int(m.group(1)) < 600:
+                if "HTTP 402" in str(e):
+                    raise ProviderError("%s: not enough credits for this request. Add credits on the "
+                                        "provider's site, or choose a cheaper or free model in the model "
+                                        "box." % PROVIDERS[self.provider]["label"]) from None
+                raise
+            body[limit_key] = int(m.group(1)) - 256  # what the remaining balance can pay for
+            r = http.post_json(self.base + "/chat/completions", body, self.headers)
         msg = (r.get("choices") or [{}])[0].get("message") or {}
         entry = {"role": "assistant", "content": msg.get("content") or ""}
         if msg.get("tool_calls"):

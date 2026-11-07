@@ -373,3 +373,63 @@ def test_service_reports_its_version_and_can_be_stopped(home):
     assert call("POST", "/shutdown") == {"ok": True}
     t.join(5)
     assert not t.is_alive()  # the service really stopped (the panel then starts the current one)
+
+
+def test_reply_length_is_capped_and_low_credit_is_handled(home, bridge, monkeypatch):
+    """OpenRouter reserves credit for the longest possible reply: cap it, and fit what the balance allows."""
+    m = Mock()
+    calls = {"n": 0}
+    afford = ('{"error":{"message":"This request requires more credits, or fewer max_tokens. You requested '
+              'up to 4096 tokens, but can only afford 1893.","code":402}}')
+
+    def chat(h, b):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return 402, "application/json", afford.encode()
+        return 200, "application/json", json.dumps({"choices": [{"message": {"content": "painted"}}]}).encode()
+    try:
+        m.routes[("POST", "/api/v1/chat/completions")] = chat
+        m.json("GET", "/api/v1/models", {"data": [{"id": "acme/vision-tools", "created": 1,
+                                                    "supported_parameters": ["tools"],
+                                                    "architecture": {"input_modalities": ["text", "image"]}}]})
+        monkeypatch.setenv("KRITA_MCP_OPENROUTER_BASE_URL", m.url + "/api/v1")
+        agent.save_key("openrouter", "sk-or-v1-x")
+        events = _wait(agent.chat(None, "openrouter", None, "paint"))
+        posts = [json.loads(c[3]) for c in m.calls if c[0] == "POST"]
+    finally:
+        m.srv.shutdown()
+    assert events[-1]["text"] == "painted"
+    assert posts[0]["max_tokens"] == 4096 and posts[1]["max_tokens"] == 1893 - 256  # fitted to the balance
+
+
+def test_no_credit_at_all_and_rejected_keys_explain_themselves(home, bridge, monkeypatch):
+    m = Mock()
+    try:
+        m.routes[("POST", "/api/v1/chat/completions")] = lambda h, b: (
+            402, "application/json", b'{"error":{"message":"Insufficient credits","code":402}}')
+        m.json("GET", "/api/v1/models", {"data": [{"id": "acme/m", "supported_parameters": ["tools"]}]})
+        m.routes[("GET", "/models")] = lambda h, b: (
+            401, "application/json", b'{"error":{"code":401,"message":"API key not valid."}}')
+        monkeypatch.setenv("KRITA_MCP_OPENROUTER_BASE_URL", m.url + "/api/v1")
+        monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", m.url)
+        agent.save_key("openrouter", "sk-or-v1-x")
+        agent.save_key("gemini", "bad-key")
+        no_credit = [e for e in _wait(agent.chat(None, "openrouter", None, "paint")) if e["type"] == "error"]
+        bad_key = [e for e in _wait(agent.chat(None, "gemini", None, "paint")) if e["type"] == "error"]
+    finally:
+        m.srv.shutdown()
+    assert "not enough credits" in no_credit[0]["text"] and "cheaper or free model" in no_credit[0]["text"]
+    assert "rejected the Gemini API key" in bad_key[0]["text"] and "sign in" in bad_key[0]["text"]
+
+
+def test_openai_uses_max_completion_tokens(home, bridge, monkeypatch):
+    m = Mock()
+    try:
+        m.json("POST", "/v1/chat/completions", {"choices": [{"message": {"content": "ok"}}]})
+        monkeypatch.setenv("KRITA_MCP_OPENAI_BASE_URL", m.url + "/v1")
+        agent.save_key("openai", "sk-x")
+        _wait(agent.chat(None, "openai", "gpt-x", "hi"))
+        body = json.loads([c for c in m.calls if c[0] == "POST"][-1][3])
+    finally:
+        m.srv.shutdown()
+    assert body["max_completion_tokens"] == 4096 and "max_tokens" not in body  # newer OpenAI models need this
