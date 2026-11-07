@@ -24,6 +24,16 @@ The mode is remembered between sessions.
 
 - **Port**: changing it restarts the bridge. Clients need the same port (`KRITA_MCP_PORT`).
 - **Start with Krita**: start the bridge automatically.
+- **Dialogs**: what happens to popups Krita opens while the AI works, such as "Missing Colour Profile", an
+  "are you sure?" or "Waiting for image operation to complete…". A modal dialog would otherwise block
+  the AI until someone answers it.
+  - **Cancel them and tell the AI** (default): the plugin reads the dialog's title, text and buttons and
+    presses **Cancel**, never OK. The AI gets that report and can take another way, and the Activity log
+    shows it. Progress windows get up to 30 seconds to finish on their own first.
+  - **Leave them for me to answer**: the dialog stays open for you; the AI is still told it appeared.
+
+  Dialogs that were already open, or that you open yourself, are never touched. `KRITA_MCP_DIALOGS`
+  (`cancel` or `leave`) sets the same.
 - **Workspace**: the only folder the AI may read or write (imports, exports, videos, frames).
   **…** picks a folder; **Open** shows it in your file manager. `KRITA_MCP_WORKSPACE`, if set, wins.
 - **Token**: the shared secret clients use. **Show** and **Copy** reveal and copy it; **New**
@@ -72,3 +82,7 @@ A copy of the plugin bundled with Krita itself has no updater: it is updated wit
 
 A live log of every request: time, ✓/✗, command, duration and any error. This includes requests
 refused by the access mode.
+
+If a single request runs for more than a minute (`KRITA_MCP_HANG_SECONDS`), the bridge writes where
+Krita is stuck to `~/.krita-mcp/hang.log`, even while Krita's window is frozen. Include that file when
+you report a hang.

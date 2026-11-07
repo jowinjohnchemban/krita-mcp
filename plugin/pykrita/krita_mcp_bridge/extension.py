@@ -63,6 +63,8 @@ class KritaMcpBridge(Extension):
         util.WORKSPACE_OVERRIDE = ws or None
         mode = setting("access", "full")
         handlers.ACCESS["mode"] = mode if mode in ("full", "read_only", "paused") else "full"
+        from . import dialogs
+        dialogs.POLICY["mode"] = setting("dialogs", "cancel")
         env = os.environ.get("KRITA_MCP_AUTOSTART")
         default = "true" if AUTOSTART_DEFAULT else "false"
         autostart = env != "0" if env is not None else setting("autostart", default) == "true"

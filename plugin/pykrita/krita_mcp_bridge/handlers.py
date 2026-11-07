@@ -21,7 +21,7 @@ except ImportError:  # Krita 5
     from PyQt5.QtGui import (QBrush, QColor, QFont, QImage, QLinearGradient, QPainter,
                              QPainterPath, QPen, QPolygonF, QRadialGradient)
 
-from . import history, pixels
+from . import dialogs, history, pixels
 from .util import DOC_EXTS, IMAGE_EXTS, OPEN_EXTS, BridgeError, parse_color, safe_path, workspace_root
 
 BRIDGE_VERSION = "0.3.0"
@@ -83,21 +83,33 @@ def dispatch(method, params):
     if fn is None:
         raise BridgeError("Unknown method %r" % method)
     t0 = time.monotonic()
-    ok, detail = False, ""
+    ok, detail, events = False, "", []
     try:
         mode = ACCESS["mode"]
         if mode == "paused":
             raise BridgeError("The user has paused AI access in Krita (MCP docker). Ask them to resume it.")
         if mode == "read_only" and method not in READS:
             raise BridgeError("Krita is in read-only mode for AI (MCP docker): looking is allowed, editing is not.")
-        if method in EDITS:
-            result = history.run(method, fn, params, app().activeDocument())
-        else:
-            result = fn(params)
+        guard = dialogs.DialogGuard().start()  # popups Krita opens meanwhile never block the AI
+        try:
+            if method in EDITS:
+                result = history.run(method, fn, params, app().activeDocument())
+            else:
+                result = fn(params)
+        finally:
+            events = guard.stop()
+        if events:  # the step went through, but Krita asked something on the way: say so
+            detail = dialogs.summary(events)[:200]
+            if isinstance(result, dict):
+                result = dict(result, dialogs=events)
         ok = True
         return result
     except Exception as e:  # noqa: BLE001 - logged, then reported to the caller by the protocol layer
         detail = str(e)[:200]
+        if events:
+            note = dialogs.summary(events)
+            detail = ("%s - %s" % (e, note))[:200]
+            raise BridgeError("%s (%s)" % (e, note)) from None
         raise
     finally:
         ACTIVITY.append((time.time(), method, ok, int((time.monotonic() - t0) * 1000), detail))
@@ -220,12 +232,36 @@ def write_image(node, img, x, y):
     node.setPixelData(QByteArray(data), x, y, img.width(), img.height())
 
 
-def _refresh(doc):
-    doc.refreshProjection()
-    try:
+def _refresh(doc, projection=True):
+    """Wait for Krita to finish the edit, then (for direct pixel writes) rebuild the composite image.
+
+    Order matters: doc.refreshProjection() blocks Krita's main thread until every running stroke is done; if a
+    brush stroke is still running, it never finishes (Krita freezes at 0% CPU behind "Waiting for image
+    operation to complete... Scripted Brush Stroke"). So first wait while Krita's event loop keeps running,
+    and only refresh once the image is idle. Brush strokes update the image themselves: projection=False.
+    On an idle image waitForDone() is safe again, and needed: it also renders fill / filter / generator
+    layers, which Krita otherwise updates only later."""
+    history.wait_idle(doc)  # never block while a stroke may still be running (see wait_idle)
+    if projection:
+        doc.refreshProjection()
         doc.waitForDone()
-    except Exception:  # noqa: BLE001 - older builds
-        pass
+
+
+def _instant_preview_off():
+    """Switch Krita's Instant Preview (Shift+L) off for a scripted stroke; returns the action to switch back on.
+
+    With Instant Preview, a big brush stroke is painted at low resolution first and the full-resolution part is
+    left pending for the canvas to finish later. A scripted stroke followed by a filter, save or export then
+    waits for that pending part forever ("Waiting for image operation to complete... Scripted Brush Stroke",
+    Krita frozen). Without it, every stroke is complete when it ends."""
+    try:
+        action = Krita.instance().action("level_of_detail_mode")
+    except Exception:  # noqa: BLE001 - not available in this build
+        return None
+    if action is not None and action.isCheckable() and action.isChecked():
+        action.setChecked(False)
+        return action
+    return None
 
 
 def _b64png(img):
@@ -407,11 +443,13 @@ def document_save(p):
     doc.setBatchmode(True)  # never pop up dialogs
     if p.get("path"):
         path = safe_path(p["path"], DOC_EXTS)
+        history.wait_idle(doc)
         ok = doc.saveAs(str(path))
     else:
         if not doc.fileName():
             raise BridgeError("Document has never been saved; pass a 'path' ending in .kra")
         safe_path(doc.fileName(), DOC_EXTS)
+        history.wait_idle(doc)
         ok = doc.save()
         path = doc.fileName()
     if not ok:
@@ -533,6 +571,7 @@ def document_rotate(p):
 @handler("document.flatten", edit=True)
 def document_flatten(p):
     doc = active_doc()
+    history.wait_idle(doc)
     doc.flatten()
     _refresh(doc)
     return {"layers": [node_info(c) for c in doc.rootNode().childNodes()]}
@@ -1263,6 +1302,7 @@ def filter_apply(p):
     else:
         x, y, w, h = 0, 0, doc.width(), doc.height()
     history.backup_layer(node, doc)
+    history.wait_idle(doc)
     f.apply(node, x, y, w, h)
     _refresh(doc)
     return node_info(node)
@@ -1337,6 +1377,7 @@ def brush_stroke(p):
     doc.setActiveNode(node)
     saved = (view.currentBrushPreset(), view.brushSize(), view.foregroundColor(), view.paintingOpacity(),
              view.paintingFlow(), view.eraserMode())
+    preview = _instant_preview_off()
     try:
         if p.get("preset"):
             view.setCurrentBrushPreset(_find_preset(str(p["preset"])))
@@ -1374,7 +1415,11 @@ def brush_stroke(p):
         view.setPaintingOpacity(opacity)
         view.setPaintingFlow(flow)
         view.setEraserMode(eraser)
-    _refresh(doc)
+        try:
+            _refresh(doc, projection=False)  # the strokes are finished at full resolution ...
+        finally:
+            if preview is not None:  # ... before the user's Instant Preview comes back
+                preview.setChecked(True)
     return {"strokes": strokes, "layer": node_info(node)}
 
 

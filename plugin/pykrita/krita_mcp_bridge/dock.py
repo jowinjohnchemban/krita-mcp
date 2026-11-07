@@ -25,7 +25,7 @@ except ImportError:  # Krita 5
     _PASSWORD, _NORMAL = QLineEdit.Password, QLineEdit.Normal
     _RICH = Qt.RichText
 
-from . import extension, handlers, history, protocol, util
+from . import dialogs, extension, handlers, history, protocol, util
 from .util import i18n
 
 ACCESS_MODES = [("full", "Full access"), ("read_only", "Read only (AI can look, not edit)"),
@@ -103,6 +103,14 @@ class McpDocker(DockWidget):
         self.autostart = QCheckBox(i18n("Start with Krita"))
         self.autostart.toggled.connect(lambda v: extension.set_setting("autostart", "true" if v else "false"))
         f.addRow("", self.autostart)
+        self.dialog_mode = QComboBox()
+        self.dialog_mode.addItem(i18n("Cancel them and tell the AI"), "cancel")
+        self.dialog_mode.addItem(i18n("Leave them for me to answer"), "leave")
+        self.dialog_mode.setToolTip(i18n("Questions and popups Krita opens while the AI works (e.g. 'Missing Colour "
+                                         "Profile') would block it. Cancel (never OK) keeps the AI going; your own "
+                                         "dialogs are never touched."))
+        self.dialog_mode.currentIndexChanged.connect(self._dialogs_changed)
+        f.addRow(i18n("Dialogs"), self.dialog_mode)
         ws_row = QHBoxLayout()
         self.workspace = QLineEdit()
         self.workspace.setReadOnly(True)
@@ -241,6 +249,9 @@ class McpDocker(DockWidget):
         self.command.setText(extension.setting("client_command", "krita-mcp"))
         idx = [k for k, _ in ACCESS_MODES].index(handlers.ACCESS["mode"])
         self.access.setCurrentIndex(idx)
+        self.dialog_mode.blockSignals(True)
+        self.dialog_mode.setCurrentIndex(max(0, self.dialog_mode.findData(dialogs.policy())))
+        self.dialog_mode.blockSignals(False)
         self._update_snippet()
 
     def _refresh_updates(self):
@@ -318,6 +329,11 @@ class McpDocker(DockWidget):
             self._say(i18n("Restarted on port %d.") % self.port.value() if ok else i18n("Could not start: %s") % ext.last_error)
         self._update_snippet()
         self.refresh()
+
+    def _dialogs_changed(self, idx):
+        key = self.dialog_mode.itemData(idx)
+        dialogs.POLICY["mode"] = key
+        extension.set_setting("dialogs", key)
 
     def _access_changed(self, idx):
         key = self.access.itemData(idx)

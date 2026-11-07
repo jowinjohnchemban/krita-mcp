@@ -290,6 +290,26 @@ def flush_events(rounds=3):
         QCoreApplication.processEvents(_NO_INPUT)
 
 
+def wait_idle(doc, timeout=120.0):
+    """Wait until Krita has finished every queued operation on the image - while its event loop keeps running.
+
+    Never block in doc.waitForDone() on this (GUI) thread: with Instant Preview (big brushes), Krita paints a
+    quick low-resolution version first and starts the full-resolution stroke from a timer on this thread, so
+    a blocking wait never ends ("Waiting for image operation to complete... Scripted Brush Stroke", Krita
+    frozen at 0% CPU). Polling tryBarrierLock and letting timers run avoids that deadlock."""
+    import time
+    if not hasattr(doc, "tryBarrierLock"):  # very old builds
+        doc.waitForDone()
+        return
+    end = time.monotonic() + timeout
+    while not doc.tryBarrierLock():
+        if time.monotonic() > end:
+            raise BridgeError("Krita is still busy with the previous operation; try again in a moment")
+        QCoreApplication.processEvents(_NO_INPUT, 20)
+        time.sleep(0.003)
+    doc.unlock()
+
+
 def pump_for(seconds):
     """Keep Krita's event loop (incl. timers) running for a moment, without user input."""
     import time

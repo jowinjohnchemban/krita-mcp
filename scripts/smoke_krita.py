@@ -678,6 +678,13 @@ def photo_adjustments():
 def generators():
     call("document.new", width=200, height=120, name="gen", background="white")
     out = {}
+    try:
+        return _generators(out)
+    finally:
+        call("document.close")  # a failure here must not leave "gen" active for the next steps
+
+
+def _generators(out):
     for gen, cfg in [("seexpr", {"script": "$c = noise(8*$u, 8*$v); [$c, $c*0.5, 1-$c]"}),
                      ("screentone", {"pattern": 0, "shape": 0, "size_mode": 1, "size_x": 8, "size_y": 8,
                                      "foreground_color": "#ff0000", "background_color": "#ffffff"}),
@@ -688,7 +695,6 @@ def generators():
         expect(a["coverage"] > 0.5, "%s produced nothing: %r" % (gen, a))
         snap("15_gen_" + gen)
         call("layer.update", layer=lay["id"], visible=False)
-    call("document.close")
     return out
 
 

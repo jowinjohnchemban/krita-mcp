@@ -199,6 +199,7 @@ def photo_adjust(p):
         node = paint_layer(doc, p.get("layer"))
         _, (x, y, w, h) = _selection_area(doc, p)
         history.backup_layer(node, doc)
+        history.wait_idle(doc)
         f.apply(node, x, y, w, h)
     _refresh(doc)
     return {"layer": node_info(node), "operation": op}

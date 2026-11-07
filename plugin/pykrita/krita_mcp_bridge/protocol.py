@@ -9,6 +9,7 @@ Wire format (one JSON object per line, both directions):
   response: {"id": 1, "ok": true,  "result": ...}
             {"id": 1, "ok": false, "error": {"type": "...", "message": "..."}}
 """
+import faulthandler
 import hmac
 import json
 import os
@@ -65,6 +66,32 @@ class _Job:
         self.method, self.params = method, params
         self.event = threading.Event()
         self.ok, self.value, self.error, self.cancelled = False, None, None, False
+
+
+_HANG = {"file": None}
+
+
+def _watch(method):
+    """If one request runs longer than KRITA_MCP_HANG_SECONDS (60), write where Krita is stuck (every Python
+    thread's stack) to ~/.krita-mcp/hang.log - it works even while Krita's main thread is frozen."""
+    try:
+        if _HANG["file"] is None:
+            home = os.environ.get("KRITA_MCP_HOME") or os.path.join(os.path.expanduser("~"), ".krita-mcp")
+            os.makedirs(home, exist_ok=True)
+            _HANG["file"] = open(os.path.join(home, "hang.log"), "a", encoding="utf-8")
+            _HANG["file"].write("\n== Krita MCP bridge started %s; stacks below = a request that hung\n"
+                                % time.strftime("%Y-%m-%d %H:%M:%S"))
+            _HANG["file"].flush()
+        f = _HANG["file"]
+        faulthandler.dump_traceback_later(float(os.environ.get("KRITA_MCP_HANG_SECONDS") or 60), file=f)
+        return True
+    except Exception:  # noqa: BLE001 - diagnostics must never break a request
+        return False
+
+
+def _unwatch(armed):
+    if armed:
+        faulthandler.cancel_dump_traceback_later()
 
 
 class BridgeServer:
@@ -138,6 +165,7 @@ class BridgeServer:
                 return
             if job.cancelled:
                 continue
+            armed = _watch(job.method)
             try:
                 job.value = self._dispatch(job.method, job.params)
                 job.ok = True
@@ -147,6 +175,7 @@ class BridgeServer:
                 self._log(traceback.format_exc())
                 job.error = (type(e).__name__, str(e))
             finally:
+                _unwatch(armed)
                 job.event.set()
 
     # -- socket threads ---------------------------------------------------

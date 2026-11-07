@@ -668,3 +668,69 @@ def test_import_image_tiles_a_texture(H):
                                           "width": 20, "name": "Rock"})
     node = H.find_layer(H.active_doc(), r["id"])
     assert r["name"] == "Rock" and node.pixelData(45, 25, 1, 1) == bytes([0x99, 0x66, 0x33, 255])
+
+
+def test_waiting_for_krita_never_blocks_its_event_loop(H):
+    """The 'Scripted Brush Stroke' freeze: with Instant Preview, Krita finishes a stroke only when a timer on the
+    GUI thread fires. A blocking waitForDone() never lets it fire; the bridge must wait while pumping events."""
+    try:
+        from PyQt6.QtCore import QTimer
+    except ImportError:
+        from PyQt5.QtCore import QTimer
+    from krita_mcp_bridge import history
+
+    class Busy:
+        def __init__(self):
+            self.done, self.unlocked = False, 0
+            QTimer.singleShot(50, lambda: setattr(self, "done", True))  # the full-resolution stroke
+
+        def tryBarrierLock(self):
+            return self.done
+
+        def unlock(self):
+            self.unlocked += 1
+
+        def waitForDone(self):  # blocks too: fine on an idle image, a freeze while a stroke runs
+            assert self.done, "blocking wait while a stroke is running: Krita would freeze here"
+            self.waited = True
+
+        def refreshProjection(self):  # blocks until strokes finish - must only be called on an idle image
+            assert self.done, "refreshProjection while a stroke is running: Krita would freeze here"
+            self.refreshed = True
+
+    doc = Busy()
+    H._refresh(doc)
+    assert doc.done and doc.refreshed and doc.waited and doc.unlocked == 1
+    stroke = Busy()
+    stroke.refreshProjection = lambda: (_ for _ in ()).throw(AssertionError("strokes need no refresh"))
+    H._refresh(stroke, projection=False)
+    assert stroke.done and stroke.unlocked == 1
+    stuck = Busy()
+    stuck.tryBarrierLock = lambda: False
+    with pytest.raises(H.BridgeError, match="still busy"):
+        history.wait_idle(stuck, timeout=0.2)  # never hangs forever either
+
+
+def test_scripted_strokes_run_without_instant_preview(H, monkeypatch):
+    """Instant Preview leaves the full-resolution part of a big stroke pending, which hangs the next filter,
+    save or export; brush strokes switch it off and give it back afterwards."""
+    class Action:
+        def __init__(self, on):
+            self.on = on
+
+        def isCheckable(self):
+            return True
+
+        def isChecked(self):
+            return self.on
+
+        def setChecked(self, v):
+            self.on = v
+
+    act = Action(True)
+    monkeypatch.setattr(H.Krita, "action", staticmethod(lambda name: act if name == "level_of_detail_mode" else None),
+                        raising=False)
+    got = H._instant_preview_off()
+    assert got is act and act.on is False
+    act.on = False  # already off (the user's choice): nothing to give back
+    assert H._instant_preview_off() is None and act.on is False

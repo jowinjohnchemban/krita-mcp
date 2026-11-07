@@ -56,6 +56,9 @@ def krita_action(p):
     _active_view(doc)
     if p.get("layer"):
         doc.setActiveNode(find_layer(doc, p["layer"]))
+    if name in ("copy_selection_to_new_layer", "cut_selection_to_new_layer"):
+        layer = _selection_to_new_layer(doc, cut=name.startswith("cut"))
+        return {"action": name, "document": doc.name(), "active_layer": node_info(layer)}
     act = app().action(ACTIONS[name])
     if act is None:
         raise BridgeError("This Krita version has no %r action" % ACTIONS[name])
@@ -65,6 +68,42 @@ def krita_action(p):
     _refresh(doc)
     active = doc.activeNode()
     return {"action": name, "document": doc.name(), "active_layer": node_info(active) if active else None}
+
+
+def _selection_to_new_layer(doc, cut):
+    """Krita's Layer via Copy / Cut without the system clipboard: Krita's own actions copy through it, which
+    overwrites what the user copied and, if another app put an image there, stops at a modal "Missing Colour
+    Profile" dialog. Instead: duplicate the layer, clear everything outside the selection (and, for cut, the
+    selection in the original)."""
+    sel = doc.selection()
+    if sel is None or sel.width() <= 0 or sel.height() <= 0:
+        raise BridgeError("this needs a selection: set_selection first")
+    node = doc.activeNode()
+    if node is None or node.type() != "paintlayer":
+        raise BridgeError("select a paint layer first (layer=...)")
+    clear = app().action("clear")
+    if clear is None:
+        raise BridgeError("This Krita version has no 'clear' action")
+    copy = node.duplicate()
+    copy.setName("%s (%s)" % (node.name(), "cut" if cut else "copy"))
+    node.parentNode().addChildNode(copy, node)
+    outside = sel.duplicate()
+    outside.invert()
+    try:
+        doc.setActiveNode(copy)
+        doc.setSelection(outside)
+        clear.trigger()
+        _refresh(doc)
+        if cut:
+            doc.setActiveNode(node)
+            doc.setSelection(sel)
+            clear.trigger()
+            _refresh(doc)
+    finally:
+        doc.setSelection(sel)
+        doc.setActiveNode(copy)
+    _refresh(doc)
+    return copy
 
 
 @handler("krita.action_list")
