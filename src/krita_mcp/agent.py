@@ -798,6 +798,7 @@ class Session:
         self.busy = False
         self.stop = False
         self.lock = threading.Lock()
+        self.used, self.prepared_at = None, 0.0
 
     def emit(self, kind, **data):
         with self.lock:
@@ -814,6 +815,9 @@ class Session:
 def _short(args):
     s = json.dumps(args, default=str)
     return s if len(s) < 160 else s[:157] + "..."
+
+
+MODEL_REUSE_SECONDS = 600  # a session keeps its chosen model this long before looking for a newer one
 
 
 class Stopped(Exception):
@@ -862,8 +866,12 @@ async def run_turn(sess, text):
             sess.model = make_model(sess.provider, sess.model_name)
             sess.history = sess.model.start(await tool_specs())
         m = sess.model
-        used = await until_stopped(sess, asyncio.to_thread(m.prepare))  # models are listed fresh every message
-        sess.emit("note", text="Model: %s" % used)
+        if sess.used is None or time.monotonic() - sess.prepared_at > MODEL_REUSE_SECONDS:
+            # the newest model is looked up (a request to the provider) at the start and every few minutes,
+            # not before every message: that kept the user waiting each time
+            sess.used = await until_stopped(sess, asyncio.to_thread(m.prepare))
+            sess.prepared_at = time.monotonic()
+            sess.emit("note", text="Model: %s" % sess.used)
         m.reset_usage()
         await _turn(sess, m, text)
     except Stopped:

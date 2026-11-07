@@ -88,6 +88,11 @@ class KritaMcpBridge(Extension):
         self.last_error = None
 
     def setup(self):
+        try:  # a frozen Krita (from anything) leaves its stacks in ~/.krita-mcp/hang.log
+            from . import watchdog
+            watchdog.start()
+        except Exception:  # noqa: BLE001 - diagnostics only
+            _log("watchdog unavailable:\n" + traceback.format_exc())
         try:
             startup_report()
         except Exception:  # noqa: BLE001 - the log is a help, never a reason not to start

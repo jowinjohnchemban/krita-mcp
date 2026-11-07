@@ -527,8 +527,9 @@ def test_the_provider_menu_lists_what_can_be_used_now(chat, monkeypatch):
     assert opened == [1] and dock._key() == "groq"
 
 
-def test_messages_typed_while_the_ai_works_are_queued_and_sent_in_order(chat):
+def test_messages_typed_while_the_ai_works_are_queued_and_sent_in_order(chat, monkeypatch):
     app, c, dock, sent = chat
+    _still_working(c, monkeypatch)
     dock.session = "s1"
     dock._set_busy(True)
     for text in ("make the sky warmer", "then add birds"):
@@ -583,3 +584,41 @@ def test_enter_sends_shift_enter_adds_a_line_and_up_recalls(chat):
     assert [x[2]["text"] for x in sent if x[1] == "/chat"] == ["hello"] and dock.input.toPlainText() == ""
     QTest.keyClick(dock.input, keys.Key_Up)
     assert dock.input.toPlainText() == "hello"  # Up in an empty box: the last message
+
+
+
+def test_the_send_button_sends_the_box(chat, monkeypatch):
+    """Clicking Send (not just Enter): Qt's clicked signal passes a checked flag, which must not be taken for
+    the message."""
+    app, c, dock, sent = chat
+    _still_working(c, monkeypatch)
+    dock.input.setPlainText("paint a lighthouse")
+    dock.send_btn.click()
+    pump(app, 0.3)
+    assert [x[2]["text"] for x in sent if x[1] == "/chat"] == ["paint a lighthouse"]
+    dock.input.setPlainText("then add fog")
+    dock.send_btn.click()  # busy now: queued
+    assert dock.queue == ["then add fog"]
+    for btn in (dock.stop_btn,):  # the other buttons take no argument either
+        btn.click()
+
+
+def test_your_message_shows_at_once_and_only_once(chat):
+    app, c, dock, sent = chat
+    dock.input.setPlainText("paint a lighthouse")
+    dock.send_btn.click()
+    assert "paint a lighthouse" in dock.log.toPlainText()  # before the service has answered anything
+    assert "sending" in dock.status.text()
+    dock._events({"events": [{"type": "user", "n": 0, "text": "paint a lighthouse"}]})  # the service's echo
+    assert dock.log.toPlainText().count("paint a lighthouse") == 1
+
+
+def _still_working(c, monkeypatch):
+    """The fake service's AI keeps working: /events reports nothing new (the default fixture finishes at once)."""
+    real = c._request
+
+    def req(method, path, body=None, timeout=10):
+        if path.startswith("/events"):
+            return {"events": [], "busy": True}
+        return real(method, path, body, timeout)
+    monkeypatch.setattr(c, "_request", req)

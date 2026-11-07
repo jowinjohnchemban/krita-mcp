@@ -101,6 +101,7 @@ Every line starts with the date and time to the millisecond. **Show only lines c
 passwords are masked before anything is written, so a log is safe to share. Each log keeps about 2 MB;
 older lines move to `NAME.1`.
 
-If a single request runs for more than a minute (`KRITA_MCP_HANG_SECONDS`), the bridge writes where
-Krita is stuck to `~/.krita-mcp/hang.log`, even while Krita's window is frozen. Include that file when
-you report a hang.
+If Krita freezes for more than a minute (`KRITA_MCP_HANG_SECONDS`, `0` turns it off) - because of an AI
+command, the panels, or Krita itself - the plugin writes every thread's stack to `~/.krita-mcp/hang.log`,
+even while Krita's window is frozen, with the AI command that was running, if any. If Krita's main thread
+shows no Python lines there, Krita was stuck in its own code. Include that file when you report a freeze.

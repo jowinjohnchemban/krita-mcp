@@ -691,3 +691,18 @@ def test_auto_order_is_yours_first_then_free(home, monkeypatch):
     assert agent.auto_order() == ["kilo", "mistral"]
     st = agent.status()
     assert st["auto"]["chat"] and st["auto"]["setup"] == "auto" and st["auto"]["order"] == ["kilo", "mistral"]
+
+
+def test_the_model_is_looked_up_once_not_before_every_message(home, monkeypatch):
+    model = SlowModel([("one", []), ("two", [])], delay=0.0)
+    looked = []
+    model.prepare = lambda: looked.append(1) or "slow"
+    monkeypatch.setattr(agent, "make_model", lambda p, m=None: model)
+    sess = agent.chat(None, "gemini", None, "first")
+    _wait(sess)
+    _wait(agent.chat(sess.id, "gemini", None, "second"))
+    assert looked == [1]  # the second message did not wait for a model listing
+    monkeypatch.setattr(agent, "MODEL_REUSE_SECONDS", 0)
+    model.replies.append(("three", []))
+    _wait(agent.chat(sess.id, "gemini", None, "third"))
+    assert looked == [1, 1]  # after a while it looks for a newer one again

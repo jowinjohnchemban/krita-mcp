@@ -59,6 +59,7 @@ PROVIDERS = [("auto", "Auto - all my providers"), ("gemini", "Google Gemini"), (
              ("openrouter", "OpenRouter (browser sign-in)"), ("ollama", "Local model (Ollama, LM Studio)"),
              ("pollinations", "Pollinations (free, no sign-in)")]
 SKILLS_SITE = "https://skills.sh/"
+POLL_MS = 250  # how often the panel asks the assistant what happened (a local request: cheap)
 STOP_WAIT_MS = 8000  # after Stop, how long the panel waits for the assistant to confirm
 OAUTH_WAIT = 600  # seconds the panel waits for a browser sign-in to be approved
 # what each service's keys look like, to pick them up from the clipboard while the key page is open
@@ -701,12 +702,12 @@ class ChatDocker(DockWidget):
         self.input.setPlaceholderText(i18n("Message the AI - Enter to send, Shift+Enter for a new line"))
         self.input.setMaximumHeight(90)
         lay.addWidget(self.input)
-        QShortcut(QKeySequence("Ctrl+Return"), self.input, activated=self._send)
+        QShortcut(QKeySequence("Ctrl+Return"), self.input, activated=lambda: self._send())
         self.sent_texts = []  # Up in an empty box brings back the last ones
 
         buttons = QHBoxLayout()
         self.send_btn = QPushButton(i18n("Send"))
-        self.send_btn.clicked.connect(self._send)
+        self.send_btn.clicked.connect(lambda: self._send())  # not _send(checked): clicked passes a bool
         self.stop_btn = QPushButton(i18n("Stop"))
         self.stop_btn.clicked.connect(self._stop)
         new = QPushButton(i18n("New chat"))
@@ -1120,6 +1121,10 @@ class ChatDocker(DockWidget):
 
     # ---------------------------------------------------------------- chat
     def _send(self, text=None):
+        """Send the box's text - or `text`, a queued message. Anything else (a signal's checked flag) is
+        ignored."""
+        if not isinstance(text, str):
+            text = None
         queued = text is not None
         text = (text if queued else self.input.toPlainText()).strip()
         if not text:
@@ -1134,6 +1139,10 @@ class ChatDocker(DockWidget):
             return
         self._hold_queue = False
         self._set_busy(True)
+        self._you(text)  # shown at once, not when the service first answers
+        self._echoed = getattr(self, "_echoed", []) + [text]
+        self._doing = i18n("sending")
+        self._show_status()
         body = {"session": self.session, "provider": self._key(), "model": self._model_text() or None,
                 "text": text}
         self._background(lambda: _ensure_service() and _request("POST", "/chat", body), self._started)
@@ -1142,7 +1151,10 @@ class ChatDocker(DockWidget):
         if result.get("session") != self.session:
             self.session, self.seen = result["session"], 0
         self._poll_failures = 0
-        self.poll_timer.start(400)
+        self._doing = i18n("thinking")
+        self._show_status()
+        self.poll_timer.start(POLL_MS)
+        self._poll()  # right away, not after the first interval
         if getattr(self, "_stop_pending", False):  # Stop was pressed before the service answered
             self._stop_pending = False
             self._stop()
@@ -1184,7 +1196,11 @@ class ChatDocker(DockWidget):
             self.seen = max(self.seen, ev["n"] + 1)
             kind = ev["type"]
             if kind == "user":
-                self._append("<p><b>%s</b> %s</p>" % (i18n("You:"), html.escape(ev["text"]).replace("\n", "<br>")))
+                echoed = getattr(self, "_echoed", [])
+                if echoed and ev["text"] == echoed[0][:len(ev["text"])]:
+                    echoed.pop(0)  # already shown when it was sent
+                else:
+                    self._you(ev["text"])
             elif kind == "assistant":
                 self._append("<p><b>%s:</b> %s</p>" % (SHORT.get(self._key(), "AI"),
                                                        html.escape(ev["text"]).replace("\n", "<br>")))
@@ -1195,13 +1211,20 @@ class ChatDocker(DockWidget):
                 self._show_status()
                 self._append("<p style='color:#999; font-size:small'>🔧 %s %s</p>" % (
                     html.escape(ev["name"]), html.escape(ev.get("args", ""))))
-            elif kind == "tool_result" and not ev.get("ok"):
+            elif kind == "tool_result":
+                self._doing = i18n("thinking")
+                self._show_status()
+                if ev.get("ok"):
+                    continue
                 self._append("<p style='color:#c96; font-size:small'>⚠ %s</p>" % html.escape(ev.get("text", "")))
             elif kind == "error":
                 self._error(ev["text"])
             elif kind == "done":
                 self.poll_timer.stop()
                 self._set_busy(False)
+
+    def _you(self, text):
+        self._append("<p><b>%s</b> %s</p>" % (i18n("You:"), html.escape(text).replace("\n", "<br>")))
 
     def _stop(self):
         sid = self.session
@@ -1234,6 +1257,7 @@ class ChatDocker(DockWidget):
         sid = self.session
         trace("panel", "New chat (was %s)" % sid)
         self._stop_pending = False
+        self._echoed = []
         self.queue = []
         self._sync_queue()
         self.session, self.seen = None, 0
