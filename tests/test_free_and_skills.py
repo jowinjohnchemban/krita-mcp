@@ -308,6 +308,9 @@ def _backends(monkeypatch, *names_ok):
             name, kind, native_control, mask_format, multiple, sizes, default_side = n, "cloud", False, "gray", 8, None, 512
             works = ok
 
+            def configured(self):
+                return True
+
             def generate(self, job):
                 used.append(self.name)
                 if not self.works:
@@ -316,6 +319,12 @@ def _backends(monkeypatch, *names_ok):
         made[n] = Be
     monkeypatch.setattr(gen_tools.gen_images, "candidates", lambda name=None: [c() for c in made.values()])
     monkeypatch.setattr(gen_tools.gen_images, "pick", lambda name=None: made[name or next(iter(made))]())
+
+    def get(name):
+        if name in made:
+            return made[name]()
+        raise gen_tools.ProviderError("unknown image backend %r" % name)
+    monkeypatch.setattr(gen_tools.gen_images, "get", get)
     return used
 
 
@@ -425,3 +434,21 @@ def test_no_working_image_service_points_to_the_free_ones(bridge, monkeypatch):
     _backends(monkeypatch, ("gemini", False))
     with pytest.raises(gen_tools.ToolError, match="turn on Pollinations or AI Horde in AI Chat > Services"):
         asyncio.run(gen_tools.generate_image("a lake"))
+
+
+
+def test_a_made_up_image_service_falls_back_to_the_automatic_choice(bridge, monkeypatch):
+    """Models invent services ("stability" with no key): use what is set up instead of failing."""
+    import asyncio
+    from krita_mcp import gen_tools
+    used = _backends(monkeypatch, ("pollinations", True))
+    out = asyncio.run(gen_tools.generate_image("a lake", backend="stability"))
+    assert used == ["pollinations"] and "stability is not set up" in out[0]["note_backend"]
+
+
+def test_model_calls_give_up_after_the_chat_timeout(monkeypatch):
+    from krita_mcp import agent
+    assert agent.chat_timeout() == 180
+    monkeypatch.setenv("KRITA_MCP_CHAT_TIMEOUT", "60")
+    assert agent.chat_timeout() == 60
+    assert agent.transient("cannot reach https://text.pollinations.ai/openai (The read operation timed out)")

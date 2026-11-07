@@ -62,6 +62,17 @@ async def ai_backends(details: bool = False) -> dict:
     return out
 
 
+def _usable_backend(name):
+    """True when the named image service exists and is set up (local ones: their server answers)."""
+    try:
+        b = gen_images.get(name)
+    except ProviderError:
+        return False
+    if b.kind == "local":
+        return bool(b.status().get("reachable"))
+    return bool(b.configured())
+
+
 def _free_hint():
     """What to tell the user when no image service works: the free ones they have not turned on."""
     off = [label for cls, label in ((gen_images.PollinationsImages, "Pollinations"), (gen_images.HordeImages, "AI Horde"))
@@ -80,6 +91,11 @@ async def _generate(prompt, mode="auto", negative_prompt=None, count=1, backend=
     except ValueError as e:
         raise ToolError(str(e)) from None
     controls = _controls(control)
+    note = None
+    if backend is not None and not await _provider(_usable_backend, backend):
+        # the AI named a service the user has not set up (models invent these): choose automatically instead
+        note = "%s is not set up, so the image service was chosen automatically." % backend
+        backend = None
     if backend is None and not gen_images.env("KRITA_MCP_IMAGE_BACKEND"):
         # no service named: when one refuses the account (bad key, no credit), go on to the next connected one
         tried = []
@@ -93,6 +109,8 @@ async def _generate(prompt, mode="auto", negative_prompt=None, count=1, backend=
                     raise
                 tried.append("%s: %s" % (be.name, str(e)[:200]))
                 continue
+            if note:
+                out[0]["note_backend"] = note
             if tried:
                 out[0]["skipped"] = tried
                 out[0]["note"] = ("Used %s because %s. Tell the user so they can fix it in AI Chat > Services."

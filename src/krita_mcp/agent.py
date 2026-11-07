@@ -33,6 +33,16 @@ OLD_RESULT_CHARS = 600  # tool results of earlier messages are cut to this when 
 DROPPED = "[earlier picture removed to save tokens - take a new canvas_snapshot if you need to see it]"
 
 
+def chat_timeout():
+    """Seconds to wait for one model answer (KRITA_MCP_CHAT_TIMEOUT, default 180). Longer counts as the service
+    being unavailable: it is tried again, and Auto moves on to the next provider - a slow free service must not
+    hold a chat for ten minutes."""
+    try:
+        return max(15.0, float(env("KRITA_MCP_CHAT_TIMEOUT", "180")))
+    except ValueError:
+        return 180.0
+
+
 def max_steps():
     return int(env("KRITA_MCP_CHAT_MAX_STEPS", "40"))
 
@@ -328,7 +338,8 @@ class Gemini(_Adapter):
         if self.thinking_config():
             body["generationConfig"] = self.thinking_config()
         try:
-            r, used = gemini.post(self.base, self.key, self.model, "generateContent", body)
+            r, used = gemini.post(self.base, self.key, self.model, "generateContent", body,
+                                  timeout=chat_timeout())
             if used != self.model:  # Google retired the model and named its replacement
                 self.note = "Gemini model %s is no longer available; switched to %s." % (self.model, used)
                 self.model = used
@@ -439,7 +450,7 @@ class OpenAICompat(_Adapter):
         limit_key = "max_completion_tokens" if self.provider == "openai" else "max_tokens"
         body[limit_key] = int(env("KRITA_MCP_CHAT_MAX_TOKENS", "4096"))
         try:
-            r = http.post_json(self.url, body, self.headers)
+            r = http.post_json(self.url, body, self.headers, timeout=chat_timeout())
         except ProviderError as e:
             m = re.search(r"can only afford (\d+)", str(e))
             if not m or int(m.group(1)) < 600:
@@ -449,7 +460,7 @@ class OpenAICompat(_Adapter):
                                         "box." % PROVIDERS[self.provider]["label"]) from None
                 raise
             body[limit_key] = int(m.group(1)) - 256  # what the remaining balance can pay for
-            r = http.post_json(self.url, body, self.headers)
+            r = http.post_json(self.url, body, self.headers, timeout=chat_timeout())
         u = r.get("usage") or {}
         self.add_usage(u.get("prompt_tokens"), u.get("completion_tokens"),
                        (u.get("prompt_tokens_details") or {}).get("cached_tokens"), u.get("cost"))
@@ -509,7 +520,7 @@ class Claude(_Adapter):
         except ImportError:
             raise ProviderError("install the Anthropic SDK: pip install 'krita-mcp[anthropic]'") from None
         self.anthropic = anthropic
-        self.client = anthropic.Anthropic(api_key=key)
+        self.client = anthropic.Anthropic(api_key=key, timeout=chat_timeout())
         self.key, self.chosen, self.model, self.note = key, model, None, None
 
     def prepare(self):
