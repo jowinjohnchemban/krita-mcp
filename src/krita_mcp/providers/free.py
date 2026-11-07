@@ -173,7 +173,11 @@ class HordeImages:
             raise ProviderError("AI Horde is off: turn it on in Krita's AI Chat > Services (free, no key)")
         if job.mode == "inpaint" or job.controls:
             raise ProviderError("AI Horde here does text-to-image and img2img; use another backend to inpaint")
-        model = job.model or self.model or (self.models() or [None])[0]
+        online = self.models()
+        model = job.model or self.model
+        if model and online and model not in online:  # not served now (or a name meant for another service)
+            model = None
+        model = model or (online or [None])[0]
         if not model:
             raise ProviderError("no AI Horde worker is online right now; try again later")
         params = {"width": job.width, "height": job.height, "n": job.count, "steps": int(job.steps or 25),

@@ -457,3 +457,22 @@ def test_model_calls_give_up_after_the_chat_timeout(monkeypatch):
     monkeypatch.setenv("KRITA_MCP_CHAT_TIMEOUT", "60")
     assert agent.chat_timeout() == 60
     assert agent.transient("cannot reach https://text.pollinations.ai/openai (The read operation timed out)")
+
+
+def test_ai_horde_uses_a_served_model_when_asked_for_one_it_does_not_have(home, monkeypatch):
+    m = Mock()
+    try:
+        m.json("GET", "/horde/status/models", [{"name": "popular", "count": 9}, {"name": "Deliberate", "count": 2}])
+        m.json("POST", "/horde/generate/async", {"id": "job2"})
+        m.json("GET", "/horde/generate/check/job2", {"done": True})
+        m.json("GET", "/horde/generate/status/job2", {"generations": [{"img": B64, "seed": "1"}]})
+        monkeypatch.setenv("KRITA_MCP_HORDE_URL", m.url + "/horde")
+        monkeypatch.setenv("KRITA_MCP_HORDE_POLL", "0")
+        monkeypatch.setenv("KRITA_MCP_FREE_SERVICES", "horde")
+        b = images.get("horde")
+        b.generate(images.ImageJob(prompt="hills", width=576, height=256, model="stable-diffusion-3.5"))
+        b.generate(images.ImageJob(prompt="hills", width=576, height=256, model="Deliberate"))
+    finally:
+        m.srv.shutdown()
+    posts = [json.loads(c[3])["models"] for c in m.calls if c[0] == "POST"]
+    assert posts == [["popular"], ["Deliberate"]]  # an unknown name is ignored; a served one is used

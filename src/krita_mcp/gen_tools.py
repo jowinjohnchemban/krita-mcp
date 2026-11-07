@@ -96,7 +96,7 @@ async def _generate(prompt, mode="auto", negative_prompt=None, count=1, backend=
     if backend is not None and not await _provider(_usable_backend, backend):
         # the AI named a service the user has not set up (models invent these): choose automatically instead
         note = "%s is not set up, so the image service was chosen automatically." % backend
-        backend = None
+        backend, model = None, None  # a model named for that service would not exist on the one chosen
     if backend is None and not gen_images.env("KRITA_MCP_IMAGE_BACKEND"):
         # no service named: when one refuses the account (bad key, no credit), go on to the next connected one
         tried = []
