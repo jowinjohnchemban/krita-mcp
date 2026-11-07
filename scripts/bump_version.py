@@ -51,7 +51,7 @@ def main():
             sys.exit("could not find the version in %s" % rel)
         path.write_text(text, encoding="utf-8", newline="\n")
     subprocess.run([sys.executable, str(ROOT / "scripts" / "gen_tool_docs.py")], check=True)
-    print("%s -> %s. Commit and push to main; the release is published when CI passes." % (cur, new))
+    print("%s -> %s (stamped in this copy; releases stamp their own build with the date)." % (cur, new))
 
 
 if __name__ == "__main__":
