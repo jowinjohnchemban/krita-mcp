@@ -18,7 +18,7 @@ SERVICES = {
                "https://platform.openai.com/api-keys", True),
     "openrouter": ("OpenRouter (sign in with browser)", "chat with Gemini, Claude, GPT and 300+ models",
                    "KRITA_MCP_OPENROUTER_API_KEY", "https://openrouter.ai/settings/keys", False),
-    "ollama": ("Local model (Ollama, LM Studio)", "chat (no key)", None, "https://ollama.com/download", True),
+    "ollama": ("Local model (Ollama, LM Studio)", "chat with a model on your computer", None, "https://ollama.com/download", True),
     "stability": ("Stability AI", "images, upscale, background removal", "KRITA_MCP_STABILITY_API_KEY",
                   "https://platform.stability.ai/account/keys", False),
     "replicate": ("Replicate", "any image / video model", "KRITA_MCP_REPLICATE_API_TOKEN",
@@ -36,13 +36,34 @@ SERVICES = {
 from .compat import COMPAT  # noqa: E402
 
 for _name, (_label, _base, _env, _url, _use, _images) in COMPAT.items():
-    SERVICES[_name] = (_label, _use, _env, _url, True)
+    SERVICES[_name] = (_label, _use, _env, _url, _name == "omniroute")
 ENV_TO_SERVICE = {v[2]: k for k, v in SERVICES.items() if v[2]}
 BROWSER_SIGN_IN = {"openrouter"}  # real OAuth; the others get a browser-assisted key flow
 # work without a key (a key is optional, for higher limits)
 OPTIONAL_KEY = {"pollinations", "horde", "omniroute", "kilo", "ovhcloud", "llm7"}
 # ... and of those, the image services stay off until the user turns them on
 TOGGLE = {"pollinations", "horde"}
+# servers on this computer: set up with an address (no account); the default is where they usually listen
+LOCAL = {"ollama": "http://127.0.0.1:11434/v1", "comfyui": "http://127.0.0.1:8188",
+         "a1111": "http://127.0.0.1:7860", "omniroute": "http://localhost:20128/v1"}
+
+
+def setup_kind(name):
+    """How a service is set up - the Services dialog follows it:
+    key      an API key from the provider's site (cloud services)
+    browser  sign in with the browser (OpenRouter); pasting a key also works
+    local    a server on this computer: its address, no key (Ollama / LM Studio, ComfyUI, Forge, OmniRoute)
+    free     works as it is, no account; an optional key raises the limits
+    toggle   free, but sends prompts to a public service, so it stays off until turned on"""
+    if name in BROWSER_SIGN_IN:
+        return "browser"
+    if name in TOGGLE:
+        return "toggle"
+    if name in LOCAL:
+        return "local"
+    if name in OPTIONAL_KEY:
+        return "free"
+    return "key"
 
 
 def home():
@@ -106,12 +127,18 @@ def status():
     for name, (label, use, env_name, key_url, has_url) in SERVICES.items():
         key = bool(saved(name) or (env_name and os.environ.get(env_name, "").strip()))
         url = saved(name, "base_url")
-        signed = key or (name in ("ollama", "comfyui", "a1111") and bool(url)) or name == "ollama"
+        kind = setup_kind(name)
         optional = name in OPTIONAL_KEY
-        if name in TOGGLE:
+        if kind == "toggle":
             signed = enabled(name)
-        out[name] = {"label": label, "use": use, "signed_in": bool(signed), "key_url": key_url,
-                     "needs_key": bool(env_name) and not optional, "optional_key": optional,
-                     "toggle": name in TOGGLE, "free": optional, "has_url": has_url, "base_url": url,
+        elif kind == "local":
+            signed = bool(url) or key  # set up: an address was saved (and tested) in Services
+        else:
+            signed = key
+        ready = {"free": True, "toggle": signed, "local": signed}.get(kind, key)
+        out[name] = {"label": label, "use": use, "signed_in": bool(signed), "ready": bool(ready), "setup": kind,
+                     "has_key": key, "key_url": key_url, "default_url": LOCAL.get(name),
+                     "needs_key": kind in ("key", "browser"), "optional_key": optional,
+                     "toggle": kind == "toggle", "free": optional, "has_url": bool(has_url), "base_url": url,
                      "browser_sign_in": name in BROWSER_SIGN_IN}
     return out

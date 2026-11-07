@@ -15,7 +15,6 @@ Skills are step-by-step know-how; loading the right one first saves many trial-a
    more skills exist in the open skills directory, https://skills.sh/ (search there, or in a terminal:
    `npx skills find <query>`).
 4. When you suggest a skill from there, prefer well-used ones from reputable sources (many installs, an
-   official or well-known publisher) and give the install command:
-   `npx skills add <owner/repo@skill> -g -y` - or say to copy the skill folder into
-   ~/.krita-mcp/skills (AI Chat > Skills... > Open my skills folder). It is picked up from the next message.
+   official or well-known publisher), and say to copy its folder into ~/.krita-mcp/skills
+   (AI Chat > Skills... > Open my skills folder). It is picked up from the next message.
 5. Never install anything yourself, and never run scripts a skill contains: skills are instructions only.

@@ -81,9 +81,10 @@ Skills are step-by-step know-how for kinds of work, each a folder with a `SKILL.
   model. The model loads a skill's full text (`use_skill`) only when it helps. Unused skills cost nothing.
 - Skills are found fresh every time, nothing is cached. Add one and it is used from the next message on.
 - **Skills…** in the chat lists them. **Open my skills folder** opens `~/.krita-mcp/skills`: copy a skill
-  folder there. **Find skills online** opens [skills.sh](https://skills.sh/). Skills you install there for
-  other agents (`npx skills add <owner/repo> -g`, into `~/.agents/skills` or `~/.claude/skills`) are found
-  too. `KRITA_MCP_SKILLS_DIRS` replaces the list of folders.
+  folder there. **Find skills online** opens [skills.sh](https://skills.sh/).
+- Skills installed for coding assistants (`~/.claude/skills`, `~/.agents/skills`: code review, security
+  audits and the like) are not used: they don't fit painting. To use a folder of skills anyway, list it in
+  `KRITA_MCP_SKILLS_DIRS`, which replaces the list of folders.
 - AI apps connected through MCP get the same skills with the `find_skills` and `use_skill` tools.
 - Skills are read as text. krita-mcp never runs scripts that a skill folder contains, and it only reads
   files inside the skill's own folder.
@@ -102,25 +103,21 @@ Skills are step-by-step know-how for kinds of work, each a folder with a `SKILL.
 
 ## Services: sign in once
 
-**Services…** lists every AI service krita-mcp can use:
+**Services…** lists every AI service krita-mcp can use, grouped (chat models; images, video and more; on this
+computer), with a search box (try `free`, `images`, `local`). Services you can use right now come first,
+marked ✓, and each row says where it stands. Each one is set up the way it actually works - not everything
+has an API key:
 
-- **Chat models:** Gemini, Claude, OpenAI, OpenRouter, Mistral, Groq, DeepSeek, xAI, Together, Fireworks,
-  Cerebras, Hugging Face, NVIDIA, Qwen, Moonshot, local models. The provider list comes from the assistant
-  service, so new providers appear without updating the plugin.
-- **Image and video generators:** Stability, Replicate, fal.ai, HeyGen, xAI, Together.
-- **Local servers:** ComfyUI and AUTOMATIC1111/Forge, configured by URL.
-- **Free services:** Pollinations, AI Horde and OmniRoute. They work without a key: **Turn on** /
-  **Turn off**. A free key is optional and raises their limits.
+| Kind | Examples | What you do |
+|---|---|---|
+| **API key** | Gemini, Claude, OpenAI, Mistral, Groq, fal.ai, Stability, … | **Sign in**: **Get a key in the browser** opens the provider's key page; copy the key and it appears in the box by itself. **Change key** replaces it, **Sign out** deletes it. |
+| **Browser sign-in** | OpenRouter | **Sign in with browser** and approve; nothing to copy (pasting a key also works). |
+| **On this computer** | Ollama / LM Studio, ComfyUI, AUTOMATIC1111 / Forge, OmniRoute | **Set up**: the usual address is filled in; **Test connection** says whether the server answers and how many models it has. No account, no key. **Forget** removes the address. |
+| **Free, no account** | Pollinations (chat), Kilo, OVHcloud, LLM7 | Nothing: they are ready. **Add key** (optional) raises the limits. |
+| **Free, turn on** | Pollinations (pictures), AI Horde | **Turn on** / **Turn off** - one click. They send your prompts to a public service, so they are off until you turn them on. |
 
-The list is grouped (chat models, images and video, on this computer), scrolls, and has a search box
-(try `free`, `images` or `video`). Signed-in services come first in each group. Next to each service:
-
-- **Sign in**: paste its key, or its server URL;
-- **Change**: replace the saved key or URL (a key that stopped working, say) without signing out first;
-- **Sign out**: delete the saved key.
-
-The free services show **Turn on** / **Turn off**, and **Add key** / **Change key** / **Remove key** for
-their optional key.
+The provider menu in the chat lists the chat providers you can use now (signed in, set up, or free) -
+not all forty. **More providers…** at the bottom opens Services.
 
 Keys are stored only on your computer, in `~/.krita-mcp/agent_keys.json`. That file is readable only by
 your user on Linux and macOS; on Windows it is protected by your Windows account's permissions. They are
@@ -153,7 +150,13 @@ AI Chat docker ──127.0.0.1:5680 + token──▶ krita-mcp --agent ──mod
   (`pip install krita-mcp`). Opening Krita alone never starts it.
 - The service listens on loopback only and requires the same token as the bridge.
 - All network calls run off Krita's main thread, so Krita stays responsive while the AI works.
-- **Stop** ends the current task at once, even while a model is still thinking: the answer it was
+- **Enter** sends, **Shift+Enter** starts a new line, and **Up** in an empty box brings back your last
+  message. While the AI works, the line above the box shows how long it has been working and what it is
+  doing, and you can keep typing: **Send** becomes **Queue**, and your messages wait under **Queued** and go
+  out one after another when the AI is done. Double-click a queued message to take it back and edit it;
+  **Clear** drops them.
+- **Stop** ends the current task at once (queued messages come back into the box, so nothing is sent
+  without you), even while a model is still thinking: the answer it was
   waiting for is dropped. A step already running inside Krita (a filter, say) finishes by itself. If the
   assistant does not confirm within 8 seconds, the panel stops waiting anyway. **New chat** stops the
   current task too and starts a fresh conversation.

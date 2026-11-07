@@ -4,7 +4,9 @@ Skills are found fresh on every call - nothing is cached - in, by priority:
     KRITA_MCP_SKILLS_DIRS (os.pathsep-separated; replaces the list below when set)
     ~/.krita-mcp/skills        your own, and what you add from the AI Chat > Skills panel
     the skills that ship with krita-mcp
-    ~/.agents/skills, ~/.claude/skills    skills installed for other agents (e.g. `npx skills add ... -g`)
+Skills installed for coding assistants (~/.claude/skills, ~/.agents/skills: code review, security audits, ...)
+are not used: they do not fit painting and would only add noise. Add such a folder to KRITA_MCP_SKILLS_DIRS to
+use it anyway.
 
 Only names and one-line descriptions are offered to the model; a skill's full text is loaded when the model
 decides it fits (use_skill), so unused skills cost no tokens. Skills are read as text: krita-mcp never runs
@@ -32,8 +34,7 @@ def dirs():
     custom = os.environ.get("KRITA_MCP_SKILLS_DIRS")
     if custom:
         return [Path(d).expanduser() for d in custom.split(os.pathsep) if d.strip()]
-    home = Path.home()
-    return [user_dir(), BUNDLED, home / ".agents" / "skills", home / ".claude" / "skills"]
+    return [user_dir(), BUNDLED]
 
 
 def _frontmatter(text):

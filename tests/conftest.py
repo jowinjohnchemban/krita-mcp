@@ -1,8 +1,14 @@
 """Shared fixtures."""
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
+
+# Before anything is imported or collected: modules that write logs at import time (the plugin's) must land in
+# a throw-away folder, never in the user's real ~/.krita-mcp. Each test then gets its own (isolated_keys).
+os.environ["KRITA_MCP_HOME"] = tempfile.mkdtemp(prefix="krita-mcp-tests-")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))

@@ -923,6 +923,10 @@ class Handler(BaseHTTPRequestHandler):
                           enable=True if b["provider"] in keys.OPTIONAL_KEY else None)
                 trace("signin", "✓ %s: %s" % (b["provider"], "key saved" if key else "turned on"))
                 return self._send(200, {"providers": status()})
+            if self.path == "/check":  # Services > Test: does a server on this computer answer?
+                ok, detail = check_server(b["provider"], b.get("base_url"))
+                trace("signin", "%s %s: %s" % ("✓" if ok else "✗", b["provider"], detail))
+                return self._send(200, {"ok": ok, "detail": detail})
             if self.path == "/verify":
                 ok, detail = oauth.verify(b["provider"], b.get("key"))
                 return self._send(200, {"ok": ok, "detail": detail})
@@ -935,6 +939,32 @@ class Handler(BaseHTTPRequestHandler):
             trace("http", "✗ POST %s: %s" % (self.path, e))
             return self._send(400, {"error": str(e)})
         return self._send(404, {"error": "not found"})
+
+
+def check_server(provider, base_url=None):
+    """(answers?, what it said) for a local server at base_url (default: the saved or usual address)."""
+    url = (base_url or keys.saved(provider, "base_url") or keys.LOCAL.get(provider) or "").strip().rstrip("/")
+    if not url:
+        return False, "no address"
+    try:
+        if provider in ("comfyui", "a1111"):
+            from .providers import images
+            be = images.get(provider)
+            be.url = url
+            st = be.status()
+            if not st.get("reachable"):
+                return False, "%s does not answer at %s (%s)" % (keys.SERVICES[provider][0], url,
+                                                                 str(st.get("error", ""))[:160])
+            return True, "%s answers at %s: %d model(s)" % (keys.SERVICES[provider][0], url,
+                                                             len(st.get("models") or []))
+        headers = {"Authorization": "Bearer " + (keys.saved(provider) or "local")}
+        listing = http.get_json(url + "/models", headers, timeout=6)
+        names = [m.get("id") for m in listing.get("data") or [] if isinstance(m, dict)]
+        if provider == "ollama" and not names:
+            return True, "the server answers at %s but has no models yet (ollama pull <model>)" % url
+        return True, "answers at %s: %d model(s)%s" % (url, len(names), (", e.g. " + names[0]) if names else "")
+    except ProviderError as e:
+        return False, "nothing answers at %s (%s)" % (url, str(e)[:160])
 
 
 class _ExclusiveServer(ThreadingHTTPServer):

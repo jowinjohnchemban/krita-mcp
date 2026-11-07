@@ -104,7 +104,7 @@ def test_chat_round_trip_renders_the_conversation(chat):
     assert "signed in" in dock.account.text() and "newest" in dock.model.lineEdit().placeholderText()
     dock.input.setPlainText("paint a fox")
     dock._send()
-    assert not dock.send_btn.isEnabled()
+    assert dock.send_btn.text() == "Queue"  # while the AI works, Send queues the next message
     pump(app, 1.5)
     text = dock.log.toPlainText()
     assert "You: paint a fox" in text and "create_artwork" in text and "error: no model" in text
@@ -148,7 +148,7 @@ def test_services_dialog_lists_every_service(chat, monkeypatch):
     real_dialog = c.SignInDialog
     # "Sign out" signs out at once; "Change" opens the key dialog even though it is signed in
     opened = []
-    monkeypatch.setattr(c, "SignInDialog", lambda *a: opened.append(a[1]) or types.SimpleNamespace(exec=lambda: 0))
+    monkeypatch.setattr(c, "SignInDialog", lambda *a, **k: opened.append(a[1]) or types.SimpleNamespace(exec=lambda: 0))
     dlg.scroll.widget().findChild(qtw.QPushButton, "gemini:signin").click()
     assert opened == ["gemini"]
     dlg.scroll.widget().findChild(qtw.QPushButton, "gemini:signout").click()
@@ -157,7 +157,9 @@ def test_services_dialog_lists_every_service(chat, monkeypatch):
     assert "Google Gemini: not signed in" in dock.log.toPlainText()  # names the service that changed
     sign = real_dialog(dock, "comfyui", info)
     labels = [w.text() for w in sign.findChildren(qtw.QLabel)]
-    assert "API key" not in labels and "Server URL" in labels  # local servers need a URL, not a key
+    assert "API key" not in labels and "Key" not in labels and "Address" in labels  # local: an address, no key
+    assert sign.base.text() == "http://127.0.0.1:8188"  # the usual address is filled in
+    assert "Test connection" in [b.text() for b in sign.findChildren(qtw.QPushButton)]
 
 
 def test_key_detection_and_browser_flows(chat, monkeypatch):
@@ -222,7 +224,7 @@ def test_key_page_button_without_a_running_service(chat):
     assert c.service_info("gemini")["key_url"] == "https://aistudio.google.com/apikey"
     assert c.service_info("gemini", {"signed_in": True, "key_url": None})["key_url"]  # reported None keeps ours
     local = [w.text() for w in c.SignInDialog(dock, "ollama", c.service_info("ollama")).findChildren(qtw.QLabel)]
-    assert "API key" not in local and "Server URL" in local
+    assert "API key" not in local and "Address" in local
 
 
 def test_an_outdated_service_is_replaced(chat, monkeypatch):
@@ -288,11 +290,12 @@ def test_starting_the_assistant_service_for_real(chat, monkeypatch):
 
 def test_provider_list_comes_from_the_service(chat):
     app, c, dock, sent = chat
-    dock.providers = {"gemini": {"chat": True, "label": "Google Gemini"},
-                      "mistral": {"chat": True, "label": "Mistral AI"},
-                      "fal": {"label": "fal.ai"}}  # not a chat provider
+    dock.providers = {"gemini": {"chat": True, "label": "Google Gemini", "ready": True},
+                      "mistral": {"chat": True, "label": "Mistral AI", "ready": True},
+                      "fal": {"label": "fal.ai", "ready": True}}  # not a chat provider
     dock._sync_providers()
-    assert [dock.provider.itemText(i) for i in range(dock.provider.count())] == ["Google Gemini", "Mistral AI"]
+    assert [dock.provider.itemText(i) for i in range(dock.provider.count()) if dock.provider.itemData(i)] == [
+        "Google Gemini", "Mistral AI", "More providers…"]
     assert dock._key() == "gemini"  # the current choice is kept
 
 
@@ -309,7 +312,7 @@ def test_free_services_turn_on_without_a_key(chat):
     assert "Turn on" in buttons and "Turn off" in buttons and "Add key" in buttons  # free chat needs no switch
     sign = c.SignInDialog(dock, "pollinations", c.service_info("pollinations", dock.providers["pollinations"]))
     labels = " ".join(w.text() for w in sign.findChildren(qtw.QLabel))
-    assert "works without a key" in labels and "API key" in labels
+    assert "no account" in labels and "API key" in labels and "optional" in labels
     assert "Get a free key in the browser" in [b.text() for b in sign.findChildren(qtw.QPushButton)]
     assert c.service_info("horde")["optional_key"] and c.service_info("omniroute")["has_url"]
     assert "pollinations" in dict(c.PROVIDERS)  # offered even before the service reports its list
@@ -374,7 +377,7 @@ def test_stop_responds_at_once_and_never_leaves_the_panel_stuck(chat, monkeypatc
     dock.session = "s-gone"
     dock._set_busy(True)
     dock._stop()
-    assert not dock.stop_btn.isEnabled() and "Stopping" in dock.send_btn.text()  # visible at once
+    assert not dock.stop_btn.isEnabled() and "Stopping" in dock.status.text()  # visible at once
     pump(app, 0.7)
     assert ("POST", "/stop", {"session": "s-gone"}) in sent
     assert not dock.busy and dock.send_btn.isEnabled() and "stopped waiting" in dock.log.toPlainText()
@@ -402,3 +405,169 @@ def test_a_lost_service_does_not_leave_the_panel_working_forever(chat, monkeypat
     pump(app, 0.8)
     assert not dock.busy and not dock.poll_timer.isActive()
     assert "Send your message again" in dock.log.toPlainText()
+
+
+
+def _setup_dialog(c, dock, name, **info):
+    return c.SignInDialog(dock, name, c.service_info(name, info), docker=dock)
+
+
+def test_each_service_is_set_up_the_way_it_works(chat):
+    """Not everything has an API key: cloud services ask for a key, OpenRouter signs in with the browser,
+    servers on this computer ask for an address (and can be tested), free services need nothing."""
+    app, c, dock, sent = chat
+
+    def parts(dlg):
+        return ([w.text() for w in dlg.findChildren(qtw.QLabel)],
+                [b.text() for b in dlg.findChildren(qtw.QPushButton)], dlg.windowTitle())
+    labels, buttons, title = parts(_setup_dialog(c, dock, "mistral", label="Mistral AI", use="chat", setup="key",
+                                                 key_url="https://console.mistral.ai/api-keys"))
+    assert "API key" in labels and "Address" not in labels and "Get a key in the browser" in buttons
+    assert title == "Sign in to Mistral AI"
+    labels, buttons, title = parts(_setup_dialog(c, dock, "openrouter", label="OpenRouter", setup="browser",
+                                                 browser_sign_in=True))
+    assert "Sign in with browser" in buttons and "Address" not in labels
+    labels, buttons, title = parts(_setup_dialog(c, dock, "ollama", label="Local model", use="chat",
+                                                 setup="local"))
+    assert "Address" in labels and "API key" not in labels and "Test connection" in buttons
+    assert title == "Set up Local model" and "Save" in buttons
+    labels, buttons, title = parts(_setup_dialog(c, dock, "kilo", label="Kilo", use="chat", setup="free",
+                                                 optional_key=True, key_url="https://app.kilo.ai"))
+    assert "API key" in labels and any("no account needed" in t for t in labels)
+    assert "Get a free key in the browser" in buttons and "optional" in title
+
+
+def test_test_connection_reports_whether_the_local_server_answers(chat, monkeypatch):
+    app, c, dock, sent = chat
+    real = c._request
+
+    def answer(method, path, body=None, timeout=10):
+        if path == "/check":
+            sent.append((method, path, body))
+            return {"ok": False, "detail": "nothing answers at http://127.0.0.1:11434/v1"}
+        return real(method, path, body, timeout)
+    monkeypatch.setattr(c, "_request", answer)
+    dlg = _setup_dialog(c, dock, "ollama", label="Local model", setup="local")
+    dlg.test_btn.click()
+    pump(app, 0.5)
+    assert ("POST", "/check", {"provider": "ollama", "base_url": "http://127.0.0.1:11434/v1"}) in sent
+    assert "✗" in dlg.hint.text() and "nothing answers" in dlg.hint.text() and dlg.test_btn.isEnabled()
+
+
+def test_turn_on_needs_no_dialog_and_the_list_updates_while_open(chat, monkeypatch):
+    """Turn on acts at once; the open Services window shows the change (it used to wait until it closed)."""
+    app, c, dock, sent = chat
+    pump(app, 0.3)
+    state = {"on": False}
+    real = c._request
+
+    def service(method, path, body=None, timeout=10):
+        if path == "/signin" and body["provider"] == "horde":
+            sent.append((method, path, body))
+            state["on"] = True
+        if path in ("/signin", "/signout", "/health"):
+            h = real("GET", "/health")
+            h["providers"]["horde"] = {"signed_in": state["on"], "ready": state["on"], "setup": "toggle",
+                                       "toggle": True, "optional_key": True, "label": "AI Horde", "use": "images"}
+            return h
+        return real(method, path, body, timeout)
+    monkeypatch.setattr(c, "_request", service)
+    monkeypatch.setattr(c, "_ensure_service", lambda: service("GET", "/health"))
+    dock.providers = service("GET", "/health")["providers"]
+    monkeypatch.setattr(c, "SignInDialog", lambda *a, **k: pytest.fail("Turn on must not ask anything"))
+    seen = {}
+
+    def press_then_look():
+        d = dock.services_dialog
+        d.scroll.widget().findChild(qtw.QPushButton, "horde:on").click()
+
+        def look():
+            seen["buttons"] = [b.objectName() for b in d.scroll.widget().findChildren(qtw.QPushButton)
+                               if b.objectName().startswith("horde")]
+            d.accept()
+        c.QTimer.singleShot(600, look)
+    c.QTimer.singleShot(300, press_then_look)
+    dock._services()  # modal, like in Krita
+    assert ("POST", "/signin", {"provider": "horde", "key": "", "verify": False}) in sent
+    assert seen["buttons"] == ["horde:signin", "horde:signout"]  # updated while the window was open
+
+
+def test_the_provider_menu_lists_what_can_be_used_now(chat):
+    app, c, dock, sent = chat
+    dock.providers = {
+        "gemini": {"chat": True, "label": "Google Gemini", "signed_in": False, "ready": False, "setup": "key"},
+        "mistral": {"chat": True, "label": "Mistral AI", "signed_in": True, "ready": True, "setup": "key"},
+        "kilo": {"chat": True, "label": "Kilo Gateway", "ready": True, "setup": "free"},
+        "ollama": {"chat": True, "label": "Local model", "signed_in": False, "ready": False, "setup": "local"},
+        "groq": {"chat": True, "label": "Groq", "signed_in": False, "ready": False, "setup": "key"},
+        "fal": {"label": "fal.ai", "signed_in": True, "ready": True, "setup": "key"}}
+    dock._sync_providers()
+    items = [dock.provider.itemText(i) for i in range(dock.provider.count()) if dock.provider.itemData(i)]
+    # usable ones, then the current choice (marked), then the way to the rest; not every provider there is
+    assert items[:2] == ["Mistral AI", "Kilo Gateway"]
+    assert items[2] == "Google Gemini (not signed in)" and items[-1] == "More providers…"
+    assert "Groq" not in items and "Local model" not in items and "fal.ai" not in items
+    opened = []
+    dock._services = lambda: opened.append(1)
+    dock.provider.setCurrentIndex(dock.provider.findData(dock.MORE))
+    pump(app, 0.2)
+    assert opened == [1] and dock._key() == "gemini"  # More providers... opens Services, keeps the choice
+
+
+
+def test_messages_typed_while_the_ai_works_are_queued_and_sent_in_order(chat):
+    app, c, dock, sent = chat
+    dock.session = "s1"
+    dock._set_busy(True)
+    for text in ("make the sky warmer", "then add birds"):
+        dock.input.setPlainText(text)
+        dock._send()
+    assert dock.queue == ["make the sky warmer", "then add birds"] and dock.queue_box.isVisibleTo(dock)
+    assert "Queued (2)" in dock.queue_label.text() and dock.input.toPlainText() == ""
+    assert not [x for x in sent if x[1] == "/chat"]  # nothing sent while busy
+    assert "Working" in dock.status.text()
+    dock._events({"events": [{"type": "done", "n": 0}]})  # the AI finished
+    pump(app, 0.4)
+    assert [x[2]["text"] for x in sent if x[1] == "/chat"] == ["make the sky warmer"]
+    assert dock.queue == ["then add birds"]
+    dock._events({"events": [{"type": "done", "n": 1}]})
+    pump(app, 0.4)
+    assert [x[2]["text"] for x in sent if x[1] == "/chat"] == ["make the sky warmer", "then add birds"]
+    assert dock.queue == [] and not dock.queue_box.isVisibleTo(dock)
+
+
+def test_stop_returns_queued_messages_to_the_box_and_queued_ones_can_be_taken_back(chat, monkeypatch):
+    app, c, dock, sent = chat
+    monkeypatch.setattr(c, "STOP_WAIT_MS", 200)
+    dock.session = "s1"
+    dock._set_busy(True)
+    for text in ("one", "two", "three"):
+        dock.input.setPlainText(text)
+        dock._send()
+    dock._unqueue(dock.queue_list.item(1))  # double-click "two": back into the box to edit
+    assert dock.queue == ["one", "three"] and dock.input.toPlainText() == "two"
+    dock._stop()
+    assert dock.queue == [] and dock.input.toPlainText() == "two\none\nthree"  # nothing goes out by itself
+    pump(app, 0.5)
+    assert not [x for x in sent if x[1] == "/chat"]
+
+
+def test_enter_sends_shift_enter_adds_a_line_and_up_recalls(chat):
+    app, c, dock, sent = chat
+    if os.environ.get("KRITA_TEST_QT") == "5":
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+    else:
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+    keys = getattr(Qt, "Key", Qt)
+    mods = getattr(Qt, "KeyboardModifier", Qt)
+    dock.input.setPlainText("hello")
+    dock.input.moveCursor(c._END)
+    QTest.keyClick(dock.input, keys.Key_Return, mods.ShiftModifier)
+    assert dock.input.blockCount() == 2  # Shift+Enter: a new line, nothing sent
+    QTest.keyClick(dock.input, keys.Key_Return)
+    pump(app, 0.3)
+    assert [x[2]["text"] for x in sent if x[1] == "/chat"] == ["hello"] and dock.input.toPlainText() == ""
+    QTest.keyClick(dock.input, keys.Key_Up)
+    assert dock.input.toPlainText() == "hello"  # Up in an empty box: the last message

@@ -267,7 +267,7 @@ def test_default_skill_folders(monkeypatch):
     monkeypatch.delenv("KRITA_MCP_SKILLS_DIRS")
     d = [str(x) for x in skills.dirs()]
     assert d[0].endswith("skills") and d[1] == str(skills.BUNDLED)
-    assert d[2].replace("\\", "/").endswith(".agents/skills") and d[3].replace("\\", "/").endswith(".claude/skills")
+    assert len(d) == 2  # coding assistants' skills (~/.claude/skills: security-audit, ...) are not offered
 
 
 def test_skill_tools_for_mcp_clients():

@@ -607,3 +607,33 @@ def test_a_bad_key_is_not_retried(home, monkeypatch):
     monkeypatch.setattr(agent, "make_model", lambda p, m=None: model)
     events = _wait(agent.chat(None, "gemini", None, "hi"), timeout=5)
     assert len(tries) == 1 and events[-1]["type"] == "error"
+
+
+def test_each_service_says_how_it_is_set_up(home):
+    st = agent.status()
+    kinds = {n: st[n]["setup"] for n in ("gemini", "mistral", "openrouter", "ollama", "comfyui", "a1111",
+                                         "omniroute", "kilo", "llm7", "pollinations", "horde")}
+    assert kinds == {"gemini": "key", "mistral": "key", "openrouter": "browser", "ollama": "local",
+                     "comfyui": "local", "a1111": "local", "omniroute": "local", "kilo": "free", "llm7": "free",
+                     "pollinations": "toggle", "horde": "toggle"}
+    assert not st["mistral"]["has_url"] and st["openai"]["has_url"]  # cloud services ask for no address
+    assert st["kilo"]["ready"] and not st["gemini"]["ready"] and not st["horde"]["ready"]
+    assert not st["ollama"]["ready"] and st["ollama"]["default_url"] == "http://127.0.0.1:11434/v1"
+    agent.keys.save("ollama", key="", base_url="http://127.0.0.1:1234/v1")
+    agent.keys.save("horde", key="", enable=True)
+    st = agent.status()
+    assert st["ollama"]["ready"] and st["horde"]["ready"] and st["horde"]["signed_in"]
+    agent.keys.save("horde", remove=True)
+    assert not agent.status()["horde"]["ready"]  # Turn off
+
+
+def test_the_connection_test_says_whether_a_local_server_answers(home):
+    m = Mock()
+    try:
+        m.json("GET", "/v1/models", {"data": [{"id": "llama3.2"}]})
+        ok, detail = agent.check_server("ollama", m.url + "/v1")
+    finally:
+        m.srv.shutdown()
+    assert ok and "llama3.2" in detail
+    ok, detail = agent.check_server("ollama", "http://127.0.0.1:9/v1")
+    assert not ok and "nothing answers" in detail

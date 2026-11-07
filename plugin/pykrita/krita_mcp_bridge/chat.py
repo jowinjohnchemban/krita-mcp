@@ -21,23 +21,31 @@ from krita import DockWidget, DockWidgetFactory, DockWidgetFactoryBase, Krita
 
 try:
     from PyQt6.QtCore import Qt, QTimer, QUrl
-    from PyQt6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut
+    from PyQt6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut, QTextCursor
     from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
-                                 QGridLayout, QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QTextBrowser,
-                                 QVBoxLayout, QWidget)
+                                 QGridLayout, QLayout, QLineEdit, QListWidget, QPlainTextEdit, QPushButton,
+                                 QScrollArea, QTextBrowser, QVBoxLayout, QWidget)
     _PASSWORD = QLineEdit.EchoMode.Password
     _RICH = Qt.TextFormat.RichText
     _TOP = Qt.AlignmentFlag.AlignTop
+    _FIXED = QLayout.SizeConstraint.SetFixedSize
+    _KEY_RETURN, _KEY_ENTER, _KEY_UP = Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Up
+    _SHIFT = Qt.KeyboardModifier.ShiftModifier
+    _END = QTextCursor.MoveOperation.End
 except ImportError:  # Krita 5
     from PyQt5.QtCore import Qt, QTimer, QUrl
-    from PyQt5.QtGui import QDesktopServices, QGuiApplication, QKeySequence
+    from PyQt5.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QTextCursor
     from PyQt5.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
-                                 QGridLayout, QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QShortcut,
-                                 QTextBrowser, QVBoxLayout,
+                                 QGridLayout, QLayout, QLineEdit, QListWidget, QPlainTextEdit, QPushButton,
+                                 QScrollArea, QShortcut, QTextBrowser, QVBoxLayout,
                                  QWidget)
     _PASSWORD = QLineEdit.Password
     _RICH = Qt.RichText
     _TOP = Qt.AlignTop
+    _FIXED = QLayout.SetFixedSize
+    _KEY_RETURN, _KEY_ENTER, _KEY_UP = Qt.Key_Return, Qt.Key_Enter, Qt.Key_Up
+    _SHIFT = Qt.ShiftModifier
+    _END = QTextCursor.End
 
 from . import extension, logview, protocol
 from .handlers import _enum
@@ -66,14 +74,17 @@ SERVICE_INFO = {
     "openrouter": {"label": "OpenRouter", "key_url": "https://openrouter.ai/settings/keys",
                    "browser_sign_in": True},
     "ollama": {"label": "Local model (Ollama, LM Studio)", "key_url": "https://ollama.com/download",
+               "use": "chat with a model on your computer",
                "needs_key": False, "has_url": True},
     "stability": {"label": "Stability AI", "key_url": "https://platform.stability.ai/account/keys"},
     "replicate": {"label": "Replicate", "key_url": "https://replicate.com/account/api-tokens"},
     "fal": {"label": "fal.ai", "key_url": "https://fal.ai/dashboard/keys"},
     "heygen": {"label": "HeyGen", "key_url": "https://app.heygen.com/settings"},
     "comfyui": {"label": "ComfyUI (local)", "key_url": "https://www.comfy.org/", "needs_key": False,
+                "use": "images on your GPU",
                 "has_url": True},
     "a1111": {"label": "AUTOMATIC1111 / Forge (local)", "needs_key": False, "has_url": True,
+              "use": "images on your GPU",
               "key_url": "https://github.com/lllyasviel/stable-diffusion-webui-forge"},
     # free: work without a key once turned on; a free key only raises the limits
     "pollinations": {"label": "Pollinations (free, no sign-in)", "key_url": "https://enter.pollinations.ai/keys",
@@ -91,11 +102,52 @@ SERVICE_INFO = {
 }
 
 
+LOCAL_DEFAULTS = {"ollama": "http://127.0.0.1:11434/v1", "comfyui": "http://127.0.0.1:8188",
+                  "a1111": "http://127.0.0.1:7860", "omniroute": "http://localhost:20128/v1"}
+
+
 def service_info(name, reported=None):
     info = {"label": name, "needs_key": True}
     info.update(SERVICE_INFO.get(name, {}))
     info.update({k: v for k, v in (reported or {}).items() if v is not None})
+    info.setdefault("setup", setup_kind(name, info))
+    if info["setup"] == "local":
+        info.setdefault("default_url", LOCAL_DEFAULTS.get(name))
     return info
+
+
+def setup_kind(name, info):
+    """key | browser | local | free | toggle - how this service is set up (the service reports it; this is
+    the same rule for a service that has not reported yet)."""
+    if info.get("browser_sign_in"):
+        return "browser"
+    if info.get("toggle"):
+        return "toggle"
+    if name in LOCAL_DEFAULTS:
+        return "local"
+    if info.get("optional_key"):
+        return "free"
+    return "key"
+
+
+def is_ready(info):
+    """Usable right now: signed in, set up, turned on - or free without an account."""
+    if "ready" in info:
+        return bool(info["ready"])
+    return info.get("setup") == "free" or bool(info.get("signed_in"))
+
+
+def state_text(info):
+    """A few words on where this service stands, for the Services list and the chat panel."""
+    kind, signed = info.get("setup"), info.get("signed_in")
+    if kind == "local":
+        return (i18n("set up: %s") % (info.get("base_url") or info.get("default_url") or "")) if signed \
+            else i18n("not set up")
+    if kind == "free":
+        return i18n("ready, no account") + (" · " + i18n("your key") if info.get("has_key") or signed else "")
+    if kind == "toggle":
+        return (i18n("on") + (" · " + i18n("your key") if info.get("has_key") else "")) if signed else i18n("off")
+    return i18n("signed in") if signed else i18n("not signed in")
 
 
 SHORT = {"gemini": "Gemini", "anthropic": "Claude", "openai": "GPT", "openrouter": "AI", "ollama": "AI"}
@@ -192,64 +244,125 @@ def _plugin_version():
 
 
 class SignInDialog(QDialog):
-    def __init__(self, parent, service, info):
+    """Set up one service the way that service works: an API key (with a button to the key page), a browser
+    sign-in, a local server's address (with a connection test, no key), or nothing at all for the free ones
+    (only an optional key)."""
+
+    def __init__(self, parent, service, info, docker=None):
         super().__init__(parent)
-        self.setWindowTitle(i18n("Sign in to %s") % info.get("label", service))
-        form = QFormLayout(self)
-        intro = QLabel(i18n("Used for: %s. Keys are stored only on this computer (~/.krita-mcp) and also serve "
-                            "AI apps connected through MCP.") % info.get("use", ""))
+        info = service_info(service, info)  # fills in the setup kind and usual address if not reported
+        self.service, self.info, self.browser_requested = service, info, False
+        self.docker = docker or getattr(parent, "docker", None) or parent
+        kind = self.kind = info.get("setup") or setup_kind(service, info)
+        label = info.get("label", service)
+        self.setWindowTitle({"local": i18n("Set up %s"), "free": i18n("%s: key (optional)"),
+                             "toggle": i18n("%s: key (optional)")}.get(kind, i18n("Sign in to %s")) % label)
+        self.setMinimumWidth(460)
+        outer = QVBoxLayout(self)
+        outer.setSpacing(10)
+        intro = QLabel(self._intro(kind, info))
+        intro.setTextFormat(_RICH)
         intro.setWordWrap(True)
-        form.addRow(intro)
+        intro.setOpenExternalLinks(True)
+        intro.setMinimumWidth(440)  # with a fixed-size dialog, this sets its width
+        outer.addWidget(intro)
+        form = QFormLayout()
+        form.setHorizontalSpacing(10)
+        outer.addLayout(form)
         self.key = QLineEdit()
         self.key.setEchoMode(_PASSWORD)
         self.base = QLineEdit(info.get("base_url") or "")
-        placeholders = {"ollama": "http://127.0.0.1:11434/v1  (LM Studio: http://127.0.0.1:1234/v1)",
-                        "openai": i18n("optional: another OpenAI-compatible URL"),
-                        "comfyui": "http://127.0.0.1:8188", "a1111": "http://127.0.0.1:7860"}
-        placeholders["omniroute"] = "http://localhost:20128/v1"
-        self.base.setPlaceholderText(placeholders.get(service, ""))
-        if info.get("optional_key"):
-            free = QLabel(i18n("Free: works without a key - click OK to turn it on. A free key (optional) "
-                               "raises the limits.") if info.get("toggle") else
-                          i18n("Free: works without a key. A key (optional) raises the limits or unlocks more "
-                               "models."))
-            free.setWordWrap(True)
-            form.addRow(free)
-            self.key.setPlaceholderText(i18n("optional"))
-            form.addRow(i18n("API key"), self.key)
-        elif info.get("needs_key", True):
-            form.addRow(i18n("API key"), self.key)
-        if info.get("has_url"):
-            form.addRow(i18n("Server URL"), self.base)
-        self.service, self.info, self.browser_requested = service, info, False
         self.hint = QLabel()
         self.hint.setWordWrap(True)
-        if info.get("browser_sign_in"):  # real OAuth: approve in the browser, nothing to copy
+        self.hint.setTextFormat(_RICH)
+        self.test_btn = None
+        if kind == "browser":  # real OAuth: approve in the browser, nothing to copy
             btn = QPushButton(i18n("Sign in with browser"))
             btn.setDefault(True)
             btn.clicked.connect(self._browser)
-            form.addRow(btn)
-            form.addRow(QLabel(i18n("or paste a key:")))
-        elif (info.get("needs_key", True) or info.get("optional_key")) and info.get("key_url"):
-            btn = QPushButton(i18n("Get a free key in the browser") if info.get("optional_key")
-                              else i18n("Get a key in the browser"))
-            btn.setToolTip(i18n("Opens the provider's key page; copy the key there and it appears here"))
-            btn.clicked.connect(self._open_key_page)
-            form.addRow(btn)
-        elif info.get("key_url"):
-            link = QLabel('<a href="%s">%s</a>' % (info["key_url"], i18n("Download / documentation")))
-            link.setTextFormat(_RICH)
-            link.linkActivated.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
-            form.addRow(link)
-        form.addRow(self.hint)
+            outer.insertWidget(1, btn)
+            self.key.setPlaceholderText(i18n("or paste a key here"))
+            form.addRow(i18n("API key"), self.key)
+        elif kind == "local":
+            self.base.setText(info.get("base_url") or info.get("default_url") or "")
+            self.base.setPlaceholderText(info.get("default_url") or "")
+            row = QHBoxLayout()
+            row.addWidget(self.base, 1)
+            self.test_btn = QPushButton(i18n("Test connection"))
+            self.test_btn.clicked.connect(self._test)
+            row.addWidget(self.test_btn)
+            form.addRow(i18n("Address"), row)
+            if service == "ollama":
+                tip = QLabel(i18n("LM Studio: http://127.0.0.1:1234/v1"))
+                tip.setStyleSheet("color:#999")
+                form.addRow("", tip)
+            if info.get("optional_key"):  # a gateway (OmniRoute) may be protected by a key of its own
+                self.key.setPlaceholderText(i18n("only if your gateway asks for one"))
+                form.addRow(i18n("Key"), self.key)
+        else:
+            if kind in ("free", "toggle"):
+                self.key.setPlaceholderText(i18n("optional"))
+            form.addRow(i18n("API key"), self.key)
+            if info.get("key_url"):
+                btn = QPushButton(i18n("Get a free key in the browser") if kind in ("free", "toggle")
+                                  else i18n("Get a key in the browser"))
+                btn.setToolTip(i18n("Opens the provider's key page; copy the key there and it appears here"))
+                btn.clicked.connect(self._open_key_page)
+                form.addRow("", _left(btn))
+            if service == "openai":  # any OpenAI-compatible server
+                self.base.setPlaceholderText(i18n("optional: another OpenAI-compatible address"))
+                form.addRow(i18n("Address"), self.base)
+        self.hint.hide()  # shown when there is something to say (key found, test result)
+        outer.addWidget(self.hint)
         self.clip_timer = QTimer(self)
         self.clip_timer.timeout.connect(self._check_clipboard)
         self.clip_start = None
         buttons = QDialogButtonBox(_enum(QDialogButtonBox, "StandardButton", "Ok")
                                    | _enum(QDialogButtonBox, "StandardButton", "Cancel"))
+        ok = buttons.button(_enum(QDialogButtonBox, "StandardButton", "Ok"))
+        ok.setText({"local": i18n("Save"), "browser": i18n("Save key")}.get(kind, i18n("Save key")))
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        form.addRow(buttons)
+        outer.addWidget(buttons)
+        outer.setSizeConstraint(_FIXED)  # exactly as tall as its content: no gap above the buttons
+
+    @staticmethod
+    def _intro(kind, info):
+        use = html.escape(info.get("use", "") or info.get("label", ""))
+        where = i18n("Stored only on this computer (~/.krita-mcp); AI apps connected through MCP use it too.")
+        link = ('<a href="%s">%s</a>' % (html.escape(info["key_url"]), i18n("Download")) if info.get("key_url")
+                else "")
+        return {
+            "key": "%s<br><span style='color:#999'>%s</span>" % (
+                i18n("Used for: %s. Get an API key on the provider's site and paste it below.") % use, where),
+            "browser": "%s<br><span style='color:#999'>%s</span>" % (
+                i18n("Used for: %s. Sign in with your browser - nothing to copy.") % use, where),
+            "local": "%s<br><span style='color:#999'>%s</span> %s" % (
+                i18n("Used for: %s.") % use, i18n("It runs on this computer: no account, no key. Start it, check "
+                                                  "the address and click Test connection."), link),
+            "free": "<b>%s</b> %s<br><span style='color:#999'>%s</span>" % (
+                i18n("Ready to use - no account needed."), i18n("A key is optional."),
+                use[:1].upper() + use[1:] + "."),
+            "toggle": "<b>%s</b> %s<br><span style='color:#999'>%s</span>" % (
+                i18n("Free, no account."), i18n("A key is optional."), use[:1].upper() + use[1:] + "."),
+        }[kind]
+
+    def _test(self):
+        url = self.base.text().strip()
+        self.test_btn.setEnabled(False)
+        self._hint(i18n("Testing…"))
+
+        def done(r):
+            self.test_btn.setEnabled(True)
+            ok = r.get("ok")
+            self._hint("<span style='color:%s'>%s %s</span>" % (
+                "#4a4" if ok else "#e66", "✓" if ok else "✗", html.escape(r.get("detail") or "")))
+        self.docker._background(lambda: _ensure_service() and _request(
+            "POST", "/check", {"provider": self.service, "base_url": url}, timeout=20), done)
+
+    def _hint(self, text):
+        self.hint.setText(text)
+        self.hint.setVisible(bool(text))
 
     def _browser(self):
         self.browser_requested = True
@@ -258,7 +371,7 @@ class SignInDialog(QDialog):
     def _open_key_page(self):
         self.clip_start = QGuiApplication.clipboard().text()
         QDesktopServices.openUrl(QUrl(self.info["key_url"]))
-        self.hint.setText(i18n("Create or copy a key in your browser - it will appear here automatically."))
+        self._hint(i18n("Create or copy a key in your browser - it will appear here automatically."))
         self.clip_timer.start(600)
 
     def _check_clipboard(self):
@@ -268,8 +381,18 @@ class SignInDialog(QDialog):
         found = find_key(self.service, text)
         if found:
             self.key.setText(found)
-            self.hint.setText("✓ " + i18n("Key found in the clipboard - click OK to check and save it."))
+            self._hint("✓ " + i18n("Key found in the clipboard - click Save key to check and save it."))
             self.clip_timer.stop()
+
+
+def _left(widget):
+    """A button at its natural width, at the start of its form row (not stretched across the dialog)."""
+    box = QWidget()
+    row = QHBoxLayout(box)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.addWidget(widget)
+    row.addStretch(1)
+    return box
 
 
 def find_key(service, text):
@@ -318,22 +441,28 @@ class ServicesDialog(QDialog):
 
     @staticmethod
     def group(info):
-        if info.get("chat"):
-            return "chat"
-        return "local" if info.get("has_url") and not info.get("needs_key", True) else "media"
+        if info.get("setup") == "local":
+            return "local"
+        return "chat" if info.get("chat") else "media"
 
     @staticmethod
     def buttons(info):
-        """(label, action) pairs: what can be done with this service now."""
-        signed = info.get("signed_in")
-        if info.get("toggle"):  # free image services: off until the user turns them on
-            return [(i18n("Turn off"), "signout")] if signed else [(i18n("Turn on"), "signin")]
-        if info.get("optional_key"):  # free without a key; a key only raises the limits
-            return ([(i18n("Change key"), "signin"), (i18n("Remove key"), "signout")] if signed
+        """(label, action) pairs: what can be done with this service now - following how it is set up."""
+        kind, signed, has_key = info.get("setup"), info.get("signed_in"), info.get("has_key")
+        if kind == "toggle":  # free image services: off until the user turns them on
+            if not signed:
+                return [(i18n("Turn on"), "on")]
+            return [(i18n("Change key") if has_key else i18n("Add key"), "signin"), (i18n("Turn off"), "signout")]
+        if kind == "free":  # works without anything; a key only raises the limits
+            return ([(i18n("Change key"), "signin"), (i18n("Remove key"), "signout")] if signed or has_key
                     else [(i18n("Add key"), "signin")])
-        if signed:
-            return [(i18n("Change"), "signin"), (i18n("Sign out"), "signout")]
-        return [(i18n("Sign in"), "signin")]
+        if kind == "local":
+            return [(i18n("Change"), "signin"), (i18n("Forget"), "signout")] if signed \
+                else [(i18n("Set up"), "signin")]
+        if kind == "browser":
+            return [(i18n("Sign out"), "signout")] if signed else [(i18n("Sign in"), "signin")]
+        return [(i18n("Change key"), "signin"), (i18n("Sign out"), "signout")] if signed \
+            else [(i18n("Sign in"), "signin")]
 
     def refresh(self):
         bar = self.scroll.verticalScrollBar()
@@ -345,13 +474,14 @@ class ServicesDialog(QDialog):
         grid.setVerticalSpacing(6)
         line = 0
         shown = 0
-        items = sorted(self.docker.providers.items(),
-                       key=lambda kv: (not kv[1].get("signed_in"), str(kv[1].get("label", kv[0])).lower()))
+        items = sorted(((n, service_info(n, i)) for n, i in self.docker.providers.items()),
+                       key=lambda kv: (not is_ready(kv[1]), str(kv[1].get("label", kv[0])).lower()))
         for key, title in self.GROUPS:
             members = []
             for name, info in items:
-                words = "%s %s %s %s" % (name, info.get("label", ""), info.get("use", ""),
-                                         "free" if info.get("free") or info.get("optional_key") else "")
+                words = "%s %s %s %s %s" % (name, info.get("label", ""), info.get("use", ""),
+                                            "free" if info.get("free") or info.get("optional_key") else "",
+                                            "local" if info.get("setup") == "local" else "")
                 if self.group(info) == key and (not want or want in words.lower()):
                     members.append((name, info))
             if not members:
@@ -364,9 +494,12 @@ class ServicesDialog(QDialog):
             line += 1
             for name, info in members:
                 shown += 1
-                mark = "<span style='color:#4a4'>✓</span> " if info.get("signed_in") else "○ "
-                label = QLabel("%s<b>%s</b> <span style='color:#999'>%s</span>" % (
-                    mark, html.escape(info.get("label", name)), html.escape(info.get("use", ""))))
+                ready = is_ready(info)
+                mark = "<span style='color:#4a4'>✓</span>" if ready else "<span style='color:#999'>○</span>"
+                label = QLabel("%s <b>%s</b> <span style='color:%s'>· %s</span><br>"
+                               "<span style='color:#999'>%s</span>" % (
+                                   mark, html.escape(info.get("label", name)), "#4a4" if ready else "#999",
+                                   html.escape(state_text(info)), html.escape(info.get("use", ""))))
                 label.setTextFormat(_RICH)
                 label.setWordWrap(True)
                 cell = QWidget()
@@ -389,8 +522,8 @@ class ServicesDialog(QDialog):
         if old is not None:
             old.deleteLater()
         bar.setValue(keep)
-        signed = sum(1 for i in self.docker.providers.values() if i.get("signed_in"))
-        self.summary.setText(i18n("%d services, %d signed in or turned on") % (len(self.docker.providers), signed))
+        ready = sum(1 for n, i in self.docker.providers.items() if is_ready(service_info(n, i)))
+        self.summary.setText(i18n("%d services · %d ready to use") % (len(self.docker.providers), ready))
 
 
 class SkillsDialog(QDialog):
@@ -414,8 +547,9 @@ class SkillsDialog(QDialog):
         box = QTextBrowser()
         box.setHtml(text)
         lay.addWidget(box, 1)
-        how = QLabel(i18n("Add skills: copy a skill folder into your skills folder, or install one from the skills "
-                          "directory with  npx skills add &lt;owner/repo&gt;  - they appear here automatically."))
+        how = QLabel(i18n("Add skills: copy a skill folder (one with a SKILL.md) into your skills folder - it "
+                          "appears here at once. Skills made for coding assistants (~/.claude/skills) are not used "
+                          "here."))
         how.setTextFormat(_RICH)
         how.setWordWrap(True)
         lay.addWidget(how)
@@ -441,6 +575,28 @@ class SkillsDialog(QDialog):
         except OSError:
             pass
         QDesktopServices.openUrl(QUrl.fromLocalFile(self.user_dir))
+
+
+class ChatInput(QPlainTextEdit):
+    """The message box: Enter sends (or queues), Shift+Enter adds a line, Up in an empty box recalls the last
+    message - as in a coding assistant's chat."""
+
+    def __init__(self, docker):
+        super().__init__()
+        self.docker = docker
+
+    def keyPressEvent(self, e):
+        key, mods = e.key(), e.modifiers()
+        if key in (_KEY_RETURN, _KEY_ENTER):
+            if mods & _SHIFT:  # a real line break (Qt's own would be a soft U+2028 separator)
+                self.insertPlainText("\n")
+            else:
+                self.docker._send()
+            return
+        if key == _KEY_UP and not self.toPlainText():
+            self.docker.recall()
+            return
+        super().keyPressEvent(e)
 
 
 class ChatDocker(DockWidget):
@@ -492,6 +648,7 @@ class ChatDocker(DockWidget):
         self.model.currentTextChanged.connect(self._model_chosen)
         self.refresh_models = QPushButton("⟳")
         self.refresh_models.setToolTip(i18n("Reload the models available to this account"))
+        self.refresh_models.setFixedWidth(self.refresh_models.sizeHint().height() + 6)
         self.refresh_models.clicked.connect(lambda: self._refresh_models(start=True))
         self.account = QLabel()
         row.addWidget(self.model, 1)
@@ -505,11 +662,38 @@ class ChatDocker(DockWidget):
                                          "warmer\", \"animate this with a slow dolly-in\"."))
         lay.addWidget(self.log, 1)
 
-        self.input = QPlainTextEdit()
-        self.input.setPlaceholderText(i18n("Message the AI (Ctrl+Enter to send)"))
+        self.status = QLabel()  # "Working · 0:12 · create_artwork" while the AI works
+        self.status.setStyleSheet("color:#999")
+        lay.addWidget(self.status)
+
+        # messages typed while the AI works wait here and go out in order, like a coding assistant's chat
+        self.queue = []
+        self.queue_box = QWidget()
+        qlay = QVBoxLayout(self.queue_box)
+        qlay.setContentsMargins(0, 0, 0, 0)
+        qlay.setSpacing(2)
+        qhead = QHBoxLayout()
+        self.queue_label = QLabel()
+        self.queue_label.setStyleSheet("color:#999")
+        clear_queue = QPushButton(i18n("Clear"))
+        clear_queue.setToolTip(i18n("Drop the queued messages"))
+        clear_queue.clicked.connect(self._clear_queue)
+        qhead.addWidget(self.queue_label, 1)
+        qhead.addWidget(clear_queue)
+        qlay.addLayout(qhead)
+        self.queue_list = QListWidget()
+        self.queue_list.setToolTip(i18n("Double-click a queued message to take it back and edit it"))
+        self.queue_list.itemDoubleClicked.connect(self._unqueue)
+        qlay.addWidget(self.queue_list)
+        lay.addWidget(self.queue_box)
+        self.queue_box.hide()
+
+        self.input = ChatInput(self)
+        self.input.setPlaceholderText(i18n("Message the AI - Enter to send, Shift+Enter for a new line"))
         self.input.setMaximumHeight(90)
         lay.addWidget(self.input)
         QShortcut(QKeySequence("Ctrl+Return"), self.input, activated=self._send)
+        self.sent_texts = []  # Up in an empty box brings back the last ones
 
         buttons = QHBoxLayout()
         self.send_btn = QPushButton(i18n("Send"))
@@ -529,16 +713,27 @@ class ChatDocker(DockWidget):
         self.timer.start(150)
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self._poll)
+        self.status_timer = QTimer(self)
+        self.status_timer.timeout.connect(self._show_status)
         self._set_busy(False)
-        # passive: only look for a running service; it is started when the user sends or signs in
+        # look for a running service now; once the panel is on screen, start it if needed, so the provider list
+        # shows what is set up (a hidden panel starts nothing)
         self._background(lambda: _request("GET", "/health", timeout=2), self._got_health, quiet=True)
+        self._started_service = False
+        self.visibilityChanged.connect(self._shown)
+
+    def _shown(self, visible):
+        if visible and not self._started_service:
+            self._started_service = True
+            self._background(_ensure_service, self._got_health, quiet=True)
 
     # ---------------------------------------------------------------- plumbing
     def canvasChanged(self, canvas):
         pass
 
     def _key(self):
-        return self.provider.currentData() or "gemini"
+        key = self.provider.currentData()
+        return getattr(self, "_last_key", None) or "gemini" if key in (None, self.MORE) else key
 
     def _background(self, fn, done, *args, quiet=False):
         def work():
@@ -550,12 +745,23 @@ class ChatDocker(DockWidget):
         threading.Thread(target=work, daemon=True).start()
 
     def _drain(self):
+        """Hand finished background work to its callback. Each callback runs on its own (not inside this timer):
+        a callback that opens a dialog must not block the ones after it - Qt does not fire a timer again while
+        its handler is still running, so everything else would wait until the dialog closed."""
         while True:
             try:
                 cb, value = self.inbox.get_nowait()
             except queue.Empty:
                 return
+            QTimer.singleShot(0, lambda cb=cb, value=value: self._run(cb, value))
+
+    def _run(self, cb, value):
+        try:
             cb(value)
+        except Exception:  # noqa: BLE001 - logged and shown, never lost
+            import traceback
+            trace("panel", "✗ panel error: " + traceback.format_exc().replace("\n", " | "))
+            self._error(i18n("Something went wrong in the panel; see Logs… for details."))
 
     def _append(self, html_text):
         self.log.append(html_text)
@@ -567,10 +773,66 @@ class ChatDocker(DockWidget):
         self._set_busy(False)
 
     def _set_busy(self, busy):
+        was = getattr(self, "busy", False)
         self.busy = busy
-        self.send_btn.setEnabled(not busy)
+        self.send_btn.setEnabled(True)  # while busy, Send queues the message
         self.stop_btn.setEnabled(busy)
-        self.send_btn.setText(i18n("Working…") if busy else i18n("Send"))
+        self.send_btn.setText(i18n("Queue") if busy else i18n("Send"))
+        self.send_btn.setToolTip(i18n("The AI is working: your message waits and is sent when it is done")
+                                 if busy else "")
+        if busy and not was:
+            self._busy_since, self._doing = time.monotonic(), ""
+            self.status_timer.start(1000)
+        elif not busy:
+            self.status_timer.stop()
+            self.status.setText("")
+        self._show_status()
+        if was and not busy and self.queue and not getattr(self, "_hold_queue", False):
+            QTimer.singleShot(0, self._send_next)  # the next queued message, now that the AI is free
+
+    def _show_status(self):
+        if not self.busy:
+            return
+        secs = int(time.monotonic() - getattr(self, "_busy_since", time.monotonic()))
+        self.status.setText("● %s · %d:%02d%s" % (i18n("Working"), secs // 60, secs % 60,
+                                                  (" · " + self._doing) if getattr(self, "_doing", "") else ""))
+
+    # ---------------------------------------------------------------- the queue
+    def _sync_queue(self):
+        self.queue_list.clear()
+        for text in self.queue:
+            self.queue_list.addItem(text.replace("\n", " ")[:200])
+        self.queue_label.setText(i18n("Queued (%d) - sent when the AI is done") % len(self.queue))
+        self.queue_box.setVisible(bool(self.queue))
+        if self.queue:  # as tall as its rows (up to 4), no empty space
+            rows = min(len(self.queue), 4)
+            self.queue_list.setFixedHeight(rows * max(self.queue_list.sizeHintForRow(0), 16)
+                                           + 2 * self.queue_list.frameWidth() + 2)
+
+    def _send_next(self):
+        if self.queue and not self.busy:
+            self._send(self.queue.pop(0))
+            self._sync_queue()
+
+    def _unqueue(self, item):
+        """Take a queued message back into the box to edit it."""
+        i = self.queue_list.row(item)
+        if 0 <= i < len(self.queue):
+            text = self.queue.pop(i)
+            current = self.input.toPlainText().strip()
+            self.input.setPlainText((current + "\n" + text) if current else text)
+            self._sync_queue()
+
+    def _clear_queue(self):
+        trace("panel", "queue cleared (%d)" % len(self.queue))
+        self.queue = []
+        self._sync_queue()
+
+    def recall(self):
+        """Up in an empty box: the last message sent."""
+        if self.sent_texts and not self.input.toPlainText():
+            self.input.setPlainText(self.sent_texts[-1])
+            self.input.moveCursor(_END)
 
     # ---------------------------------------------------------------- sign in
     def _got_health(self, health):
@@ -579,21 +841,39 @@ class ChatDocker(DockWidget):
         self._show_account()
         self._refresh_models()
 
+    MORE = "__more__"
+
     def _sync_providers(self):
-        """The chat providers come from the assistant service, so new ones appear without a plugin update."""
-        chats = [(k, v.get("label", k)) for k, v in self.providers.items() if v.get("chat")]
-        if not chats or [self.provider.itemData(i) for i in range(self.provider.count())] == [k for k, _ in chats]:
+        """The chat providers you can use now (signed in, set up, or free), from the assistant service - new ones
+        appear without a plugin update. The rest are one click away: More providers... opens Services."""
+        if not self.providers:
             return
         current = self._key()
+        chats = [(k, service_info(k, v)) for k, v in self.providers.items() if v.get("chat")]
+        usable = [(k, i) for k, i in chats if is_ready(i) or i.get("setup") == "toggle"]  # toggle: chat is free
+        if current not in [k for k, _ in usable] and current in dict(chats):  # keep the choice, marked
+            usable.append((current, dict(dict(chats)[current], label="%s (%s)" % (
+                dict(chats)[current].get("label", current), state_text(dict(chats)[current])))))
+        # your own (signed in / set up) first, then the free ones, then a choice that is not usable yet
+        usable.sort(key=lambda kv: (not (is_ready(kv[1]) or kv[1].get("setup") == "toggle"),
+                                    kv[1].get("setup") in ("free", "toggle"),
+                                    str(kv[1].get("label", kv[0])).lower()))
+        items = [(k, i.get("label", k)) for k, i in usable] + [(self.MORE, i18n("More providers…"))]
+        if [(self.provider.itemData(i), self.provider.itemText(i)) for i in range(self.provider.count())
+                if self.provider.itemData(i) is not None] == items:
+            return
         self.provider.blockSignals(True)
         try:
             self.provider.clear()
-            for key, label in chats:
+            for key, label in items:
+                if key == self.MORE and len(items) > 1:
+                    self.provider.insertSeparator(self.provider.count())
                 self.provider.addItem(label, key)
             idx = self.provider.findData(current)
             self.provider.setCurrentIndex(idx if idx >= 0 else 0)
         finally:
             self.provider.blockSignals(False)
+        self._last_key = self._key()
         if self._key() != current:
             self._provider_changed()
 
@@ -645,17 +925,26 @@ class ChatDocker(DockWidget):
 
     def _show_account(self):
         info = service_info(self._key(), self.providers.get(self._key()))
-        signed = info.get("signed_in")
-        if info.get("optional_key"):
-            self.account.setText(i18n("free") + (" ✓ " + i18n("key") if signed and not info.get("toggle") else ""))
+        signed, kind = info.get("signed_in"), info.get("setup")
+        self.account.setText(("✓ " if is_ready(info) else "") + state_text(info))
+        if kind == "local":
+            self.signin.setText(i18n("Change") if signed else i18n("Set up"))
+        elif kind in ("free", "toggle"):
+            self.signin.setText(i18n("Change key") if info.get("has_key") else i18n("Add key"))
         else:
-            self.account.setText("✓ " + i18n("signed in") if signed else i18n("not signed in"))
-        removable = signed and (info.get("needs_key") or info.get("optional_key"))
-        self.signin.setText(i18n("Sign out") if removable else i18n("Sign in"))
+            self.signin.setText(i18n("Sign out") if signed else i18n("Sign in"))
         if info.get("default_model"):
             self.model.lineEdit().setPlaceholderText(i18n("Auto: %s") % info["default_model"])
 
     def _provider_changed(self):
+        if self.provider.currentData() == self.MORE:  # not a provider: open Services, keep the last choice
+            idx = self.provider.findData(getattr(self, "_last_key", None))
+            self.provider.blockSignals(True)
+            self.provider.setCurrentIndex(max(idx, 0))
+            self.provider.blockSignals(False)
+            QTimer.singleShot(0, self._services)
+            return
+        self._last_key = self._key()
         trace("panel", "chat provider: %s" % self._key())
         extension.set_setting("chat_provider", self._key())
         self._set_models([], saved=extension.setting("chat_model_" + self._key(), ""))
@@ -681,25 +970,37 @@ class ChatDocker(DockWidget):
         dlg.exec()
 
     def sign_in_service(self, name, parent=None, action=None):
-        """action: "signin" (ask for a key / URL, also to change it), "signout", or None: whichever fits now
-        (the panel's own Sign in / Sign out button)."""
+        """action: "signin" (set up / sign in, also to change a key or address), "signout" (sign out, remove the
+        key, forget the address, turn off), "on" (turn a free service on), or None: whichever fits now (the
+        panel's own button)."""
         info = service_info(name, self.providers.get(name))
         if action is None:
-            removable = info.get("signed_in") and (info.get("needs_key") or info.get("optional_key"))
+            removable = info.get("signed_in") and info.get("setup") in ("key", "browser")
             action = "signout" if removable else "signin"
         trace("panel", "%s: %s" % (name, action))
         if action == "signout":
             self._background(lambda: _ensure_service() and _request("POST", "/signout", {"provider": name}),
                              lambda r: self._signed(r, name))
             return
-        dlg = SignInDialog(parent or self, name, info)
+        if action == "on":  # nothing to ask: free and anonymous
+            body = {"provider": name, "key": "", "verify": False}
+            self._background(lambda: _ensure_service() and _request("POST", "/signin", body),
+                             lambda r: self._signed(r, name))
+            return
+        dlg = SignInDialog(parent or self, name, info, docker=self)
         if not dlg.exec():
             return
         if dlg.browser_requested:
             return self.browser_sign_in(name)
         body = {"provider": name, "key": dlg.key.text().strip(), "base_url": dlg.base.text().strip() or None}
-        if info.get("needs_key", True) and not info.get("optional_key") and not body["key"]:
+        kind = info.get("setup")
+        if kind in ("key", "browser") and not body["key"]:
             return self._error(i18n("No key entered."))
+        if kind == "local" and not body["base_url"]:
+            return self._error(i18n("No address entered."))
+        if kind in ("free", "toggle") and not body["key"]:
+            if kind == "free" or info.get("signed_in"):
+                return  # nothing to save: it already works without a key
         self._background(lambda: _ensure_service() and _request("POST", "/signin", body),
                          lambda r: self._signed(r, name))
 
@@ -770,11 +1071,20 @@ class ChatDocker(DockWidget):
         self._append("<p style='color:#8a8'>%s</p>" % html.escape(text))
 
     # ---------------------------------------------------------------- chat
-    def _send(self):
-        text = self.input.toPlainText().strip()
-        if not text or self.busy:
+    def _send(self, text=None):
+        queued = text is not None
+        text = (text if queued else self.input.toPlainText()).strip()
+        if not text:
             return
-        self.input.clear()
+        if not queued:
+            self.input.clear()
+            self.sent_texts = (self.sent_texts + [text])[-50:]
+        if self.busy:  # the AI is working: the message waits its turn
+            self.queue.append(text)
+            trace("panel", "queued (%d waiting): %s" % (len(self.queue), text[:120]))
+            self._sync_queue()
+            return
+        self._hold_queue = False
         self._set_busy(True)
         body = {"session": self.session, "provider": self._key(), "model": self._model_text() or None,
                 "text": text}
@@ -833,6 +1143,8 @@ class ChatDocker(DockWidget):
             elif kind == "note":
                 self._append("<p style='color:#999; font-size:small'>%s</p>" % html.escape(ev.get("text", "")))
             elif kind == "tool":
+                self._doing = ev["name"]
+                self._show_status()
                 self._append("<p style='color:#999; font-size:small'>🔧 %s %s</p>" % (
                     html.escape(ev["name"]), html.escape(ev.get("args", ""))))
             elif kind == "tool_result" and not ev.get("ok"):
@@ -846,10 +1158,16 @@ class ChatDocker(DockWidget):
     def _stop(self):
         sid = self.session
         trace("panel", "Stop pressed (chat %s)" % sid)
+        if self.queue:  # stopped: what was queued comes back to the box, nothing goes out on its own
+            current = self.input.toPlainText().strip()
+            self.input.setPlainText("\n".join(([current] if current else []) + self.queue))
+            self.queue = []
+            self._sync_queue()
+        self._hold_queue = True
         if not self.busy:
             return
         self.stop_btn.setEnabled(False)
-        self.send_btn.setText(i18n("Stopping…"))
+        self.status.setText("● " + i18n("Stopping…"))
         if not sid:  # the message is still on its way: stop as soon as the service has it
             self._stop_pending = True
         else:
@@ -868,6 +1186,8 @@ class ChatDocker(DockWidget):
         sid = self.session
         trace("panel", "New chat (was %s)" % sid)
         self._stop_pending = False
+        self.queue = []
+        self._sync_queue()
         self.session, self.seen = None, 0
         self.poll_timer.stop()
         self.log.clear()
