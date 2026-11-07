@@ -125,11 +125,13 @@ def test_update_helper_never_breaks_a_locked_installation(tmp_path, monkeypatch)
     from krita_mcp import updater
     log = tmp_path / "update.log"
     fake_pip = [sys.executable, "-c", "open(r'%s', 'w').write('pip ran')" % (tmp_path / "pip_ran")]
-    script = updater.HELPER.replace('sys.platform != "win32"', "False").replace(
-        'return "krita-mcp.exe" in out.lower()', "return True").replace("time.sleep(", "(lambda s: None)(")
+
+    def helper(still_running):  # the same helper, with "is krita-mcp running?" answered for the test (any OS)
+        stub = "def running():\n    return %s\n\n\ndef _real():" % still_running
+        return updater.HELPER.replace("def running():", stub).replace("time.sleep(", "(lambda s: None)(")
+    script = helper(True)
     code = subprocess.call([sys.executable, "-c", script, str(log), "2099.1.1"] + fake_pip)
     assert code == 2 and "skipped" in log.read_text() and not (tmp_path / "pip_ran").exists()
-    script = updater.HELPER.replace("time.sleep(", "(lambda s: None)(").replace(
-        'if sys.platform != "win32":', "if True:")
+    script = helper(False)
     code = subprocess.call([sys.executable, "-c", script, str(log), "2099.1.1"] + fake_pip)
     assert code == 0 and "result: updated" in log.read_text() and (tmp_path / "pip_ran").exists()

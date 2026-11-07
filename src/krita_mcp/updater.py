@@ -42,9 +42,12 @@ log, version, cmd = sys.argv[1], sys.argv[2], sys.argv[3:]
 def running():
     if sys.platform != "win32":
         return False
-    out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq krita-mcp.exe", "/NH"],
-                         capture_output=True, text=True).stdout
-    return "krita-mcp.exe" in out.lower()
+    try:
+        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq krita-mcp.exe", "/NH"],
+                             capture_output=True, text=True).stdout
+    except OSError:
+        return False
+    return "krita-mcp.exe" in (out or "").lower()
 
 
 with open(log, "w", encoding="utf-8") as f:
