@@ -752,8 +752,8 @@ class Auto(_Adapter):
                 reply, calls = self.inner.step(history)
             except ProviderError as e:
                 self._take_usage()
-                if not (unusable(e) or transient(e)):
-                    raise
+                if not (unusable(e) or transient(e)) or self.stopped():
+                    raise  # (stopped: an abandoned request must not go on to - and pay - the next provider)
                 old, why = self.name, _brief(e)
                 self.failed[old] = why
                 self._next()
@@ -771,6 +771,8 @@ class Auto(_Adapter):
             for _, name, args in calls:
                 self.log.append("Called %s %s" % (name, _short(args)))
             return reply, calls
+
+    stopped = staticmethod(lambda: False)  # set by run_turn: True once the user pressed Stop
 
     @property
     def note(self):
@@ -877,6 +879,8 @@ async def run_turn(sess, text):
             sess.model = make_model(sess.provider, sess.model_name)
             sess.history = sess.model.start(await tool_specs())
         m = sess.model
+        if isinstance(m, Auto):
+            m.stopped = lambda: sess.stop
         if sess.used is None or time.monotonic() - sess.prepared_at > MODEL_REUSE_SECONDS:
             # the newest model is looked up (a request to the provider) at the start and every few minutes,
             # not before every message: that kept the user waiting each time

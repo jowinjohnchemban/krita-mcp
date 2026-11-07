@@ -706,3 +706,20 @@ def test_the_model_is_looked_up_once_not_before_every_message(home, monkeypatch)
     model.replies.append(("three", []))
     _wait(agent.chat(sess.id, "gemini", None, "third"))
     assert looked == [1, 1]  # after a while it looks for a newer one again
+
+
+def test_auto_does_not_move_on_after_stop(home, monkeypatch):
+    """A request abandoned by Stop that fails later must not go on to the next (maybe paid) provider."""
+    class SlowBroke(SlowModel):
+        def step(self, history):
+            time.sleep(1.0)
+            raise agent.ProviderError("cannot reach https://x (The read operation timed out)")
+    second = SlowModel([("x", [])], delay=0.0)
+    second.prepare = lambda: pytest.fail("the next provider must not be used after Stop")
+    _auto(monkeypatch, {"a": SlowBroke([]), "b": second})
+    sess = agent.chat(None, "auto", None, "hi")
+    time.sleep(0.3)
+    sess.stop = True
+    _wait(sess, timeout=3)
+    time.sleep(1.5)  # the abandoned request fails now
+    assert sess.model.name == "a"
