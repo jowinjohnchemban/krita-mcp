@@ -156,10 +156,10 @@ def test_services_dialog_lists_every_service(chat, monkeypatch):
     assert ("POST", "/signout", {"provider": "gemini"}) in sent
     assert "Google Gemini: not signed in" in dock.log.toPlainText()  # names the service that changed
     sign = real_dialog(dock, "comfyui", info)
-    labels = [w.text() for w in sign.findChildren(qtw.QLabel)]
+    labels = _labels(sign)
     assert "API key" not in labels and "Key" not in labels and "Address" in labels  # local: an address, no key
     assert sign.base.text() == "http://127.0.0.1:8188"  # the usual address is filled in
-    assert "Test connection" in [b.text() for b in sign.findChildren(qtw.QPushButton)]
+    assert "Test connection" in _buttons(sign)
 
 
 def test_key_detection_and_browser_flows(chat, monkeypatch):
@@ -220,10 +220,10 @@ def test_key_page_button_without_a_running_service(chat):
     for name, expected in (("gemini", "Get a key in the browser"), ("anthropic", "Get a key in the browser"),
                            ("fal", "Get a key in the browser"), ("openrouter", "Sign in with browser")):
         dlg = c.SignInDialog(dock, name, c.service_info(name))
-        assert expected in [b.text() for b in dlg.findChildren(qtw.QPushButton)], name
+        assert expected in _buttons(dlg), name
     assert c.service_info("gemini")["key_url"] == "https://aistudio.google.com/apikey"
     assert c.service_info("gemini", {"signed_in": True, "key_url": None})["key_url"]  # reported None keeps ours
-    local = [w.text() for w in c.SignInDialog(dock, "ollama", c.service_info("ollama")).findChildren(qtw.QLabel)]
+    local = _labels(c.SignInDialog(dock, "ollama", c.service_info("ollama")))
     assert "API key" not in local and "Address" in local
 
 
@@ -311,7 +311,7 @@ def test_free_services_turn_on_without_a_key(chat):
     buttons = [b.text() for b in dlg.scroll.widget().findChildren(qtw.QPushButton)]
     assert "Turn on" in buttons and "Turn off" in buttons and "Add key" in buttons  # free chat needs no switch
     sign = c.SignInDialog(dock, "pollinations", c.service_info("pollinations", dock.providers["pollinations"]))
-    labels = " ".join(w.text() for w in sign.findChildren(qtw.QLabel))
+    labels = " ".join(_labels(sign))
     assert "no account" in labels and "API key" in labels and "optional" in labels
     assert "Get a free key in the browser" in [b.text() for b in sign.findChildren(qtw.QPushButton)]
     assert c.service_info("horde")["optional_key"] and c.service_info("omniroute")["has_url"]
@@ -417,9 +417,9 @@ def test_each_service_is_set_up_the_way_it_works(chat):
     servers on this computer ask for an address (and can be tested), free services need nothing."""
     app, c, dock, sent = chat
 
-    def parts(dlg):
-        return ([w.text() for w in dlg.findChildren(qtw.QLabel)],
-                [b.text() for b in dlg.findChildren(qtw.QPushButton)], dlg.windowTitle())
+    def parts(dlg):  # what the dialog shows: its intro, row labels, buttons and title
+        return ([dlg.intro.text()] + [x.text() for x in dlg.row_labels],
+                [b.text() for b in dlg.actions + [dlg.save_btn, dlg.cancel_btn]], dlg.windowTitle())
     labels, buttons, title = parts(_setup_dialog(c, dock, "mistral", label="Mistral AI", use="chat", setup="key",
                                                  key_url="https://console.mistral.ai/api-keys"))
     assert "API key" in labels and "Address" not in labels and "Get a key in the browser" in buttons
@@ -430,8 +430,7 @@ def test_each_service_is_set_up_the_way_it_works(chat):
     local = _setup_dialog(c, dock, "ollama", label="Local model", use="chat", setup="local")
     labels, buttons, title = parts(local)
     assert "Address" in labels and "API key" not in labels and "Test connection" in buttons
-    assert title == "Set up Local model" and local.save_btn.text() == "Save"
-    assert local.save_btn in local.findChildren(qtw.QPushButton) and local.save_btn.isDefault()
+    assert title == "Set up Local model" and local.save_btn.text() == "Save" and local.save_btn.isDefault()
     labels, buttons, title = parts(_setup_dialog(c, dock, "kilo", label="Kilo", use="chat", setup="free",
                                                  optional_key=True, key_url="https://app.kilo.ai"))
     assert "API key" in labels and any("no account needed" in t for t in labels)
@@ -634,3 +633,14 @@ def test_everyone_starts_on_auto_once_then_their_choice_stays(chat, monkeypatch)
     assert first._key() == "auto" and store["auto_default"] == "1"
     store["chat_provider"] = "kilo"  # the user picks another one afterwards
     assert c.ChatDocker()._key() == "kilo"
+
+
+
+def _labels(dlg):
+    """A setup dialog's intro and row labels, as it records them (Qt's child search is unreliable on Windows
+    PyQt5)."""
+    return [dlg.intro.text()] + [x.text() for x in dlg.row_labels]
+
+
+def _buttons(dlg):
+    return [b.text() for b in dlg.actions + [dlg.save_btn, dlg.cancel_btn]]

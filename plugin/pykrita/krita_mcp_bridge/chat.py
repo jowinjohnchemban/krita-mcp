@@ -266,15 +266,18 @@ class SignInDialog(QDialog):
         self.setMinimumWidth(460)
         outer = QVBoxLayout(self)
         outer.setSpacing(10)
-        intro = QLabel(self._intro(kind, info))
+        intro = self.intro = QLabel(self._intro(kind, info))
         intro.setTextFormat(_RICH)
         intro.setWordWrap(True)
         intro.setOpenExternalLinks(True)
         intro.setMinimumWidth(440)  # with a fixed-size dialog, this sets its width
         outer.addWidget(intro)
-        form = QFormLayout()
+        form = self.form = QFormLayout()
         form.setHorizontalSpacing(10)
         outer.addLayout(form)
+        # every row label and action button is kept here (Python references, and what tests check: asking Qt for
+        # a dialog's children is unreliable under PyQt5 on Windows)
+        self.row_labels, self.actions = [], []
         self.key = QLineEdit()
         self.key.setEchoMode(_PASSWORD)
         self.base = QLineEdit(info.get("base_url") or "")
@@ -283,48 +286,46 @@ class SignInDialog(QDialog):
         self.hint.setTextFormat(_RICH)
         self.test_btn = None
         if kind == "browser":  # real OAuth: approve in the browser, nothing to copy
-            btn = QPushButton(i18n("Sign in with browser"))
+            btn = self._action(i18n("Sign in with browser"), self._browser)
             btn.setDefault(True)
-            btn.clicked.connect(self._browser)
             outer.insertWidget(1, btn)
             self.key.setPlaceholderText(i18n("or paste a key here"))
-            form.addRow(i18n("API key"), self.key)
+            self._row(i18n("API key"), self.key)
         elif kind == "local":
             self.base.setText(info.get("base_url") or info.get("default_url") or "")
             self.base.setPlaceholderText(info.get("default_url") or "")
-            row = QHBoxLayout()
+            row = self.address_row = QHBoxLayout()
             row.addWidget(self.base, 1)
-            self.test_btn = QPushButton(i18n("Test connection"))
-            self.test_btn.clicked.connect(self._test)
+            self.test_btn = self._action(i18n("Test connection"), self._test)
             row.addWidget(self.test_btn)
-            form.addRow(i18n("Address"), row)
+            self._row(i18n("Address"), row)
             if service == "ollama":
-                tip = QLabel(i18n("LM Studio: http://127.0.0.1:1234/v1"))
-                tip.setStyleSheet("color:#999")
-                form.addRow("", tip)
+                self.tip = QLabel(i18n("LM Studio: http://127.0.0.1:1234/v1"))
+                self.tip.setStyleSheet("color:#999")
+                form.addRow("", self.tip)
             if info.get("optional_key"):  # a gateway (OmniRoute) may be protected by a key of its own
                 self.key.setPlaceholderText(i18n("only if your gateway asks for one"))
-                form.addRow(i18n("Key"), self.key)
+                self._row(i18n("Key"), self.key)
         else:
             if kind in ("free", "toggle"):
                 self.key.setPlaceholderText(i18n("optional"))
-            form.addRow(i18n("API key"), self.key)
+            self._row(i18n("API key"), self.key)
             if info.get("key_url"):
-                btn = QPushButton(i18n("Get a free key in the browser") if kind in ("free", "toggle")
-                                  else i18n("Get a key in the browser"))
+                btn = self._action(i18n("Get a free key in the browser") if kind in ("free", "toggle")
+                                   else i18n("Get a key in the browser"), self._open_key_page)
                 btn.setToolTip(i18n("Opens the provider's key page; copy the key there and it appears here"))
-                btn.clicked.connect(self._open_key_page)
-                form.addRow("", _left(btn))
+                self.key_page_row = _left(btn)
+                form.addRow("", self.key_page_row)
             if service == "openai":  # any OpenAI-compatible server
                 self.base.setPlaceholderText(i18n("optional: another OpenAI-compatible address"))
-                form.addRow(i18n("Address"), self.base)
+                self._row(i18n("Address"), self.base)
         self.hint.hide()  # shown when there is something to say (key found, test result)
         outer.addWidget(self.hint)
         self.clip_timer = QTimer(self)
         self.clip_timer.timeout.connect(self._check_clipboard)
         self.clip_start = None
         # our own buttons (not Qt's standard OK, whose text and visibility Qt manages per platform)
-        buttons = QDialogButtonBox()
+        buttons = self.button_box = QDialogButtonBox()
         self.save_btn = QPushButton(i18n("Save") if kind == "local" else i18n("Save key"))
         self.save_btn.setDefault(kind != "browser")
         self.cancel_btn = QPushButton(i18n("Cancel"))
@@ -368,6 +369,17 @@ class SignInDialog(QDialog):
                 "#4a4" if ok else "#e66", "✓" if ok else "✗", html.escape(r.get("detail") or "")))
         self.docker._background(lambda: _ensure_service() and _request(
             "POST", "/check", {"provider": self.service, "base_url": url}, timeout=20), done)
+
+    def _row(self, text, field):
+        label = QLabel(text)
+        self.row_labels.append(label)
+        self.form.addRow(label, field)
+
+    def _action(self, text, slot):
+        btn = QPushButton(text)
+        btn.clicked.connect(lambda: slot())  # no checked flag passed on
+        self.actions.append(btn)
+        return btn
 
     def _hint(self, text):
         self.hint.setText(text)
