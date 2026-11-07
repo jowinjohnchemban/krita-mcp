@@ -318,7 +318,12 @@ def _backends(monkeypatch, *names_ok):
                 return [PNG], {}
         made[n] = Be
     monkeypatch.setattr(gen_tools.gen_images, "candidates", lambda name=None: [c() for c in made.values()])
-    monkeypatch.setattr(gen_tools.gen_images, "pick", lambda name=None: made[name or next(iter(made))]())
+
+    def pick(name=None):
+        if name is not None and name not in made:
+            raise gen_tools.ProviderError("unknown image backend %r" % name)
+        return made[name or next(iter(made))]()
+    monkeypatch.setattr(gen_tools.gen_images, "pick", pick)
 
     def get(name):
         if name in made:

@@ -63,13 +63,14 @@ async def ai_backends(details: bool = False) -> dict:
 
 
 def _usable_backend(name):
-    """True when the named image service exists and is set up (local ones: their server answers)."""
+    """False when the named image service does not exist or is a cloud service without a key; a server on this
+    computer counts as set up (not probed here: if it is not running, its own error says so)."""
     try:
-        b = gen_images.get(name)
+        b = gen_images.pick(name)
     except ProviderError:
         return False
-    if b.kind == "local":
-        return bool(b.status().get("reachable"))
+    if getattr(b, "kind", "") == "local" or not hasattr(b, "configured"):
+        return True
     return bool(b.configured())
 
 

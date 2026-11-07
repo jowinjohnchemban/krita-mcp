@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture()
 def chat(monkeypatch, tmp_path):
     app = qtw.QApplication.instance() or qtw.QApplication([])
-    settings = {"chat_provider": "gemini"}  # these tests chat with Gemini (new installs start on Auto)
+    settings = {"chat_provider": "gemini", "auto_default": "1"}  # these tests chat with Gemini
 
     class FakeKrita:
         @staticmethod
@@ -622,3 +622,15 @@ def _still_working(c, monkeypatch):
             return {"events": [], "busy": True}
         return real(method, path, body, timeout)
     monkeypatch.setattr(c, "_request", req)
+
+
+
+def test_everyone_starts_on_auto_once_then_their_choice_stays(chat, monkeypatch):
+    app, c, dock, sent = chat
+    store = {"chat_provider": "pollinations"}  # an existing install that had chosen a provider
+    monkeypatch.setattr(c.extension, "setting", lambda key, default: store.get(key, default))
+    monkeypatch.setattr(c.extension, "set_setting", lambda key, value: store.__setitem__(key, str(value)))
+    first = c.ChatDocker()
+    assert first._key() == "auto" and store["auto_default"] == "1"
+    store["chat_provider"] = "kilo"  # the user picks another one afterwards
+    assert c.ChatDocker()._key() == "kilo"

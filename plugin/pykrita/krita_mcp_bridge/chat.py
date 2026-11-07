@@ -625,8 +625,15 @@ class ChatDocker(DockWidget):
         self.provider = QComboBox()
         for key, label in PROVIDERS:
             self.provider.addItem(label, key)
+        if extension.setting("auto_default", "") != "1":  # once: everyone starts on Auto (then their choice stays)
+            extension.set_setting("auto_default", "1")
+            extension.set_setting("chat_provider", "auto")
         idx = [k for k, _ in PROVIDERS].index(extension.setting("chat_provider", "auto")) \
             if extension.setting("chat_provider", "auto") in dict(PROVIDERS) else 0
+        saved = extension.setting("chat_provider", "auto")
+        if saved not in dict(PROVIDERS):  # e.g. Kilo: kept until the service sends the full list
+            self.provider.addItem(service_info(saved).get("label", saved), saved)
+            idx = self.provider.count() - 1
         self.provider.setCurrentIndex(idx)
         self.provider.currentIndexChanged.connect(self._provider_changed)
         self.signin = QPushButton(i18n("Sign in"))
