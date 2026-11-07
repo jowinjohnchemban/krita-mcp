@@ -1,167 +1,124 @@
-name: Release
+#
+# File: .github/workflows/release.yml
+# Description: Publish krita-mcp (Krita plugin zip + MCP server wheel/sdist) on every push to main
+#
+# Modelled on GeoLite.mmdb's publisher: one job, the date is the version (YYYY.MM.DD), a release made the same
+# day is replaced, only the latest releases are kept, and nothing is ever committed to the repository.
+#
 
-# Releases publish themselves, and never commit to main. When CI passes on main,
-# scripts/release_plan.py decides:
-#   * plugin / server code changed since the last release -> next version after the latest tag (patch;
-#     [minor] / [major] as a word in a commit's first line picks a bigger step);
-#   * the version in pyproject.toml was raised by hand -> that version;
-#   * only docs / tests / CI changed -> nothing.
-# Then it stamps that version into its own build copy (not committed), tests, builds the Krita plugin zip +
-# wheel + sdist, tags the tested commit and publishes the release
-# (and PyPI if enabled). Pushing a tag v* by hand still works; "Run workflow" re-publishes a tag or releases main.
-on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
-  push:
-    tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Existing tag to re-publish (e.g. v0.3.0). Empty = release the version on main if it is new."
-        required: false
-        default: ""
+name: Release
 
 permissions:
   contents: write
+  actions: write
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: release
-  cancel-in-progress: false
+  cancel-in-progress: true  # a newer push supersedes a release still being built
 
 jobs:
-  prepare:
-    # After CI only when CI passed, and only for pushes to main (not pull requests from forks).
-    if: >-
-      github.event_name != 'workflow_run' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+  publish:
     runs-on: ubuntu-latest
-    outputs:
-      sha: ${{ steps.v.outputs.sha }}
-      version: ${{ steps.v.outputs.version }}
-      tag: ${{ steps.v.outputs.tag }}
-      publish: ${{ steps.v.outputs.publish }}
-      bump: ${{ steps.v.outputs.bump }}
-    steps:
-      - name: Which commit
-        id: ref
-        shell: bash
-        env:
-          EVENT: ${{ github.event_name }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          INPUT_TAG: ${{ inputs.tag }}
-        run: |
-          case "$EVENT" in
-            workflow_run) echo "ref=$HEAD_SHA" >> "$GITHUB_OUTPUT" ;;
-            push)         echo "ref=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT" ;;
-            *)            echo "ref=${INPUT_TAG:-main}" >> "$GITHUB_OUTPUT" ;;
-          esac
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.ref.outputs.ref }}
-          fetch-depth: 0  # tags + history, to see what changed since the last release
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Version, tag and whether to publish
-        id: v
-        shell: bash
-        env:
-          EVENT: ${{ github.event_name }}
-          INPUT_TAG: ${{ inputs.tag }}
-        run: |
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          if [ "$EVENT" = "push" ] || [ -n "$INPUT_TAG" ]; then  # explicit tag: (re)publish exactly that
-            VERSION=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-            REQUESTED="${INPUT_TAG:-$GITHUB_REF_NAME}"
-            if [ "$REQUESTED" != "v$VERSION" ]; then
-              echo "::error::tag $REQUESTED does not match the package version $VERSION"; exit 1
-            fi
-            { echo "version=$VERSION"; echo "tag=v$VERSION"; echo "publish=true"; echo "bump=false"; } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          python scripts/release_plan.py --github-output "$GITHUB_OUTPUT"
+    timeout-minutes: 30
 
-  build:
-    # Nothing is committed anywhere: the version is written into this job's own checkout only, and the
-    # release tag (created on exactly the commit that passed CI) is where the version lives.
-    needs: prepare
-    if: needs.prepare.outputs.publish == 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      sha: ${{ needs.prepare.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Version from the date
+        run: |
+          echo "TAG_NAME=$(date -u +'%Y.%m.%d')" >> "$GITHUB_ENV"   # tag / release name, like GeoLite
+          echo "VERSION=$(date -u +'%Y.%-m.%-d')" >> "$GITHUB_ENV"   # the same date as a Python version
+
       - name: Install
         run: |
           sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
           python -m pip install -e ".[test]" PyQt6 build
-      - name: Stamp the release version (build copy only, never committed)
-        if: needs.prepare.outputs.bump == 'true'
-        run: python scripts/bump_version.py "${{ needs.prepare.outputs.version }}"
+
+      - name: Stamp the version (this build only, never committed)
+        run: python scripts/bump_version.py "$VERSION"
+
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q
+
       - name: Build plugin zip, wheel and sdist
         run: |
           python scripts/build_plugin.py --out dist
           python -m build --outdir dist
-          ls -l dist
+          ls -lah dist
+          {
+            echo "## 📦 krita-mcp $TAG_NAME"
+            echo
+            ls -lh dist | awk 'NR>1 {print "- **" $9 "**: " $5}'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/*
 
-  github-release:
-    needs: [prepare, build]
-    if: always() && needs.build.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
-      - name: Create or update the GitHub release
+      - name: Delete existing release/tag if exists
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.prepare.outputs.tag }}
-          SHA: ${{ needs.build.outputs.sha }}
-        shell: bash
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cat > notes.md <<NOTES_EOF
-          ## Install
+          gh release delete "${TAG_NAME}" --yes || true
+          git push --delete origin "${TAG_NAME}" || true
 
-          **Krita plugin**: download \`krita-mcp-bridge-${TAG#v}.zip\`, then in Krita choose *Tools > Scripts >
-          Import Python Plugin from File...*, pick the zip, enable it and restart Krita. Open *Settings > Dockers >
-          AI Bridge (MCP)*.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          target_commitish: ${{ github.sha }}
+          name: krita-mcp ${{ env.TAG_NAME }}
+          make_latest: true
+          generate_release_notes: true
+          body: |
+            ## Install
 
-          **MCP server**: \`pip install krita_mcp-${TAG#v}-py3-none-any.whl\` from this release (or
-          \`pip install krita-mcp\` once it is on PyPI), then connect your AI client with the snippet shown in the
-          Krita panel. Image, video and vision services: https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/ai-backends.md
+            **Krita plugin**: download `krita-mcp-bridge-${{ env.VERSION }}.zip`, then in Krita choose *Tools > Scripts >
+            Import Python Plugin from File...*, pick the zip, enable it and restart Krita. Open *Settings > Dockers >
+            AI Chat* or *AI Bridge (MCP)*.
 
-          NOTES_EOF
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
-          elif git ls-remote --exit-code --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "krita-mcp $TAG" \
-              --notes-file notes.md --generate-notes --verify-tag
-          else  # creates the tag on exactly the commit that passed CI
-            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "krita-mcp $TAG" \
-              --notes-file notes.md --generate-notes --target "$SHA"
-          fi
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '.url, (.assets[].name)'
+            **MCP server**: `pip install krita_mcp-${{ env.VERSION }}-py3-none-any.whl` from this release, then connect
+            your AI client with the snippet shown in the Krita panel, or chat inside Krita with *AI Chat*.
+
+            Docs: https://github.com/${{ github.repository }}/tree/main/docs
+          files: dist/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove old releases
+        uses: dev-drprasad/delete-older-releases@v0.2.1
+        with:
+          keep_latest: 5
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete old workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          retain_days: 7
+          keep_minimum_runs: 2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   pypi:
     # Opt in: set the repository variable PUBLISH_PYPI=true and add this repo as a trusted publisher on PyPI.
-    if: always() && vars.PUBLISH_PYPI == 'true' && needs.build.result == 'success'
-    needs: [prepare, build]
+    if: vars.PUBLISH_PYPI == 'true'
+    needs: publish
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

@@ -80,8 +80,7 @@ def status():
     """Every service (chat models and generative services), with the chat default models."""
     out = keys.status()
     for name, info in PROVIDERS.items():
-        out[name]["default_model"] = info["model"] or ("your OpenRouter default" if name == "openrouter"
-                                                         else "newest available")
+        out[name]["default_model"] = info["model"] or "newest available"
         out[name]["chat"] = True
     return out
 
@@ -242,15 +241,17 @@ class OpenAICompat:
 
     def prepare(self):
         """The user's model, else the newest suitable one listed now (OpenRouter: the account's default)."""
-        if self.chosen or self.provider == "openrouter":
-            self.model = self.chosen or None
+        if self.chosen:
+            self.model = self.chosen
+        elif self.provider == "openrouter":  # an account need not have a default model: choose from its list
+            self.model = catalog.first(catalog.openrouter_models(self.base, self.key), "OpenRouter model with tools")
         elif self.provider in compat.COMPAT:
             self.model = catalog.first(compat.chat_models(self.provider), "%s chat model" % self.provider)
         elif self.provider == "ollama" or http.is_loopback_url(self.base):
             self.model = catalog.first(catalog.local_models(self.base), "local model (install one first)")
         else:
             self.model = catalog.first(catalog.openai_models(self.base, self.key), "OpenAI chat model")
-        return self.model or "your OpenRouter default model"
+        return self.model
 
     def start(self, specs):
         self.tools = [{"type": "function", "function": {"name": s["name"], "description": s["description"],
@@ -262,7 +263,7 @@ class OpenAICompat:
 
     def step(self, history):
         body = {"messages": history, "tools": self.tools}
-        if self.model:  # OpenRouter: no model = the account's default model
+        if self.model:
             body["model"] = self.model
         r = http.post_json(self.base + "/chat/completions", body, self.headers)
         msg = (r.get("choices") or [{}])[0].get("message") or {}
@@ -509,7 +510,8 @@ class Handler(BaseHTTPRequestHandler):
         path, _, query = self.path.partition("?")
         q = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
         if path == "/health":
-            return self._send(200, {"ok": True, "providers": status()})
+            from . import __version__
+            return self._send(200, {"ok": True, "version": __version__, "providers": status()})
         if path == "/models":
             try:
                 return self._send(200, {"models": available_models(q.get("provider", "gemini"))})
@@ -546,6 +548,10 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/reset":
                 SESSIONS.pop(b.get("session", ""), None)
                 return self._send(200, {"ok": True})
+            if self.path == "/shutdown":  # the AI Chat panel replaces an outdated service
+                self._send(200, {"ok": True})
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return None
             if self.path == "/signin":
                 key = b.get("key") or ""
                 if key and b.get("verify", True):

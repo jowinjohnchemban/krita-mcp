@@ -47,7 +47,18 @@ def local_models(base):
 
 
 def openrouter_models(base, key):
-    return [m["id"] for m in _openai_list(base, key)]
+    """OpenRouter models that can work in Krita (tool use), newest first; those that also see images first."""
+    headers = {"Authorization": "Bearer " + key} if key else {}
+    r = http.get_json(base.rstrip("/") + "/models", headers, timeout=30)
+    usable = []
+    for m in r.get("data") or []:
+        params = m.get("supported_parameters") or []
+        if params and "tools" not in params:
+            continue  # cannot call tools: it could only talk, not work in Krita
+        sees = "image" in ((m.get("architecture") or {}).get("input_modalities") or [])
+        usable.append((sees, m.get("created") or 0, m.get("id")))
+    usable.sort(reverse=True)
+    return [i for _, _, i in usable if i]
 
 
 def anthropic_models(key):

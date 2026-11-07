@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Set the release version everywhere it lives, so the next push to main publishes it.
+"""Stamp a version into every place it lives (pyproject.toml, __version__, the plugin's BRIDGE_VERSION, and
+the tool reference).
 
-    python scripts/bump_version.py 0.4.0      # or: patch | minor | major
-    git commit -am "Release 0.4.0" && git push
+    python scripts/bump_version.py 2026.11.7   # or: patch | minor | major
 
-When CI passes on main, .github/workflows/release.yml sees that v0.4.0 has no release yet, tags that commit
-and publishes the GitHub release with the plugin zip, wheel and sdist.
+The release workflow runs this on its own build copy with the date as the version (YYYY.M.D) on every push
+to main; nothing is committed. Run it locally only to build a versioned package yourself.
 """
 import re
 import subprocess

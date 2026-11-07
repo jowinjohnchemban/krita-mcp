@@ -303,17 +303,27 @@ def test_keys_are_checked_before_saving(home, monkeypatch):
         m.srv.shutdown()
 
 
-def test_openrouter_chat_omits_model_and_sends_attribution(home, bridge, monkeypatch):
+def test_openrouter_picks_a_tool_using_model_from_the_live_list(home, bridge, monkeypatch):
+    """An OpenRouter account need not have a default model ("No models provided"): choose from its list."""
     m = Mock()
     try:
+        m.json("GET", "/api/v1/models", {"data": [
+            {"id": "acme/chat-only", "created": 900, "supported_parameters": ["temperature"],
+             "architecture": {"input_modalities": ["text", "image"]}},  # cannot call tools: skipped
+            {"id": "acme/text-tools", "created": 800, "supported_parameters": ["tools"],
+             "architecture": {"input_modalities": ["text"]}},
+            {"id": "acme/vision-tools", "created": 700, "supported_parameters": ["tools", "tool_choice"],
+             "architecture": {"input_modalities": ["text", "image"]}}]})
         m.json("POST", "/api/v1/chat/completions", {"choices": [{"message": {"content": "hi"}}]})
         monkeypatch.setenv("KRITA_MCP_OPENROUTER_BASE_URL", m.url + "/api/v1")
         agent.save_key("openrouter", "sk-or-v1-x")
         events = _wait(agent.chat(None, "openrouter", None, "hello"))
+        body, headers = json.loads(m.calls[-1][3]), m.calls[-1][2]
+        listed = agent.available_models("openrouter")
     finally:
         m.srv.shutdown()
-    body, headers = json.loads(m.calls[-1][3]), m.calls[-1][2]
-    assert events[-1]["text"] == "hi" and "model" not in body  # the account's default model
+    assert events[-1]["text"] == "hi" and body["model"] == "acme/vision-tools"  # tools + sees the canvas
+    assert listed[:2] == ["acme/vision-tools", "acme/text-tools"]
     assert headers["x-openrouter-title"] == "Krita MCP" and headers["authorization"] == "Bearer sk-or-v1-x"
 
 
@@ -341,3 +351,25 @@ def test_chat_with_a_compatible_service(home, bridge, monkeypatch):
         assert oauth.verify("mistral", "good")[0] is True and oauth.verify("mistral", "bad")[0] is False
     finally:
         m2.srv.shutdown()
+
+
+def test_service_reports_its_version_and_can_be_stopped(home):
+    from krita_mcp import __version__
+    srv = {}
+    t = threading.Thread(target=agent.serve, kwargs={"port": 0, "ready": lambda s: srv.setdefault("s", s)},
+                         daemon=True)
+    t.start()
+    while "s" not in srv:
+        time.sleep(0.02)
+    port = srv["s"].server_address[1]
+
+    def call(method, path):
+        r = urllib.request.Request("http://127.0.0.1:%d%s" % (port, path), method=method,
+                                   data=b"{}" if method == "POST" else None,
+                                   headers={"Authorization": "Bearer test-token"})
+        with urllib.request.urlopen(r, timeout=5) as resp:
+            return json.loads(resp.read())
+    assert call("GET", "/health")["version"] == __version__
+    assert call("POST", "/shutdown") == {"ok": True}
+    t.join(5)
+    assert not t.is_alive()  # the service really stopped (the panel then starts the current one)

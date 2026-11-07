@@ -1,41 +1,32 @@
 # Releasing
 
-Releases build and publish themselves (`.github/workflows/release.yml`). Pushing to `main` is enough.
+Every push to `main` publishes a release (`.github/workflows/release.yml`). There is nothing to do by hand.
 
-## What happens on every push to `main`
+## What happens on a push to `main`
 
-1. **CI** runs the test matrix (Linux and Windows, Python 3.10 and 3.13, PyQt5 and PyQt6) and builds the
-   plugin zip.
-2. When CI passes, the **Release** workflow runs `scripts/release_plan.py` to decide what to do:
+One job, modelled on the GeoLite.mmdb publisher:
 
-   | Since the last release… | Result |
-   |---|---|
-   | plugin or server code changed (`src/`, `plugin/`, `pyproject.toml`) | the **next version** is released: a patch bump by default; put `[minor]` or `[major]` in a commit message for a bigger step |
-   | you raised the version yourself (`python scripts/bump_version.py 1.0.0`) | **that version** is released |
-   | only docs, tests or CI changed | nothing is released |
+1. **Version = the date.** The release and its tag are named `YYYY.MM.DD` (for example `2026.11.07`); the
+   Python package and plugin get the same date as a version (`2026.11.7`).
+2. The version is stamped into the job's own checkout only (`pyproject.toml`, `__version__`, the plugin's
+   `BRIDGE_VERSION`, `docs/tools.md`). **Nothing is committed to the repository.**
+3. The tests run, then `krita-mcp-bridge-<version>.zip` (the Krita plugin, for *Import Python Plugin from
+   File*), the wheel and the sdist are built.
+4. If a release for today already exists, it and its tag are deleted, and today's release is published
+   again from the newest commit. Each day therefore has one release: the latest state of `main`.
+5. **Only the 5 newest releases are kept** (older releases and their tags are deleted), and workflow runs
+   older than 7 days are deleted (at least 2 are kept). Change `keep_latest` in the workflow to keep more.
+6. If PyPI is enabled (see below), the same wheel and sdist go to PyPI.
 
-3. **Nothing is committed to `main`.** The new version is written only into the release job's own build copy
-   (`pyproject.toml`, `__version__`, the plugin's `BRIDGE_VERSION`, `docs/tools.md`). The version lives in the
-   **release tag**, which is created on exactly the commit that passed CI. The version in the source files on
-   `main` can therefore be older than the latest release; the next version is always counted from the newest tag.
-4. The workflow tests that build copy, then builds `krita-mcp-bridge-<version>.zip` (the Krita plugin, for
-   *Import Python Plugin from File*), the wheel and the sdist. It tags the commit and publishes the
-   GitHub Release. The release notes contain install instructions followed by GitHub's changelog since
-   the previous release.
-5. If PyPI is enabled (see below), the same wheel and sdist go to PyPI.
+A newer push while a release is still being built cancels that build; the newer one is published.
 
-CI cannot run Krita. Before pushing larger changes, run `python scripts/smoke_krita.py` against a real
-Krita.
+You can also publish by hand: *Actions ▸ Release ▸ Run workflow*.
 
-## Other ways to publish
+Because a version is a date, two releases on the same day share a version number: someone who already
+installed today's wheel needs `pip install --force-reinstall` to get a later build of the same day.
 
-- **Choose the version yourself:** `python scripts/bump_version.py 0.5.0`, then commit and push.
-- **Push a tag by hand:** `git tag v0.5.0 && git push origin v0.5.0`. The tag must match the package
-  version.
-- **Re-publish an existing tag** (for example after fixing the workflow): *Actions ▸ Release ▸ Run
-  workflow*, and enter the tag. The release's files are replaced.
-- **Release `main` now:** *Actions ▸ Release ▸ Run workflow* with the tag left empty. This follows the
-  same rules as above.
+CI (`ci.yml`) still tests every push and pull request on Linux and Windows with PyQt5 and PyQt6. CI cannot
+run Krita: before pushing larger changes, run `python scripts/smoke_krita.py` against a real Krita.
 
 ## PyPI (optional)
 
@@ -48,7 +39,7 @@ After that, every release is also published to PyPI, so `pip install krita-mcp` 
 ## Local builds
 
 ```bash
+python scripts/bump_version.py 2026.11.7    # optional: stamp a version locally
 python scripts/build_plugin.py --out dist   # plugin zip
 python -m build --outdir dist               # wheel + sdist (pip install build)
-python scripts/release_plan.py              # what the next release would be
 ```

@@ -99,9 +99,23 @@ def _request(method, path, body=None, timeout=10):
 
 
 def _ensure_service():
-    """Make sure `krita-mcp --agent` is running; start it with the panel's server command if needed."""
+    """Make sure the current `krita-mcp --agent` is running; start it with the panel's server command if needed.
+    A running service of another version (left over from before an update) is asked to stop and replaced."""
     try:
-        return _request("GET", "/health", timeout=2)
+        health = _request("GET", "/health", timeout=2)
+        if _SERVICE.get("checked") or health.get("version") == _plugin_version():
+            return health
+        _SERVICE["checked"] = True  # replace it once; if the installed server is itself older, keep going
+        try:
+            _request("POST", "/shutdown", {}, timeout=3)
+        except (OSError, RuntimeError):
+            pass
+        for _ in range(20):
+            time.sleep(0.25)
+            try:
+                _request("GET", "/health", timeout=1)
+            except (OSError, RuntimeError):
+                break
     except (OSError, RuntimeError):
         pass
     proc = _SERVICE["proc"]
@@ -124,6 +138,11 @@ def _ensure_service():
             if _SERVICE["proc"].poll() is not None:
                 break
     raise RuntimeError("the assistant service did not start (run `krita-mcp --agent` in a terminal to see why)")
+
+
+def _plugin_version():
+    from .handlers import BRIDGE_VERSION
+    return BRIDGE_VERSION
 
 
 class SignInDialog(QDialog):

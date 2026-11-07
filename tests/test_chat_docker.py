@@ -191,6 +191,35 @@ def test_key_page_button_without_a_running_service(chat):
     assert "API key" not in local and "Server URL" in local
 
 
+def test_an_outdated_service_is_replaced(chat, monkeypatch):
+    """A service left over from before an update (other version) is stopped and the current one started."""
+    app, c, dock, sent = chat
+    state, calls = {"version": "0.0.1-old", "up": True}, []
+
+    def fake_request(method, path, body=None, timeout=10):
+        calls.append(path)
+        if path == "/shutdown":
+            state["up"] = False
+            return {"ok": True}
+        if not state["up"]:
+            raise OSError("connection refused")
+        return {"version": state["version"], "providers": {}}
+
+    class FakeProc:
+        def __init__(self, args, env=None, **kw):
+            state.update(up=True, version=c._plugin_version())
+
+        def poll(self):
+            return None
+    monkeypatch.setattr(c, "_request", fake_request)
+    monkeypatch.setattr(c.subprocess, "Popen", FakeProc)
+    monkeypatch.setattr(c.time, "sleep", lambda s: None)
+    monkeypatch.setitem(c._SERVICE, "proc", None)
+    monkeypatch.setitem(c._SERVICE, "checked", False)
+    health = c._real_ensure_service()
+    assert "/shutdown" in calls and health["version"] == c._plugin_version()
+
+
 def test_starting_the_assistant_service_for_real(chat, monkeypatch):
     """The real _ensure_service: starts `<server command> --agent` and hands it the bridge's actual port."""
     app, c, dock, sent = chat
