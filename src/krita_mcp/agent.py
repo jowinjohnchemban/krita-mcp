@@ -6,10 +6,16 @@ and its tool calls are executed against Krita - and serves it to the docker over
 
 Sign-in: API keys entered in the docker are stored in KRITA_MCP_HOME/agent_keys.json (user-only file);
 KRITA_MCP_<PROVIDER>_API_KEY environment variables work too.
+
+Spending: every step resends the conversation, so it is kept lean - only the newest pictures stay in it
+(KRITA_MCP_CHAT_KEEP_IMAGES, default 2), earlier messages' long tool results are shortened, snapshots are
+sent at KRITA_MCP_CHAT_IMAGE_SIZE (768 px) unless the model asks for more, Claude's prompt cache is used,
+and a turn stops when the same error keeps repeating. Each answer reports the tokens it used.
 """
 import asyncio
 import base64
 import hmac
+import inspect
 import json
 import re
 import threading
@@ -17,13 +23,26 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import oauth
-from .providers import catalog, compat, gemini, http, keys
+from . import oauth, skills
+from .providers import catalog, compat, free, gemini, http, keys
 from .providers.http import ProviderError, env, secret
 
 DEFAULT_PORT = 5680
-MAX_STEPS = 40
 MAX_RESULT_CHARS = 12000
+OLD_RESULT_CHARS = 600  # tool results of earlier messages are cut to this when resent
+DROPPED = "[earlier picture removed to save tokens - take a new canvas_snapshot if you need to see it]"
+
+
+def max_steps():
+    return int(env("KRITA_MCP_CHAT_MAX_STEPS", "40"))
+
+
+def keep_images():
+    return max(0, int(env("KRITA_MCP_CHAT_KEEP_IMAGES", "2")))
+
+
+def chat_image_size():
+    return int(env("KRITA_MCP_CHAT_IMAGE_SIZE", "768"))
 
 PROVIDERS = {
     "gemini": {"label": "Google Gemini", "model": "", "key_url": "https://aistudio.google.com/apikey",
@@ -37,6 +56,8 @@ PROVIDERS = {
                    "env": ("KRITA_MCP_OPENROUTER_API_KEY",)},
     "ollama": {"label": "Local model (Ollama / LM Studio)", "model": "", "key_url": "",
                "env": ()},
+    "pollinations": {"label": "Pollinations (free, no sign-in)", "model": "",
+                     "key_url": "https://enter.pollinations.ai/keys", "env": ("KRITA_MCP_POLLINATIONS_API_KEY",)},
 }
 
 for _name, (_label, _base, _env, _url, _use, _images) in compat.COMPAT.items():
@@ -46,7 +67,11 @@ SYSTEM = """You are an AI art assistant working inside the user's Krita, control
 Do what the user asks directly in their open document (or create one). Work in steps: plan, act with tools,
 then LOOK at the result with canvas_snapshot (and analyze_image when colour or light matters) and improve it
 before you answer. Keep every element on its own layer. Never delete or overwrite the user's own work unless
-asked; prefer new layers. For pictures from a prompt, start with create_artwork. Reply briefly and say what
+asked; prefer new layers. For pictures from a prompt, start with create_artwork. For a bigger task, the
+message may name skills that fit: load one with use_skill only if it helps (find_skills searches more).
+Be economical - the user pays for every step: plan before acting, put many strokes or edits in one batch
+call, look with canvas_snapshot after a pass of work rather than after every stroke, generate one image
+unless the user wants options, and never repeat a call that failed the same way. Reply briefly and say what
 you changed (layer names), and what the user could ask next."""
 
 
@@ -136,6 +161,11 @@ async def run_tool(name, args):
     fn = TOOLS.get(name)
     if fn is None:
         return "error: unknown tool %r" % name, []
+    try:  # pictures for the model: a size it can judge, not the largest (every pixel is paid for)
+        if "max_size" in inspect.signature(fn).parameters and args.get("max_size") is None:
+            args["max_size"] = chat_image_size()
+    except (TypeError, ValueError):
+        pass
     for k, v in list(args.items()):  # Gemini fallback schema sends free-form objects as JSON strings
         if isinstance(v, str) and v[:1] in "{[":
             try:
@@ -165,7 +195,57 @@ async def run_tool(name, args):
 
 
 # ------------------------------------------------------------------ model adapters
-class Gemini:
+class _Adapter:
+    usage = None
+    note = None
+
+    def reset_usage(self):
+        self.usage = {"input": 0, "cached": 0, "output": 0, "requests": 0, "cost": 0.0}
+
+    def add_usage(self, inp=0, out=0, cached=0, cost=None):
+        if self.usage is None:
+            self.reset_usage()
+        u = self.usage
+        u["input"] += int(inp or 0)
+        u["output"] += int(out or 0)
+        u["cached"] += int(cached or 0)
+        u["requests"] += 1
+        if cost:
+            u["cost"] += float(cost)
+
+
+def _k(n):
+    return "%.1fk" % (n / 1000.0) if n >= 1000 else str(n)
+
+
+def usage_text(u):
+    if not u or not (u.get("input") or u.get("output")):  # the provider reported nothing
+        return None
+    t = "Used %s tokens in, %s out over %d request%s" % (_k(u["input"]), _k(u["output"]), u["requests"],
+                                                          "" if u["requests"] == 1 else "s")
+    if u.get("cached"):
+        t += " (%s of the input from cache, billed at a fraction)" % _k(u["cached"])
+    if u.get("cost"):
+        t += ", cost %.4f credits" % u["cost"]
+    return t
+
+
+def _compact(history, turn_start, images_of, drop_image, results_of):
+    """Keep resending cheap: only the newest pictures stay; long tool results of earlier turns are cut."""
+    keep, seen = keep_images(), 0
+    for msg in reversed(history):
+        for holder, i in reversed(images_of(msg)):
+            seen += 1
+            if seen > keep:
+                drop_image(holder, i)
+    for msg in history[:turn_start]:
+        for holder, key in results_of(msg):
+            text = holder.get(key)
+            if isinstance(text, str) and len(text) > OLD_RESULT_CHARS + 40:
+                holder[key] = text[:OLD_RESULT_CHARS] + "... (shortened; ask again if needed)"
+
+
+class Gemini(_Adapter):
     def __init__(self, model):
         self.key = key_for("gemini")
         if not self.key:
@@ -209,6 +289,9 @@ class Gemini:
                 self.json_schema = False
                 return self.step(history)
             raise
+        um = r.get("usageMetadata") or {}
+        self.add_usage(um.get("promptTokenCount"), (um.get("candidatesTokenCount") or 0)
+                       + (um.get("thoughtsTokenCount") or 0), um.get("cachedContentTokenCount"))
         cand = (r.get("candidates") or [{}])[0]
         content = cand.get("content") or {"role": "model", "parts": []}
         content.setdefault("role", "model")
@@ -227,14 +310,32 @@ class Gemini:
                 parts.append({"inline_data": {"mime_type": "image/png", "data": base64.b64encode(png).decode()}})
         history.append({"role": "user", "parts": parts})
 
+    def compact(self, history, turn_start):
+        def images_of(msg):
+            return [(msg["parts"], i) for i, p in enumerate(msg.get("parts") or []) if "inline_data" in p]
 
-class OpenAICompat:
+        def drop(parts, i):
+            parts[i] = {"text": DROPPED}
+
+        def results_of(msg):
+            return [(p["functionResponse"]["response"], "result") for p in msg.get("parts") or []
+                    if isinstance(p.get("functionResponse"), dict)
+                    and isinstance(p["functionResponse"].get("response"), dict)]
+        _compact(history, turn_start, images_of, drop, results_of)
+
+
+class OpenAICompat(_Adapter):
     def __init__(self, model, provider="openai"):
+        self.provider, self.chosen, self.model, self.note = provider, model, None, None
+        if provider == "pollinations":  # free: works without a key (a free key gets the newer API)
+            self.key = key_for(provider)
+            self.url, self.headers = free.pollinations_chat(self.key)
+            return
         self.base = base_url_for(provider).rstrip("/")
+        self.url = self.base + "/chat/completions"
         self.key = key_for(provider) or ("local" if http.is_loopback_url(self.base) else None)
         if not self.key:
             raise ProviderError("Sign in to %s first (Services... > Sign in)" % PROVIDERS[provider]["label"])
-        self.provider, self.chosen, self.model, self.note = provider, model, None, None
         self.headers = {"Authorization": "Bearer " + self.key}
         if provider == "openrouter":  # app attribution, as OpenRouter suggests
             self.headers.update({"HTTP-Referer": "https://github.com/jowinjohnchemban/krita-mcp",
@@ -244,6 +345,8 @@ class OpenAICompat:
         """The user's model, else the newest suitable one listed now (OpenRouter: the account's default)."""
         if self.chosen:
             self.model = self.chosen
+        elif self.provider == "pollinations":
+            self.model = catalog.first(free.pollinations_models(self.key), "free Pollinations model with tools")
         elif self.provider == "openrouter":  # an account need not have a default model: choose from its list
             self.model = catalog.first(catalog.openrouter_models(self.base, self.key), "OpenRouter model with tools")
         elif self.provider in compat.COMPAT:
@@ -252,6 +355,8 @@ class OpenAICompat:
             self.model = catalog.first(catalog.local_models(self.base), "local model (install one first)")
         else:
             self.model = catalog.first(catalog.openai_models(self.base, self.key), "OpenAI chat model")
+        if self.provider == "pollinations":  # free models that cannot see must not be sent pictures
+            self.blind = self.model not in free.pollinations_models(self.key, seeing=True)
         return self.model
 
     def start(self, specs):
@@ -263,13 +368,21 @@ class OpenAICompat:
         history.append({"role": "user", "content": text})
 
     def step(self, history):
-        body = {"messages": history, "tools": self.tools}
+        messages = history
+        if self.provider == "openrouter" and (self.model or "").startswith("anthropic/") and history \
+                and history[0].get("role") == "system" and isinstance(history[0].get("content"), str):
+            # Claude through OpenRouter caches only what is marked: the system prompt (tools come before it)
+            messages = [{"role": "system", "content": [{"type": "text", "text": history[0]["content"],
+                                                        "cache_control": {"type": "ephemeral"}}]}] + history[1:]
+        body = {"messages": messages, "tools": self.tools}
         if self.model:
             body["model"] = self.model
+        if self.provider == "openrouter":
+            body["usage"] = {"include": True}  # report the cost of each request
         limit_key = "max_completion_tokens" if self.provider == "openai" else "max_tokens"
         body[limit_key] = int(env("KRITA_MCP_CHAT_MAX_TOKENS", "4096"))
         try:
-            r = http.post_json(self.base + "/chat/completions", body, self.headers)
+            r = http.post_json(self.url, body, self.headers)
         except ProviderError as e:
             m = re.search(r"can only afford (\d+)", str(e))
             if not m or int(m.group(1)) < 600:
@@ -279,7 +392,10 @@ class OpenAICompat:
                                         "box." % PROVIDERS[self.provider]["label"]) from None
                 raise
             body[limit_key] = int(m.group(1)) - 256  # what the remaining balance can pay for
-            r = http.post_json(self.base + "/chat/completions", body, self.headers)
+            r = http.post_json(self.url, body, self.headers)
+        u = r.get("usage") or {}
+        self.add_usage(u.get("prompt_tokens"), u.get("completion_tokens"),
+                       (u.get("prompt_tokens_details") or {}).get("cached_tokens"), u.get("cost"))
         msg = (r.get("choices") or [{}])[0].get("message") or {}
         entry = {"role": "assistant", "content": msg.get("content") or ""}
         if msg.get("tool_calls"):
@@ -294,17 +410,36 @@ class OpenAICompat:
             calls.append((tc["id"], tc["function"]["name"], args))
         return msg.get("content") or "", calls
 
+    blind = False  # True: the model takes no pictures (sending them would only cost tokens or fail)
+
     def results(self, history, results):
         images = []
         for cid, name, text, imgs in results:
+            if imgs and self.blind:
+                text += ("\n[this model cannot see pictures: check the canvas with analyze_image, read_pixels "
+                         "or find_color instead]")
+                imgs = []
             history.append({"role": "tool", "tool_call_id": cid, "content": text})
             images += imgs
         if images:  # tool messages cannot carry images: show them in a user turn
             history.append({"role": "user", "content": [{"type": "text", "text": "Images returned by the tools:"}] + [
                 {"type": "image_url", "image_url": {"url": http.data_uri(p)}} for p in images]})
 
+    def compact(self, history, turn_start):
+        def images_of(msg):
+            c = msg.get("content")
+            return [(c, i) for i, b in enumerate(c) if isinstance(b, dict) and b.get("type") == "image_url"] \
+                if isinstance(c, list) else []
 
-class Claude:
+        def drop(content, i):
+            content[i] = {"type": "text", "text": DROPPED}
+
+        def results_of(msg):
+            return [(msg, "content")] if msg.get("role") == "tool" else []
+        _compact(history, turn_start, images_of, drop, results_of)
+
+
+class Claude(_Adapter):
     def __init__(self, model):
         key = key_for("anthropic")
         if not key:
@@ -330,8 +465,24 @@ class Claude:
     def user(self, history, text):
         history.append({"role": "user", "content": text})
 
+    @staticmethod
+    def _cached(history):
+        """Prompt caching: tools + system are one cached prefix, and the conversation so far another (moved to
+        the newest message every step), so each step pays full price only for what is new."""
+        if not history:
+            return history
+        last = dict(history[-1])
+        content = last.get("content")
+        blocks = [{"type": "text", "text": content}] if isinstance(content, str) else list(content or [])
+        if blocks and isinstance(blocks[-1], dict):
+            blocks[-1] = dict(blocks[-1], cache_control={"type": "ephemeral"})
+            last["content"] = blocks
+        return history[:-1] + [last]
+
     def step(self, history):
-        kw = dict(model=self.model, max_tokens=16000, system=SYSTEM, tools=self.tools, messages=history)
+        system = [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]
+        kw = dict(model=self.model, max_tokens=int(env("KRITA_MCP_CHAT_MAX_TOKENS", "16000")), system=system,
+                  tools=self.tools, messages=self._cached(history))
         a = self.anthropic
         try:
             try:  # server-side refusal fallback, as recommended for current Claude models
@@ -347,6 +498,11 @@ class Claude:
             raise ProviderError("Claude API error %s: %s" % (e.status_code, e.message)) from None
         except a.APIConnectionError:
             raise ProviderError("cannot reach the Claude API") from None
+        u = getattr(resp, "usage", None)
+        if u is not None:
+            read = getattr(u, "cache_read_input_tokens", 0) or 0
+            self.add_usage((getattr(u, "input_tokens", 0) or 0) + read
+                           + (getattr(u, "cache_creation_input_tokens", 0) or 0), getattr(u, "output_tokens", 0), read)
         history.append({"role": "assistant", "content": resp.content})  # whole content (keeps thinking blocks)
         if resp.stop_reason == "refusal":
             return "(Claude declined this request.)", []
@@ -363,6 +519,24 @@ class Claude:
             blocks.append({"type": "tool_result", "tool_use_id": cid, "content": content,
                            "is_error": text.startswith("error:")})
         history.append({"role": "user", "content": blocks})
+
+    def compact(self, history, turn_start):
+        def tool_blocks(msg):
+            c = msg.get("content") if msg.get("role") == "user" else None
+            return [b for b in c if isinstance(b, dict) and b.get("type") == "tool_result"] \
+                if isinstance(c, list) else []
+
+        def images_of(msg):
+            return [(b["content"], i) for b in tool_blocks(msg) if isinstance(b.get("content"), list)
+                    for i, x in enumerate(b["content"]) if isinstance(x, dict) and x.get("type") == "image"]
+
+        def drop(content, i):
+            content[i] = {"type": "text", "text": DROPPED}
+
+        def results_of(msg):
+            return [(x, "text") for b in tool_blocks(msg) if isinstance(b.get("content"), list)
+                    for x in b["content"] if isinstance(x, dict) and x.get("type") == "text"]
+        _compact(history, turn_start, images_of, drop, results_of)
 
 
 def available_models(provider):
@@ -381,6 +555,8 @@ def available_models(provider):
         return catalog.openrouter_models(base_url_for("openrouter"), key_for("openrouter"))
     if provider == "ollama":
         return catalog.local_models(base_url_for("ollama"))
+    if provider == "pollinations":
+        return free.pollinations_models(key_for("pollinations"))
     if provider in compat.COMPAT:
         return compat.chat_models(provider)
     if provider == "openai":
@@ -432,8 +608,37 @@ async def run_turn(sess, text):
     m = sess.model
     used = await asyncio.to_thread(m.prepare)  # models are listed fresh for every message
     sess.emit("note", text="Model: %s" % used)
-    m.user(sess.history, text)
-    for step in range(MAX_STEPS):
+    m.reset_usage()
+    try:
+        await _turn(sess, m, text)
+    finally:
+        spent = usage_text(m.usage)
+        if spent:
+            sess.emit("note", text=spent)
+
+
+def skill_hint(text):
+    """Name the few skills that fit this message (names and descriptions only - their text costs nothing
+    until the model loads one)."""
+    try:
+        found = skills.suggest(text)
+    except OSError:
+        return "", []
+    if not found:
+        return "", []
+    return ("\n\n(Skills that may fit - load one with use_skill only if it helps: %s)" % "; ".join(
+        "%s: %s" % (s["name"], s["description"][:140]) for s in found)), [s["name"] for s in found]
+
+
+async def _turn(sess, m, text):
+    hint, names = skill_hint(text)
+    if names:
+        sess.emit("note", text="Skills that may help: %s" % ", ".join(names))
+    turn_start = len(sess.history)
+    m.user(sess.history, text + hint)
+    m.compact(sess.history, turn_start)
+    last_errors, repeats = None, 0
+    for step in range(max_steps()):
         if sess.stop:
             sess.emit("assistant", text="(stopped)")
             return
@@ -453,7 +658,17 @@ async def run_turn(sess, text):
                       images=len(images))
             results.append((cid, name, out, images))
         m.results(sess.history, results)
-    sess.emit("assistant", text="(stopped after %d steps - say 'continue' to go on)" % MAX_STEPS)
+        m.compact(sess.history, turn_start)
+        errors = sorted(out[:200] for _, _, out, _ in results if out.startswith("error:"))
+        if errors and len(errors) == len(results) and errors == last_errors:
+            repeats += 1
+            if repeats >= 2:  # the same failure three times in a row: stop instead of paying for more
+                sess.emit("assistant", text="(stopped: the same error kept repeating - %s)" % errors[0][7:200])
+                return
+        else:
+            repeats = 0
+        last_errors = errors
+    sess.emit("assistant", text="(stopped after %d steps - say 'continue' to go on)" % max_steps())
 
 
 def _worker(sess, text):
@@ -533,6 +748,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"models": [], "error": str(e)})
         if path == "/oauth/status":
             return self._send(200, oauth.poll(q.get("id", "")))
+        if path == "/skills":
+            found = skills.all_skills()
+            return self._send(200, {"skills": found, "dirs": [str(d) for d in skills.dirs()],
+                                    "user_dir": str(skills.user_dir())})
         if path == "/events":
             sess = SESSIONS.get(q.get("session", ""))
             if sess is None:
@@ -572,7 +791,8 @@ class Handler(BaseHTTPRequestHandler):
                     ok, detail = oauth.verify(b["provider"], key)
                     if ok is False:
                         return self._send(400, {"error": "%s - not saved" % detail})
-                keys.save(b["provider"], key=key, base_url=b.get("base_url"))
+                keys.save(b["provider"], key=key, base_url=b.get("base_url"),
+                          enable=True if b["provider"] in keys.OPTIONAL_KEY else None)
                 return self._send(200, {"providers": status()})
             if self.path == "/verify":
                 ok, detail = oauth.verify(b["provider"], b.get("key"))

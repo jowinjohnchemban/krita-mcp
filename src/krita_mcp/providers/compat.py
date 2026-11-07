@@ -30,6 +30,10 @@ COMPAT = {
              "KRITA_MCP_QWEN_API_KEY", "https://modelstudio.console.alibabacloud.com", "chat, vision", False),
     "moonshot": ("Moonshot Kimi", "https://api.moonshot.ai/v1", "KRITA_MCP_MOONSHOT_API_KEY",
                  "https://platform.moonshot.ai/console/api-keys", "chat", False),
+    # a gateway you run yourself (npm install -g omniroute; omniroute): one endpoint for 150+ providers,
+    # many free; its "auto" models route to whichever provider is available
+    "omniroute": ("OmniRoute (free AI gateway, local)", "http://localhost:20128/v1", "KRITA_MCP_OMNIROUTE_API_KEY",
+                  "https://github.com/diegosouzapw/OmniRoute", "chat through 150+ providers, many free", False),
 }
 
 
@@ -38,7 +42,8 @@ def base_url(name):
 
 
 def api_key(name):
-    return secret(COMPAT[name][2])
+    """The saved key; a server on this computer (OmniRoute, ...) may need none."""
+    return secret(COMPAT[name][2]) or ("local" if http.is_loopback_url(base_url(name)) else None)
 
 
 def need_key(name):
@@ -49,7 +54,11 @@ def need_key(name):
 
 
 def chat_models(name):
-    return catalog.openai_models(base_url(name), need_key(name), "chat")
+    key = need_key(name)
+    ids = catalog.openai_models(base_url(name), None if key == "local" else key, "chat")
+    if name == "omniroute":  # its routing models first: "auto" picks a working (often free) provider itself
+        ids = sorted(ids, key=lambda i: (i != "auto", not i.startswith("auto")))
+    return ids
 
 
 class CompatImages:

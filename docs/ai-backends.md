@@ -41,12 +41,14 @@ let you set them in the server entry. For example, in Claude Desktop's config:
   with the mask (and, for video, the start frame).
 - The AI cannot choose service URLs. Only you can, through these variables. Result files are downloaded
   only from public addresses.
+- Free services that need no key (Pollinations, AI Horde) are used only after you turn them on in
+  *AI Chat ▸ Services…*, or list them in `KRITA_MCP_FREE_SERVICES=pollinations,horde`.
 
 ## Image backends
 
 When `backend` is not given, the server uses `KRITA_MCP_IMAGE_BACKEND`. If that is not set either, it
-uses the first local service that answers (ComfyUI, then AUTOMATIC1111), and then the first cloud
-service that has a key.
+uses the first local service that answers (ComfyUI, then AUTOMATIC1111), then the first cloud
+service that has a key, and last the free services you turned on (Pollinations, then AI Horde).
 
 ### ComfyUI (local, recommended)
 
@@ -127,6 +129,28 @@ Set `KRITA_MCP_FAL_KEY`.
 - fal.ai has no API for listing models, so choose the endpoint with `model` for every task (browse
   [fal.ai/models](https://fal.ai/models)). krita-mcp never guesses a fal model name.
 
+### Pollinations (free, no account)
+
+Turn it on in *AI Chat ▸ Services…* (or `KRITA_MCP_FREE_SERVICES=pollinations`).
+
+- Text-to-image, free, with no key. The free models are listed live. A free key from
+  [enter.pollinations.ai](https://enter.pollinations.ai/keys) (`KRITA_MCP_POLLINATIONS_API_KEY`) moves it
+  to the newer API with more models.
+- `backend="pollinations"`; `KRITA_MCP_POLLINATIONS_IMAGE_MODEL` fixes the model.
+- Text-to-image only: use another backend to edit or inpaint.
+
+### AI Horde (free, crowdsourced)
+
+Turn it on in *AI Chat ▸ Services…* (or `KRITA_MCP_FREE_SERVICES=horde`).
+
+- Stable Diffusion models on volunteers' GPUs ([aihorde.net](https://aihorde.net)). Requests wait in a
+  queue, so a picture can take a minute or more. The model with the most workers online is used unless
+  you pass `model` (or set `KRITA_MCP_HORDE_MODEL`).
+- Text-to-image and img2img. Without an account, images are kept small (576 px). A free key from
+  [aihorde.net/register](https://aihorde.net/register) (`KRITA_MCP_HORDE_API_KEY`) moves you up the queue
+  and allows larger images.
+- A request that waits longer than 10 minutes (`KRITA_MCP_HORDE_TIMEOUT`) is cancelled.
+
 ## Video backends
 
 `generate_video` saves the video to `<workspace>/generated/` and, by default, opens it in Krita as an
@@ -178,6 +202,8 @@ the variable. Models are listed live from each service; **KRITA_MCP_<NAME>_BASE_
 | NVIDIA NIM | `KRITA_MCP_NVIDIA_API_KEY` | chat |
 | Alibaba Qwen (Model Studio) | `KRITA_MCP_QWEN_API_KEY` | chat, vision |
 | Moonshot Kimi | `KRITA_MCP_MOONSHOT_API_KEY` | chat |
+| OmniRoute (free gateway on your computer) | none needed; `KRITA_MCP_OMNIROUTE_API_KEY` if you set one | chat through 150+ providers, many free; `auto` first |
+| Pollinations (free) | none needed; `KRITA_MCP_POLLINATIONS_API_KEY` optional | chat with free models that use tools |
 
 xAI and Together image generation is text-to-image; use another backend to edit or inpaint.
 

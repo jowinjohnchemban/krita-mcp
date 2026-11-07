@@ -260,3 +260,37 @@ def test_provider_list_comes_from_the_service(chat):
     dock._sync_providers()
     assert [dock.provider.itemText(i) for i in range(dock.provider.count())] == ["Google Gemini", "Mistral AI"]
     assert dock._key() == "gemini"  # the current choice is kept
+
+
+def test_free_services_turn_on_without_a_key(chat):
+    app, c, dock, sent = chat
+    pump(app, 0.3)
+    dock.providers = dict(dock.providers, pollinations={
+        "signed_in": False, "needs_key": False, "optional_key": True, "chat": True,
+        "label": "Pollinations (free, no sign-in)", "key_url": "https://enter.pollinations.ai/keys"},
+        horde={"signed_in": True, "needs_key": False, "optional_key": True, "label": "AI Horde"})
+    dlg = c.ServicesDialog(dock)
+    buttons = [b.text() for b in dlg.rows.findChildren(qtw.QPushButton)]
+    assert "Turn on" in buttons and "Turn off" in buttons
+    sign = c.SignInDialog(dock, "pollinations", c.service_info("pollinations", dock.providers["pollinations"]))
+    labels = " ".join(w.text() for w in sign.findChildren(qtw.QLabel))
+    assert "works without a key" in labels and "API key" in labels
+    assert "Get a free key in the browser" in [b.text() for b in sign.findChildren(qtw.QPushButton)]
+    assert c.service_info("horde")["optional_key"] and c.service_info("omniroute")["has_url"]
+    assert "pollinations" in dict(c.PROVIDERS)  # offered even before the service reports its list
+
+
+def test_skills_panel_lists_what_the_assistant_can_use(chat, monkeypatch, tmp_path):
+    app, c, dock, sent = chat
+    opened = []
+    monkeypatch.setattr(c.QDesktopServices, "openUrl", lambda url: opened.append(url.toString()))
+    listing = {"skills": [{"name": "photoreal-image", "description": "Make a photo <real>", "source": "built-in"}],
+               "user_dir": str(tmp_path / "skills")}
+    dlg = c.SkillsDialog(dock, listing)
+    text = dlg.findChildren(qtw.QTextBrowser)[0].toPlainText()
+    assert "photoreal-image" in text and "Make a photo <real>" in text and "built-in" in text
+    buttons = {b.text(): b for b in dlg.findChildren(qtw.QPushButton)}
+    buttons["Open my skills folder"].click()
+    buttons["Find skills online"].click()
+    assert (tmp_path / "skills").is_dir() and opened[1] == c.SKILLS_SITE
+    assert opened[0].startswith("file:")

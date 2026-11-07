@@ -17,8 +17,14 @@ def isolated_keys(monkeypatch, tmp_path_factory):
     for name in ("KRITA_MCP_USE_ENV_KEYS", "KRITA_MCP_GEMINI_API_KEY", "KRITA_MCP_OPENAI_API_KEY",
                  "KRITA_MCP_ANTHROPIC_API_KEY", "KRITA_MCP_OPENROUTER_API_KEY", "KRITA_MCP_STABILITY_API_KEY",
                  "KRITA_MCP_REPLICATE_API_TOKEN", "KRITA_MCP_FAL_KEY", "KRITA_MCP_HEYGEN_API_KEY",
-                 "KRITA_MCP_IMAGE_BACKEND", "KRITA_MCP_VIDEO_BACKEND", "KRITA_MCP_VISION_PROVIDER"):
+                 "KRITA_MCP_IMAGE_BACKEND", "KRITA_MCP_VIDEO_BACKEND", "KRITA_MCP_VISION_PROVIDER",
+                 "KRITA_MCP_POLLINATIONS_API_KEY", "KRITA_MCP_HORDE_API_KEY", "KRITA_MCP_OMNIROUTE_API_KEY",
+                 "KRITA_MCP_FREE_SERVICES", "KRITA_MCP_CHAT_KEEP_IMAGES", "KRITA_MCP_CHAT_IMAGE_SIZE",
+                 "KRITA_MCP_CHAT_MAX_STEPS"):
         monkeypatch.delenv(name, raising=False)
+    # skills: only the built-in ones (never whatever is installed in the user's home)
+    from krita_mcp import skills
+    monkeypatch.setenv("KRITA_MCP_SKILLS_DIRS", str(skills.BUNDLED))
 
 
 @pytest.fixture()

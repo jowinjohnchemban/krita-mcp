@@ -151,10 +151,16 @@ def test_claude_agent_loop(home, bridge, monkeypatch):
         events = _wait(agent.chat(None, "anthropic", None, "what layers are there?"))
     finally:
         m.srv.shutdown()
-    assert events[-1]["text"] == "There is one layer."
+    said = [e["text"] for e in events if e["type"] == "assistant"]
+    assert said[-1] == "There is one layer."
+    assert events[-1]["type"] == "note" and events[-1]["text"].startswith("Used 2 tokens in, 2 out")
     second = json.loads([c for c in m.calls if c[0] == "POST"][1][3])
     result = second["messages"][2]["content"][0]
     assert result["type"] == "tool_result" and result["tool_use_id"] == "tu1"
+    # prompt caching: tools + system cached once, the conversation so far at its newest block
+    assert second["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert result["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in json.dumps(second["messages"][:2])
     assert second["model"] == "claude-opus-6" and len(second["tools"]) > 80  # newest Opus listed
 
 

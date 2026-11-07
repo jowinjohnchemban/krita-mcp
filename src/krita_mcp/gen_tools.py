@@ -305,7 +305,8 @@ PAINT_LAYERS = ["Sketch", "Base colours", "Shading", "Details", "Light & effects
 
 @tool
 async def create_artwork(prompt: str, approach: str = "auto", style: Optional[str] = None, aspect: str = "1:1",
-                         width: Optional[int] = None, height: Optional[int] = None, count: int = 4,
+                         width: Optional[int] = None, height: Optional[int] = None,
+                         count: Optional[int] = None,
                          backend: Optional[str] = None, model: Optional[str] = None, seed: Optional[int] = None,
                          name: Optional[str] = None) -> list:
     """START HERE when the user asks you to make a picture from a prompt. Creates the document and either
@@ -315,7 +316,8 @@ async def create_artwork(prompt: str, approach: str = "auto", style: Optional[st
     then add layers for you to paint over and refine). style: photo, cinematic, portrait, product, fashion,
     street, landscape, macro, food, architecture, drone, concept_art, illustration, anime, watercolor,
     oil_painting, 3d_render, pixel_art, comic, sketch (default: guessed from the prompt). aspect: 1:1, 4:3,
-    3:4, 3:2, 2:3, 16:9, 9:16, 21:9, 4:5, 5:4 (or width/height). count = variations to compare (generate).
+    3:4, 3:2, 2:3, 16:9, 9:16, 21:9, 4:5, 5:4 (or width/height). count = variations to compare (generate;
+    default 4 on a local GPU, 1 on paid cloud services, which charge per image).
     For painting it returns a plan; then use brush_stroke / draw_shapes / add_svg, look with canvas_snapshot,
     and iterate. To turn your painted sketch into a realistic image later: generate_image(control=[{"layer":
     "Sketch", "type": "scribble"}], style="photo")."""
@@ -341,6 +343,12 @@ async def create_artwork(prompt: str, approach: str = "auto", style: Optional[st
     head = {"approach": approach, "why": why, "style": style, "document": {k: doc.get(k) for k in
                                                                             ("name", "width", "height")}}
     if approach in ("generate", "hybrid"):
+        if count is None:  # variations are free on the user's GPU, but every cloud image costs credits
+            try:
+                be = await asyncio.to_thread(gen_images.pick, backend)
+                count = 4 if be.kind == "local" else 1
+            except ProviderError:
+                count = 1
         out = await _generate(prompt, "txt2img", None, count, backend, model, None, seed, region="canvas",
                               padding=0, name=prompt[:60], style=style)
         head.update(out[0])
@@ -417,6 +425,30 @@ async def import_asset(id: str, kind: str = "textures", resolution: str = "2k", 
     if blend_mode or opacity is not None:
         layer = await _call("layer.update", layer=layer["id"], blend_mode=blend_mode, opacity=opacity)
     return {"layer": layer, "attribution": credit, "source": "polyhaven" if kind_n != "photos" else "openverse"}
+
+
+# ------------------------------------------------------------------ skills
+@tool
+async def find_skills(query: str = "", limit: int = 8) -> dict:
+    """Find skills - step-by-step know-how for kinds of Krita work (photoreal images, hand painting,
+    retouching, video, and any the user installed). Search with a few words about the task; then load the
+    one that fits with use_skill. Cheap: returns names and one-line descriptions only."""
+    from . import skills
+    found = await asyncio.to_thread(skills.find, query, max(1, min(int(limit), 30)))
+    return {"skills": [{k: s[k] for k in ("name", "description", "source")} for s in found],
+            "next": "use_skill(name) to read the one that fits" if found else
+            "no skill matches; carry on with your own judgement"}
+
+
+@tool
+async def use_skill(name: str, file: Optional[str] = None) -> dict:
+    """Load a skill's instructions (from find_skills) and follow them. file = one of the extra text files the
+    skill lists (references, templates). Skills are text only; nothing in them is executed."""
+    from . import skills
+    try:
+        return await asyncio.to_thread(skills.load, name, file)
+    except LookupError as e:
+        raise ToolError(str(e)) from None
 
 
 # ------------------------------------------------------------------ prompts

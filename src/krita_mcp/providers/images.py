@@ -819,7 +819,10 @@ for _name, _info in compat.COMPAT.items():
     if _info[5]:  # services with an images API
         BACKENDS[_name] = type("%sImages" % _name.title(), (compat.CompatImages,),
                                {"__init__": (lambda n: lambda self: compat.CompatImages.__init__(self, n))(_name)})
-ALIASES = {"forge": "a1111", "sdnext": "a1111", "automatic1111": "a1111", "comfy": "comfyui", "google": "gemini",
+from .free import HordeImages, PollinationsImages  # noqa: E402 - free services, used once turned on
+
+BACKENDS.update(pollinations=PollinationsImages, horde=HordeImages)
+ALIASES = {"aihorde": "horde", "stablehorde": "horde", "pollination": "pollinations", "forge": "a1111", "sdnext": "a1111", "automatic1111": "a1111", "comfy": "comfyui", "google": "gemini",
            "dalle": "openai", "gpt-image": "openai", "stabilityai": "stability"}
 
 
@@ -841,7 +844,7 @@ def pick(name=None):
         if b.status().get("reachable"):
             return b
     for cls in [OpenAIImages, Gemini, Stability, Replicate, Fal] + [
-            BACKENDS[n] for n, i in compat.COMPAT.items() if i[5]]:
+            BACKENDS[n] for n, i in compat.COMPAT.items() if i[5]] + [PollinationsImages, HordeImages]:
         b = cls()
         if b.configured():
             return b
@@ -849,6 +852,7 @@ def pick(name=None):
         "No image-generation backend found. Start ComfyUI (127.0.0.1:8188) or AUTOMATIC1111/Forge with --api "
         "(127.0.0.1:7860), or set one of KRITA_MCP_OPENAI_API_KEY, KRITA_MCP_GEMINI_API_KEY, "
         "KRITA_MCP_STABILITY_API_KEY, KRITA_MCP_REPLICATE_API_TOKEN, KRITA_MCP_FAL_KEY for the MCP server. "
+        "Free, no account: turn on Pollinations or AI Horde in Krita's AI Chat > Services. "
         "See docs/ai-backends.md.")
 
 

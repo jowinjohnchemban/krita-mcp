@@ -15,7 +15,7 @@ It works with any MCP client: Claude, ChatGPT, Gemini, Cursor, VS Code Copilot, 
 AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
 ```
 
-## What the AI can do (84 tools + 7 workflow prompts)
+## What the AI can do (86 tools + 7 workflow prompts)
 
 - **Paint like an artist.** It uses Krita's real brush engine with any preset, pressure and eraser,
   plus crisp shapes and gradients, editable SVG vectors and text, procedural SeExpr textures,
@@ -28,8 +28,12 @@ AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token�
   16-bit colour spaces.
 - **Chat with an AI inside Krita.** The *AI Chat* docker lets you sign in to Gemini, Claude, OpenAI,
   OpenRouter (with your browser, no key to copy), Mistral, Groq, DeepSeek, xAI Grok, Together, Fireworks,
-  Cerebras, Hugging Face, NVIDIA, Qwen, Moonshot or a local model (Ollama, LM Studio), type what you want
-  and watch it work in your document. Models are always listed live from each provider; nothing is
+  Cerebras, Hugging Face, NVIDIA, Qwen, Moonshot or a local model (Ollama, LM Studio), or use it **free
+  with no sign-in** (Pollinations, or the OmniRoute gateway), type what you want and watch it work in your
+  document. It keeps spending down (only the newest pictures are resent, Claude's prompt cache is used,
+  repeated failures stop) and shows the tokens each answer used. **Skills** (39 built in - photoreal images,
+  retouching, pixel art, logos, comics, animation, saving credits, ... - plus any you install) are found and
+  loaded only when a request needs them. Models are always listed live from each provider; nothing is
   hard-coded. One
   **Services** list holds every key and server URL, and AI apps connected through MCP use the same
   sign-in.
@@ -136,7 +140,7 @@ See [Connecting AI services](docs/ai-backends.md).
 | [AI Chat inside Krita](docs/ai-chat.md) | The chat docker, signing in to services, asset libraries |
 | [Connecting AI services](docs/ai-backends.md) | ComfyUI, A1111, OpenAI, Gemini, Stability, Replicate, fal, HeyGen, Sora, Veo, Claude |
 | [Workflows](docs/workflows.md) | Painting, photo retouching, inpainting, line art, animation, video |
-| [Tool reference](docs/tools.md) | All 84 tools, their parameters, and the prompts |
+| [Tool reference](docs/tools.md) | All 86 tools, their parameters, and the prompts |
 | [Undo, safety and limits](docs/undo-and-safety.md) | How undo works, the security model, access modes |
 | [Development](docs/development.md) | Architecture, tests, real-Krita smoke test, adding tools |
 | [Krita upstream](docs/krita-upstream.md) | Proposing the plugin for bundling with Krita itself |

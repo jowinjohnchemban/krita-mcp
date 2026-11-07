@@ -41,7 +41,9 @@ from .util import i18n
 
 AGENT_PORT = int(os.environ.get("KRITA_MCP_AGENT_PORT") or 5680)
 PROVIDERS = [("gemini", "Google Gemini"), ("anthropic", "Anthropic Claude"), ("openai", "OpenAI / compatible"),
-             ("openrouter", "OpenRouter (browser sign-in)"), ("ollama", "Local model (Ollama, LM Studio)")]
+             ("openrouter", "OpenRouter (browser sign-in)"), ("ollama", "Local model (Ollama, LM Studio)"),
+             ("pollinations", "Pollinations (free, no sign-in)")]
+SKILLS_SITE = "https://skills.sh/"
 # what each service's keys look like, to pick them up from the clipboard while the key page is open
 KEY_PATTERNS = {
     "gemini": r"AIza[0-9A-Za-z_\-]{30,}", "anthropic": r"sk-ant-[0-9A-Za-z_\-]{20,}",
@@ -67,6 +69,13 @@ SERVICE_INFO = {
                 "has_url": True},
     "a1111": {"label": "AUTOMATIC1111 / Forge (local)", "needs_key": False, "has_url": True,
               "key_url": "https://github.com/lllyasviel/stable-diffusion-webui-forge"},
+    # free: work without a key once turned on; a free key only raises the limits
+    "pollinations": {"label": "Pollinations (free, no sign-in)", "key_url": "https://enter.pollinations.ai/keys",
+                     "needs_key": False, "optional_key": True},
+    "horde": {"label": "AI Horde (free, crowdsourced)", "key_url": "https://aihorde.net/register",
+              "needs_key": False, "optional_key": True},
+    "omniroute": {"label": "OmniRoute (free AI gateway, local)", "needs_key": False, "optional_key": True,
+                  "has_url": True, "key_url": "https://github.com/diegosouzapw/OmniRoute"},
 }
 
 
@@ -160,8 +169,16 @@ class SignInDialog(QDialog):
         placeholders = {"ollama": "http://127.0.0.1:11434/v1  (LM Studio: http://127.0.0.1:1234/v1)",
                         "openai": i18n("optional: another OpenAI-compatible URL"),
                         "comfyui": "http://127.0.0.1:8188", "a1111": "http://127.0.0.1:7860"}
+        placeholders["omniroute"] = "http://localhost:20128/v1"
         self.base.setPlaceholderText(placeholders.get(service, ""))
-        if info.get("needs_key", True):
+        if info.get("optional_key"):
+            free = QLabel(i18n("Free: works without a key - click OK to turn it on. A free key (optional) "
+                               "raises the limits."))
+            free.setWordWrap(True)
+            form.addRow(free)
+            self.key.setPlaceholderText(i18n("optional"))
+            form.addRow(i18n("API key"), self.key)
+        elif info.get("needs_key", True):
             form.addRow(i18n("API key"), self.key)
         if info.get("has_url"):
             form.addRow(i18n("Server URL"), self.base)
@@ -174,8 +191,9 @@ class SignInDialog(QDialog):
             btn.clicked.connect(self._browser)
             form.addRow(btn)
             form.addRow(QLabel(i18n("or paste a key:")))
-        elif info.get("needs_key", True) and info.get("key_url"):
-            btn = QPushButton(i18n("Get a key in the browser"))
+        elif (info.get("needs_key", True) or info.get("optional_key")) and info.get("key_url"):
+            btn = QPushButton(i18n("Get a free key in the browser") if info.get("optional_key")
+                              else i18n("Get a key in the browser"))
             btn.setToolTip(i18n("Opens the provider's key page; copy the key there and it appears here"))
             btn.clicked.connect(self._open_key_page)
             form.addRow(btn)
@@ -254,12 +272,65 @@ class ServicesDialog(QDialog):
                 mark, html.escape(info.get("label", name)), html.escape(info.get("use", ""))))
             label.setTextFormat(_RICH)
             label.setWordWrap(True)
-            signed_with_key = info.get("signed_in") and info.get("needs_key")
-            btn = QPushButton(i18n("Sign out") if signed_with_key else i18n("Sign in"))
+            if info.get("optional_key"):
+                btn = QPushButton(i18n("Turn off") if info.get("signed_in") else i18n("Turn on"))
+            else:
+                signed_with_key = info.get("signed_in") and info.get("needs_key")
+                btn = QPushButton(i18n("Sign out") if signed_with_key else i18n("Sign in"))
             btn.clicked.connect(lambda _=False, n=name: self.docker.sign_in_service(n, self))
             grid.addRow(label, btn)
         self.lay.replaceWidget(old, self.rows)
         old.deleteLater()
+
+
+class SkillsDialog(QDialog):
+    """The skills the assistant can use. It finds them itself (fresh for every message) and loads one only when
+    a request needs it, so having many costs nothing."""
+
+    def __init__(self, docker, listing):
+        super().__init__(docker)
+        self.setWindowTitle(i18n("AI skills"))
+        self.setMinimumWidth(500)
+        lay = QVBoxLayout(self)
+        intro = QLabel(i18n("Skills are step-by-step know-how (a folder with a SKILL.md). The assistant picks the "
+                            "ones that fit your request by itself and reads them only then - and AI apps connected "
+                            "through MCP can use them too (find_skills, use_skill)."))
+        intro.setWordWrap(True)
+        lay.addWidget(intro)
+        found = listing.get("skills") or []
+        text = "".join("<p><b>%s</b> <span style='color:#999'>(%s)</span><br>%s</p>" % (
+            html.escape(sk.get("name", "")), html.escape(sk.get("source", "")),
+            html.escape(sk.get("description", ""))) for sk in found) or i18n("No skills found.")
+        box = QTextBrowser()
+        box.setHtml(text)
+        lay.addWidget(box, 1)
+        how = QLabel(i18n("Add skills: copy a skill folder into your skills folder, or install one from the skills "
+                          "directory with  npx skills add &lt;owner/repo&gt;  - they appear here automatically."))
+        how.setTextFormat(_RICH)
+        how.setWordWrap(True)
+        lay.addWidget(how)
+        row = QHBoxLayout()
+        self.user_dir = listing.get("user_dir")
+        open_btn = QPushButton(i18n("Open my skills folder"))
+        open_btn.clicked.connect(self._open_folder)
+        online = QPushButton(i18n("Find skills online"))
+        online.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(SKILLS_SITE)))
+        close = QPushButton(i18n("Close"))
+        close.clicked.connect(self.accept)
+        row.addWidget(open_btn)
+        row.addWidget(online)
+        row.addStretch(1)
+        row.addWidget(close)
+        lay.addLayout(row)
+
+    def _open_folder(self):
+        if not self.user_dir:
+            return
+        try:
+            os.makedirs(self.user_dir, exist_ok=True)
+        except OSError:
+            pass
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self.user_dir))
 
 
 class ChatDocker(DockWidget):
@@ -285,11 +356,15 @@ class ChatDocker(DockWidget):
         self.signin = QPushButton(i18n("Sign in"))
         self.signin.clicked.connect(lambda: self.sign_in_service(self._key()))
         services = QPushButton(i18n("Services…"))
-        services.setToolTip(i18n("Sign in to image, video and chat services"))
+        services.setToolTip(i18n("Sign in to image, video and chat services, or turn on the free ones"))
         services.clicked.connect(self._services)
+        skills_btn = QPushButton(i18n("Skills…"))
+        skills_btn.setToolTip(i18n("Know-how the assistant loads when a request needs it"))
+        skills_btn.clicked.connect(self._skills)
         top.addWidget(self.provider, 1)
         top.addWidget(self.signin)
         top.addWidget(services)
+        top.addWidget(skills_btn)
         lay.addLayout(top)
 
         row = QHBoxLayout()
@@ -456,8 +531,12 @@ class ChatDocker(DockWidget):
     def _show_account(self):
         info = service_info(self._key(), self.providers.get(self._key()))
         signed = info.get("signed_in")
-        self.account.setText("✓ " + i18n("signed in") if signed else i18n("not signed in"))
-        self.signin.setText(i18n("Sign out") if signed and info.get("needs_key") else i18n("Sign in"))
+        if info.get("optional_key") and self._key() == "pollinations":
+            self.account.setText(i18n("free") + (" ✓ " + i18n("key") if signed else ""))
+        else:
+            self.account.setText("✓ " + i18n("signed in") if signed else i18n("not signed in"))
+        removable = signed and (info.get("needs_key") or info.get("optional_key"))
+        self.signin.setText(i18n("Sign out") if removable else i18n("Sign in"))
         if info.get("default_model"):
             self.model.lineEdit().setPlaceholderText(i18n("Auto: %s") % info["default_model"])
 
@@ -475,9 +554,19 @@ class ChatDocker(DockWidget):
         self.services_dialog.exec()
         self.services_dialog = None
 
+    def _skills(self):
+        def fetch():
+            _ensure_service()
+            return _request("GET", "/skills", timeout=20)
+        self._background(fetch, self._show_skills)
+
+    def _show_skills(self, r):
+        dlg = SkillsDialog(self, r)
+        dlg.exec()
+
     def sign_in_service(self, name, parent=None):
         info = service_info(name, self.providers.get(name))
-        if info.get("signed_in") and info.get("needs_key"):
+        if info.get("signed_in") and (info.get("needs_key") or info.get("optional_key")):
             self._background(lambda: _ensure_service() and _request("POST", "/signout", {"provider": name}),
                              self._signed)
             return
@@ -487,7 +576,7 @@ class ChatDocker(DockWidget):
         if dlg.browser_requested:
             return self.browser_sign_in(name)
         body = {"provider": name, "key": dlg.key.text().strip(), "base_url": dlg.base.text().strip() or None}
-        if info.get("needs_key", True) and not body["key"]:
+        if info.get("needs_key", True) and not info.get("optional_key") and not body["key"]:
             return self._error(i18n("No key entered."))
         self._background(lambda: _ensure_service() and _request("POST", "/signin", body), self._signed)
 

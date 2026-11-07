@@ -39,6 +39,9 @@ Stability, Replicate, fal): generate_image (txt2img / img2img / inpaint the sele
 + comparison sheet -> pick_variation), outpaint, upscale_image, remove_background, match_colors (blend an
 element into the scene), generate_video (Sora, Veo, HeyGen avatars, ...), ask_vision (second opinion from
 Claude, GPT or Gemini). Results always land on new layers, cut to the selection, one undo step each.
+Free services (Pollinations, AI Horde) work without an account once the user turns them on.
+Skills: for bigger tasks, find_skills (a few words) and use_skill the one that fits - proven step-by-step
+workflows; they are loaded only when needed.
 Coordinates are pixels with the origin at the top-left. Colours are '#rrggbb' or '#rrggbbaa'.
 Layers can be referenced by id or (if unique) name.
 """
