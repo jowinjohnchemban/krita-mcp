@@ -637,3 +637,57 @@ def test_the_connection_test_says_whether_a_local_server_answers(home):
     assert ok and "llama3.2" in detail
     ok, detail = agent.check_server("ollama", "http://127.0.0.1:9/v1")
     assert not ok and "nothing answers" in detail
+
+
+class Broke(SlowModel):
+    """A provider whose credit ran out."""
+
+    def step(self, history):
+        raise agent.ProviderError("POST https://x/chat -> HTTP 402: insufficient credits")
+
+
+def _auto(monkeypatch, models):
+    real = agent.make_model
+    monkeypatch.setattr(agent, "auto_order", lambda st=None: list(models))
+    monkeypatch.setattr(agent, "make_model", lambda p, m=None: real(p) if p == "auto" else models[p])
+
+
+def test_auto_switches_to_the_next_provider_when_credit_runs_out(home, monkeypatch):
+    first = Broke([])
+    second = SlowModel([("Painted the sunrise.", [])], delay=0.0)
+    _auto(monkeypatch, {"openrouter": first, "kilo": second})
+    events = _wait(agent.chat(None, "auto", None, "paint a sunrise"), timeout=5)
+    assert events[-1]["text"] == "Painted the sunrise."
+    notes = " ".join(e.get("text", "") for e in events if e["type"] == "note")
+    assert "switched to" in notes and "HTTP 402" in notes
+    sess = list(agent.SESSIONS.values())[-1]
+    recap = [m["content"] for m in sess.history if m["role"] == "user"][0]
+    assert "continues on another AI service" in recap and "paint a sunrise" in recap  # the task carried over
+
+
+def test_auto_keeps_going_across_messages_and_reports_when_all_fail(home, monkeypatch):
+    _auto(monkeypatch, {"a": Broke([]), "b": Broke([])})
+    events = _wait(agent.chat(None, "auto", None, "hi"), timeout=5)
+    assert events[-1]["type"] == "error" and "tried every provider" in events[-1]["text"]
+
+
+def test_auto_does_not_switch_on_a_real_mistake(home, monkeypatch):
+    class Bad(SlowModel):
+        def step(self, history):
+            raise agent.ProviderError("HTTP 400: the request is malformed")
+    second = SlowModel([("x", [])], delay=0.0)
+    _auto(monkeypatch, {"a": Bad([]), "b": second})
+    events = _wait(agent.chat(None, "auto", None, "hi"), timeout=5)
+    assert events[-1]["type"] == "error" and "malformed" in events[-1]["text"]  # not hidden by switching
+
+
+def test_auto_order_is_yours_first_then_free(home, monkeypatch):
+    assert agent.auto_order()[:4] == ["pollinations", "kilo", "ovhcloud", "llm7"]
+    agent.save_key("mistral", "m" * 20)
+    agent.save_key("anthropic", "a" * 20)
+    order = agent.auto_order()
+    assert order[:2] == ["anthropic", "mistral"] and order[2] == "pollinations"
+    monkeypatch.setenv("KRITA_MCP_AUTO_ORDER", "kilo, mistral")
+    assert agent.auto_order() == ["kilo", "mistral"]
+    st = agent.status()
+    assert st["auto"]["chat"] and st["auto"]["setup"] == "auto" and st["auto"]["order"] == ["kilo", "mistral"]

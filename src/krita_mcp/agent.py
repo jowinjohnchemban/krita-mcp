@@ -103,12 +103,36 @@ def base_url_for(provider):
 
 
 def status():
-    """Every service (chat models and generative services), with the chat default models."""
+    """Every service (chat models and generative services), with the chat default models - and Auto."""
     out = keys.status()
     for name, info in PROVIDERS.items():
         out[name]["default_model"] = info["model"] or "newest available"
         out[name]["chat"] = True
+    order = auto_order(out)
+    out["auto"] = {"label": "Auto - all my providers", "chat": True, "setup": "auto", "ready": bool(order),
+                   "signed_in": bool(order), "order": order, "default_model": "the best of each provider",
+                   "use": "uses your providers in turn and switches when one runs out of credit or fails"}
     return out
+
+
+AUTO_FIRST = ("anthropic", "openai", "gemini", "openrouter")  # strongest first among what you signed in to
+AUTO_FREE = ("pollinations", "kilo", "ovhcloud", "llm7")  # then the free ones, best-behaved first
+
+
+def auto_order(st=None):
+    """The providers Auto uses, in turn: the ones you signed in to or set up, then the free ones.
+    KRITA_MCP_AUTO_ORDER (comma-separated names) sets your own order."""
+    st = st or keys.status()
+    custom = [n.strip().lower() for n in env("KRITA_MCP_AUTO_ORDER", "").split(",") if n.strip()]
+    if custom:
+        return [n for n in custom if n in PROVIDERS]
+    yours = [n for n in PROVIDERS if n in st and st[n].get("setup") in ("key", "browser", "local")
+             and (st[n].get("ready") or (st[n].get("setup") != "local" and key_for(n)))]
+    yours.sort(key=lambda n: (AUTO_FIRST.index(n) if n in AUTO_FIRST else len(AUTO_FIRST),
+                              st[n].get("setup") == "local", n))
+    free_ = [n for n in AUTO_FREE if n in PROVIDERS] + sorted(
+        n for n in PROVIDERS if n in st and st[n].get("setup") == "free" and n not in AUTO_FREE)
+    return yours + free_
 
 
 # ------------------------------------------------------------------ tools
@@ -577,6 +601,8 @@ class Claude(_Adapter):
 
 def available_models(provider):
     """The chat models this account can use right now, newest first (for the panel's model list)."""
+    if provider == "auto":
+        return []  # each provider's best model, chosen as it goes
     if provider == "gemini":
         key = key_for("gemini")
         if not key:
@@ -605,6 +631,8 @@ def available_models(provider):
 
 
 def make_model(provider, model=None):
+    if provider == "auto":
+        return Auto()
     if provider not in PROVIDERS:
         raise ProviderError("unknown provider %r; choose from %s" % (provider, ", ".join(PROVIDERS)))
     model = model or env("KRITA_MCP_%s_CHAT_MODEL" % provider.upper()) or None
@@ -613,6 +641,150 @@ def make_model(provider, model=None):
     if provider == "anthropic":
         return Claude(model)
     return OpenAICompat(model, provider)
+
+
+class Auto(_Adapter):
+    """Every provider you can use, in turn (auto_order). When one cannot go on - no credit, a used-up quota or
+    rate limit, a rejected key, the service down - the next one takes over the same task: it gets a recap of
+    what was asked and done so far (conversations cannot move between services as they are)."""
+
+    RECAP_CHARS = 6000
+
+    def __init__(self, model=None):
+        self.order = auto_order()
+        if not self.order:
+            raise ProviderError("Auto has no provider to use: sign in to one, or set one up (Services...)")
+        self.i, self.inner, self.name, self.used, self.specs = -1, None, None, None, None
+        self.failed, self.log, self.notes, self.fresh, self.stale = {}, [], [], False, False
+        self.reset_usage()
+
+    @property
+    def blind(self):
+        return getattr(self.inner, "blind", False)
+
+    def _label(self, name=None):
+        return PROVIDERS.get(name or self.name, {}).get("label", name or self.name)
+
+    def _next(self):
+        """Move on to the next provider that is ready (its model list answers)."""
+        while True:
+            self.i += 1
+            if self.i >= len(self.order):
+                raise ProviderError("Auto tried every provider and none could go on: %s" % "; ".join(
+                    "%s: %s" % (self._label(n), why) for n, why in self.failed.items()))
+            name = self.order[self.i]
+            try:
+                m = make_model(name)
+                used = m.prepare()
+            except ProviderError as e:
+                self.failed[name] = _brief(e)
+                trace("model", "auto: %s skipped: %s" % (name, _brief(e)))
+                continue
+            self.inner, self.name, self.used, self.fresh = m, name, used, True
+            trace("model", "auto: using %s (%s)" % (name, used))
+            return
+
+    def start(self, specs):
+        self.specs = specs
+        if self.inner is None:
+            self._next()
+        return self.inner.start(specs)
+
+    def prepare(self):
+        if self.inner is None:
+            self._next()
+        elif self.fresh:
+            self.fresh = False  # just chosen (and listed) by _next
+        else:
+            try:
+                self.used = self.inner.prepare()
+            except ProviderError as e:  # this one is gone since the last message: the next one, with a recap
+                self.failed[self.name] = _brief(e)
+                old = self.name
+                self._next()
+                self.stale = True
+                self.notes.append("%s is not available (%s); using %s." % (self._label(old), _brief(e),
+                                                                          self._label()))
+        return "%s · %s" % (self._label(), self.used)
+
+    def user(self, history, text):
+        self.log.append("User: " + text[:1500])
+        if self.stale:  # the conversation so far was kept by another service: start over with a recap
+            history[:] = self.inner.start(self.specs)
+            text = self.recap() + "\n\nNew message from the user:\n" + text
+            self.stale = False
+        self.inner.user(history, text)
+
+    def recap(self, reason=None):
+        lines = "\n".join(self.log[:-1] if self.log and self.log[-1].startswith("User: ") and reason is None
+                          else self.log)
+        if len(lines) > self.RECAP_CHARS:
+            lines = "...\n" + lines[-self.RECAP_CHARS:]
+        return ("[This conversation continues on another AI service%s. What happened so far - continue from "
+                "here, and do not redo steps that already worked; the Krita document is as they left it.]\n%s"
+                % ((" because the previous one stopped: %s" % reason) if reason else "", lines or "(nothing yet)"))
+
+    def _take_usage(self):
+        u = self.inner.usage if self.inner is not None else None
+        if u and u.get("requests"):
+            self.usage["input"] += u["input"]
+            self.usage["output"] += u["output"]
+            self.usage["cached"] += u["cached"]
+            self.usage["requests"] += u["requests"]
+            self.usage["cost"] += u["cost"]
+            self.inner.reset_usage()
+
+    def step(self, history):
+        from .providers.images import unusable
+        while True:
+            try:
+                reply, calls = self.inner.step(history)
+            except ProviderError as e:
+                self._take_usage()
+                if not (unusable(e) or transient(e)):
+                    raise
+                old, why = self.name, _brief(e)
+                self.failed[old] = why
+                self._next()
+                history[:] = self.inner.start(self.specs)
+                self.inner.user(history, self.recap("%s - %s" % (self._label(old), why)) + "\n\nContinue the task.")
+                self.notes.append("%s could not go on (%s); switched to %s." % (self._label(old), why,
+                                                                               self._label()))
+                continue
+            self._take_usage()
+            if getattr(self.inner, "note", None):
+                self.notes.append(self.inner.note)
+                self.inner.note = None
+            if reply.strip():
+                self.log.append("Assistant: " + reply.strip()[:800])
+            for _, name, args in calls:
+                self.log.append("Called %s %s" % (name, _short(args)))
+            return reply, calls
+
+    @property
+    def note(self):
+        return " ".join(self.notes) or None
+
+    @note.setter
+    def note(self, value):
+        self.notes = [value] if value else []
+
+    def results(self, history, results):
+        for _, name, out, images in results:
+            self.log.append("  -> %s: %s%s" % (name, out[:300], " (+%d image)" % len(images) if images else ""))
+        self.inner.results(history, results)
+
+    def compact(self, history, turn_start):
+        self.inner.compact(history, turn_start)
+
+
+def _brief(error):
+    """An error in a few words for notes and recaps."""
+    text = " ".join(str(error).split())
+    m = re.search(r"HTTP (\d{3})[^:]*:\s*(.*)", text)
+    if m:
+        text = "HTTP %s: %s" % (m.group(1), m.group(2))
+    return text[:160]
 
 
 # ------------------------------------------------------------------ sessions and the agent loop

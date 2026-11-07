@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture()
 def chat(monkeypatch, tmp_path):
     app = qtw.QApplication.instance() or qtw.QApplication([])
-    settings = {}
+    settings = {"chat_provider": "gemini"}  # these tests chat with Gemini (new installs start on Auto)
 
     class FakeKrita:
         @staticmethod
@@ -295,7 +295,7 @@ def test_provider_list_comes_from_the_service(chat):
                       "fal": {"label": "fal.ai", "ready": True}}  # not a chat provider
     dock._sync_providers()
     assert [dock.provider.itemText(i) for i in range(dock.provider.count()) if dock.provider.itemData(i)] == [
-        "Google Gemini", "Mistral AI", "More providers…"]
+        "Google Gemini", "Mistral AI", "Manage services…"]
     assert dock._key() == "gemini"  # the current choice is kept
 
 
@@ -492,27 +492,38 @@ def test_turn_on_needs_no_dialog_and_the_list_updates_while_open(chat, monkeypat
     assert seen["buttons"] == ["horde:signin", "horde:signout"]  # updated while the window was open
 
 
-def test_the_provider_menu_lists_what_can_be_used_now(chat):
+def test_the_provider_menu_lists_what_can_be_used_now(chat, monkeypatch):
+    """Auto first, then what you can use now (always shown), then every other provider - picking one of
+    those opens its setup and selects it once it is ready."""
     app, c, dock, sent = chat
+    pump(app, 0.3)  # the fake service's own first answer arrives before this test's list
     dock.providers = {
+        "auto": {"chat": True, "label": "Auto - all my providers", "ready": True, "setup": "auto",
+                 "order": ["mistral", "kilo"]},
         "gemini": {"chat": True, "label": "Google Gemini", "signed_in": False, "ready": False, "setup": "key"},
         "mistral": {"chat": True, "label": "Mistral AI", "signed_in": True, "ready": True, "setup": "key"},
         "kilo": {"chat": True, "label": "Kilo Gateway", "ready": True, "setup": "free"},
-        "ollama": {"chat": True, "label": "Local model", "signed_in": False, "ready": False, "setup": "local"},
         "groq": {"chat": True, "label": "Groq", "signed_in": False, "ready": False, "setup": "key"},
         "fal": {"label": "fal.ai", "signed_in": True, "ready": True, "setup": "key"}}
     dock._sync_providers()
     items = [dock.provider.itemText(i) for i in range(dock.provider.count()) if dock.provider.itemData(i)]
-    # usable ones, then the current choice (marked), then the way to the rest; not every provider there is
-    assert items[:2] == ["Mistral AI", "Kilo Gateway"]
-    assert items[2] == "Google Gemini (not signed in)" and items[-1] == "More providers…"
-    assert "Groq" not in items and "Local model" not in items and "fal.ai" not in items
+    assert items == ["Auto - all my providers", "Mistral AI", "Kilo Gateway", "Google Gemini - set up…",
+                     "Groq - set up…", "Manage services…"]  # every chat provider can be picked; fal is no chat
+    assert dock._key() == "auto"  # Gemini (the old choice) is not usable now
+    assert "2 providers" in dock.account.text() and "1. Mistral AI" in dock.account.toolTip()
+    asked = []
+    monkeypatch.setattr(dock, "sign_in_service", lambda name, parent=None, action=None: asked.append((name, action)))
+    dock.provider.setCurrentIndex(dock.provider.findData(dock.SETUP + "groq"))
+    pump(app, 0.2)
+    assert asked == [("groq", "signin")] and dock._key() == "auto"  # its setup opens; the choice stays for now
+    ready = dict(dock.providers, groq=dict(dock.providers["groq"], signed_in=True, ready=True))
+    dock._signed({"providers": ready}, "groq")
+    assert dock._key() == "groq"  # signed in: selected
     opened = []
     dock._services = lambda: opened.append(1)
-    dock.provider.setCurrentIndex(dock.provider.findData(dock.MORE))
+    dock.provider.setCurrentIndex(dock.provider.findData(dock.MANAGE))
     pump(app, 0.2)
-    assert opened == [1] and dock._key() == "gemini"  # More providers... opens Services, keeps the choice
-
+    assert opened == [1] and dock._key() == "groq"
 
 
 def test_messages_typed_while_the_ai_works_are_queued_and_sent_in_order(chat):

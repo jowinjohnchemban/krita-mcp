@@ -21,7 +21,7 @@ from krita import DockWidget, DockWidgetFactory, DockWidgetFactoryBase, Krita
 
 try:
     from PyQt6.QtCore import Qt, QTimer, QUrl
-    from PyQt6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut, QTextCursor
+    from PyQt6.QtGui import QColor, QDesktopServices, QGuiApplication, QKeySequence, QShortcut, QTextCursor
     from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
                                  QGridLayout, QLayout, QLineEdit, QListWidget, QPlainTextEdit, QPushButton,
                                  QScrollArea, QTextBrowser, QVBoxLayout, QWidget)
@@ -29,12 +29,13 @@ try:
     _RICH = Qt.TextFormat.RichText
     _TOP = Qt.AlignmentFlag.AlignTop
     _FIXED = QLayout.SizeConstraint.SetFixedSize
+    _FOREGROUND = Qt.ItemDataRole.ForegroundRole
     _KEY_RETURN, _KEY_ENTER, _KEY_UP = Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Up
     _SHIFT = Qt.KeyboardModifier.ShiftModifier
     _END = QTextCursor.MoveOperation.End
 except ImportError:  # Krita 5
     from PyQt5.QtCore import Qt, QTimer, QUrl
-    from PyQt5.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QTextCursor
+    from PyQt5.QtGui import QColor, QDesktopServices, QGuiApplication, QKeySequence, QTextCursor
     from PyQt5.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
                                  QGridLayout, QLayout, QLineEdit, QListWidget, QPlainTextEdit, QPushButton,
                                  QScrollArea, QShortcut, QTextBrowser, QVBoxLayout,
@@ -43,6 +44,7 @@ except ImportError:  # Krita 5
     _RICH = Qt.RichText
     _TOP = Qt.AlignTop
     _FIXED = QLayout.SetFixedSize
+    _FOREGROUND = Qt.ForegroundRole
     _KEY_RETURN, _KEY_ENTER, _KEY_UP = Qt.Key_Return, Qt.Key_Enter, Qt.Key_Up
     _SHIFT = Qt.ShiftModifier
     _END = QTextCursor.End
@@ -52,7 +54,8 @@ from .handlers import _enum
 from .util import i18n
 
 AGENT_PORT = int(os.environ.get("KRITA_MCP_AGENT_PORT") or 5680)
-PROVIDERS = [("gemini", "Google Gemini"), ("anthropic", "Anthropic Claude"), ("openai", "OpenAI / compatible"),
+PROVIDERS = [("auto", "Auto - all my providers"), ("gemini", "Google Gemini"), ("anthropic", "Anthropic Claude"),
+             ("openai", "OpenAI / compatible"),
              ("openrouter", "OpenRouter (browser sign-in)"), ("ollama", "Local model (Ollama, LM Studio)"),
              ("pollinations", "Pollinations (free, no sign-in)")]
 SKILLS_SITE = "https://skills.sh/"
@@ -68,6 +71,8 @@ KEY_PATTERNS = {
 # Built-in facts about each service, so sign-in works before the assistant service is running
 # (anything the service reports overrides these).
 SERVICE_INFO = {
+    "auto": {"label": "Auto - all my providers", "setup": "auto", "needs_key": False, "chat": True,
+             "use": "uses your providers in turn and switches when one runs out of credit or fails"},
     "gemini": {"label": "Google Gemini", "key_url": "https://aistudio.google.com/apikey"},
     "anthropic": {"label": "Anthropic Claude", "key_url": "https://console.anthropic.com/settings/keys"},
     "openai": {"label": "OpenAI / compatible", "key_url": "https://platform.openai.com/api-keys", "has_url": True},
@@ -150,7 +155,7 @@ def state_text(info):
     return i18n("signed in") if signed else i18n("not signed in")
 
 
-SHORT = {"gemini": "Gemini", "anthropic": "Claude", "openai": "GPT", "openrouter": "AI", "ollama": "AI"}
+SHORT = {"auto": "AI", "gemini": "Gemini", "anthropic": "Claude", "openai": "GPT", "openrouter": "AI", "ollama": "AI"}
 _SERVICE = {"proc": None}
 
 
@@ -474,7 +479,7 @@ class ServicesDialog(QDialog):
         grid.setVerticalSpacing(6)
         line = 0
         shown = 0
-        items = sorted(((n, service_info(n, i)) for n, i in self.docker.providers.items()),
+        items = sorted(((n, service_info(n, i)) for n, i in self.docker.providers.items() if n != "auto"),
                        key=lambda kv: (not is_ready(kv[1]), str(kv[1].get("label", kv[0])).lower()))
         for key, title in self.GROUPS:
             members = []
@@ -522,8 +527,9 @@ class ServicesDialog(QDialog):
         if old is not None:
             old.deleteLater()
         bar.setValue(keep)
-        ready = sum(1 for n, i in self.docker.providers.items() if is_ready(service_info(n, i)))
-        self.summary.setText(i18n("%d services · %d ready to use") % (len(self.docker.providers), ready))
+        real = {n: i for n, i in self.docker.providers.items() if n != "auto"}
+        ready = sum(1 for n, i in real.items() if is_ready(service_info(n, i)))
+        self.summary.setText(i18n("%d services · %d ready to use") % (len(real), ready))
 
 
 class SkillsDialog(QDialog):
@@ -615,8 +621,8 @@ class ChatDocker(DockWidget):
         self.provider = QComboBox()
         for key, label in PROVIDERS:
             self.provider.addItem(label, key)
-        idx = [k for k, _ in PROVIDERS].index(extension.setting("chat_provider", "gemini")) \
-            if extension.setting("chat_provider", "gemini") in dict(PROVIDERS) else 0
+        idx = [k for k, _ in PROVIDERS].index(extension.setting("chat_provider", "auto")) \
+            if extension.setting("chat_provider", "auto") in dict(PROVIDERS) else 0
         self.provider.setCurrentIndex(idx)
         self.provider.currentIndexChanged.connect(self._provider_changed)
         self.signin = QPushButton(i18n("Sign in"))
@@ -733,7 +739,9 @@ class ChatDocker(DockWidget):
 
     def _key(self):
         key = self.provider.currentData()
-        return getattr(self, "_last_key", None) or "gemini" if key in (None, self.MORE) else key
+        if key is None or key == self.MANAGE or str(key).startswith(self.SETUP):
+            return getattr(self, "_last_key", None) or "auto"
+        return key
 
     def _background(self, fn, done, *args, quiet=False):
         def work():
@@ -841,41 +849,57 @@ class ChatDocker(DockWidget):
         self._show_account()
         self._refresh_models()
 
-    MORE = "__more__"
+    MANAGE = "__manage__"
+    SETUP = "__setup__:"
 
     def _sync_providers(self):
-        """The chat providers you can use now (signed in, set up, or free), from the assistant service - new ones
-        appear without a plugin update. The rest are one click away: More providers... opens Services."""
+        """The provider menu, from the assistant service (new providers appear without a plugin update):
+        Auto first, then the providers you can use now (signed in, set up, free) - always shown - then every
+        other one, marked: picking one of those opens its setup and selects it once it is ready."""
         if not self.providers:
             return
         current = self._key()
         chats = [(k, service_info(k, v)) for k, v in self.providers.items() if v.get("chat")]
-        usable = [(k, i) for k, i in chats if is_ready(i) or i.get("setup") == "toggle"]  # toggle: chat is free
-        if current not in [k for k, _ in usable] and current in dict(chats):  # keep the choice, marked
-            usable.append((current, dict(dict(chats)[current], label="%s (%s)" % (
-                dict(chats)[current].get("label", current), state_text(dict(chats)[current])))))
-        # your own (signed in / set up) first, then the free ones, then a choice that is not usable yet
-        usable.sort(key=lambda kv: (not (is_ready(kv[1]) or kv[1].get("setup") == "toggle"),
-                                    kv[1].get("setup") in ("free", "toggle"),
-                                    str(kv[1].get("label", kv[0])).lower()))
-        items = [(k, i.get("label", k)) for k, i in usable] + [(self.MORE, i18n("More providers…"))]
+
+        def usable(i):
+            return is_ready(i) or i.get("setup") == "toggle"  # toggle (Pollinations): its chat is free
+
+        def order(kv):  # yours first, then the free ones, by name
+            return (kv[1].get("setup") in ("free", "toggle"), str(kv[1].get("label", kv[0])).lower())
+        auto = [(k, i) for k, i in chats if k == "auto"]
+        ready = sorted(((k, i) for k, i in chats if k != "auto" and usable(i)), key=order)
+        others = sorted(((k, i) for k, i in chats if k != "auto" and not usable(i)),
+                        key=lambda kv: str(kv[1].get("label", kv[0])).lower())
+        groups = [[(k, i.get("label", k)) for k, i in auto + ready],
+                  [(self.SETUP + k, i18n("%s - set up…") % i.get("label", k)) for k, i in others],
+                  [(self.MANAGE, i18n("Manage services…"))]]
+        wanted = [item for g in groups for item in g]
         if [(self.provider.itemData(i), self.provider.itemText(i)) for i in range(self.provider.count())
-                if self.provider.itemData(i) is not None] == items:
+                if self.provider.itemData(i) is not None] == wanted:
             return
         self.provider.blockSignals(True)
         try:
             self.provider.clear()
-            for key, label in items:
-                if key == self.MORE and len(items) > 1:
+            for n, group in enumerate(g for g in groups if g):
+                if n:
                     self.provider.insertSeparator(self.provider.count())
-                self.provider.addItem(label, key)
+                for key, label in group:
+                    self.provider.addItem(label, key)
+                    if key == self.MANAGE or key.startswith(self.SETUP):  # not usable yet: shown dimmed
+                        self.provider.setItemData(self.provider.count() - 1, QColor("#888"), _FOREGROUND)
             idx = self.provider.findData(current)
-            self.provider.setCurrentIndex(idx if idx >= 0 else 0)
+            if idx < 0:
+                idx = self.provider.findData(self.SETUP + current)
+            if idx < 0 or str(self.provider.itemData(idx)).startswith(self.SETUP):
+                idx = 0  # the old choice cannot be used now: Auto (or the first usable one)
+            self.provider.setCurrentIndex(idx)
         finally:
             self.provider.blockSignals(False)
         self._last_key = self._key()
         if self._key() != current:
             self._provider_changed()
+        else:
+            self._show_account()
 
     # ---------------------------------------------------------------- live model list
     AUTO = "Auto (newest)"
@@ -927,7 +951,13 @@ class ChatDocker(DockWidget):
         info = service_info(self._key(), self.providers.get(self._key()))
         signed, kind = info.get("signed_in"), info.get("setup")
         self.account.setText(("✓ " if is_ready(info) else "") + state_text(info))
-        if kind == "local":
+        if kind == "auto":
+            order = [service_info(n, self.providers.get(n)).get("label", n) for n in info.get("order") or []]
+            self.account.setText(i18n("%d providers") % len(order) if order else i18n("nothing set up"))
+            self.account.setToolTip(i18n("In turn, switching when one runs out of credit or fails:\n") +
+                                    "\n".join("%d. %s" % (n + 1, x) for n, x in enumerate(order)))
+            self.signin.setText(i18n("Services…"))
+        elif kind == "local":
             self.signin.setText(i18n("Change") if signed else i18n("Set up"))
         elif kind in ("free", "toggle"):
             self.signin.setText(i18n("Change key") if info.get("has_key") else i18n("Add key"))
@@ -937,12 +967,19 @@ class ChatDocker(DockWidget):
             self.model.lineEdit().setPlaceholderText(i18n("Auto: %s") % info["default_model"])
 
     def _provider_changed(self):
-        if self.provider.currentData() == self.MORE:  # not a provider: open Services, keep the last choice
+        data = self.provider.currentData()
+        if data == self.MANAGE or str(data).startswith(self.SETUP):
+            # not usable yet: go back to the last choice, then open Services or that provider's setup
             idx = self.provider.findData(getattr(self, "_last_key", None))
             self.provider.blockSignals(True)
             self.provider.setCurrentIndex(max(idx, 0))
             self.provider.blockSignals(False)
-            QTimer.singleShot(0, self._services)
+            if data == self.MANAGE:
+                QTimer.singleShot(0, self._services)
+            else:
+                name = data[len(self.SETUP):]
+                self._select_when_ready = name  # chosen as soon as it is signed in / set up
+                QTimer.singleShot(0, lambda: self.sign_in_service(name, action="signin"))
             return
         self._last_key = self._key()
         trace("panel", "chat provider: %s" % self._key())
@@ -970,6 +1007,8 @@ class ChatDocker(DockWidget):
         dlg.exec()
 
     def sign_in_service(self, name, parent=None, action=None):
+        if name == "auto":  # Auto uses whatever is set up: manage that in Services
+            return self._services()
         """action: "signin" (set up / sign in, also to change a key or address), "signout" (sign out, remove the
         key, forget the address, turn off), "on" (turn a free service on), or None: whichever fits now (the
         panel's own button)."""
@@ -1057,6 +1096,12 @@ class ChatDocker(DockWidget):
     def _signed(self, result, name=None):
         self.providers = (result or {}).get("providers", self.providers)
         self._sync_providers()
+        wanted = getattr(self, "_select_when_ready", None)
+        if wanted and name == wanted:
+            self._select_when_ready = None
+            idx = self.provider.findData(wanted)
+            if idx >= 0 and idx != self.provider.currentIndex():
+                self.provider.setCurrentIndex(idx)  # -> _provider_changed
         self._show_account()
         self._refresh_models()
         if getattr(self, "services_dialog", None) is not None:

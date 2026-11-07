@@ -116,8 +116,21 @@ has an API key:
 | **Free, no account** | Pollinations (chat), Kilo, OVHcloud, LLM7 | Nothing: they are ready. **Add key** (optional) raises the limits. |
 | **Free, turn on** | Pollinations (pictures), AI Horde | **Turn on** / **Turn off** - one click. They send your prompts to a public service, so they are off until you turn them on. |
 
-The provider menu in the chat lists the chat providers you can use now (signed in, set up, or free) -
-not all forty. **More providers…** at the bottom opens Services.
+### The provider menu
+
+1. **Auto - all my providers** (the default) uses every provider you can use, in turn: first the ones you
+   signed in to or set up (Claude, OpenAI, Gemini, OpenRouter, then the others), then the free ones
+   (Pollinations, Kilo, OVHcloud, LLM7). When one cannot go on - no credit left, a used-up quota or rate
+   limit, a rejected key, the service down - the next one takes over the same task, and the chat says so
+   ("OpenRouter could not go on (HTTP 402 ...); switched to Kilo Gateway"). Conversations cannot move between
+   services as they are, so the next one gets a short recap of what you asked and what was already done, and
+   carries on in the same document. A real mistake (a bad request) is reported, not hidden by switching.
+   Hover over the provider count for the order; `KRITA_MCP_AUTO_ORDER` (comma-separated names, e.g.
+   `anthropic,kilo`) sets your own.
+2. The providers you can use now - signed in, set up, or free - always listed.
+3. Every other provider, marked **set up…**: picking one opens its setup, and it is selected as soon as it
+   is ready.
+4. **Manage services…** opens Services.
 
 Keys are stored only on your computer, in `~/.krita-mcp/agent_keys.json`. That file is readable only by
 your user on Linux and macOS; on Windows it is protected by your Windows account's permissions. They are
