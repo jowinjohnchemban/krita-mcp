@@ -25,7 +25,7 @@ except ImportError:  # Krita 5
     _PASSWORD, _NORMAL = QLineEdit.Password, QLineEdit.Normal
     _RICH = Qt.RichText
 
-from . import dialogs, extension, handlers, history, protocol, util
+from . import dialogs, extension, handlers, history, logview, protocol, util
 from .util import i18n
 
 ACCESS_MODES = [("full", "Full access"), ("read_only", "Read only (AI can look, not edit)"),
@@ -214,8 +214,14 @@ class McpDocker(DockWidget):
         self.log.setMinimumHeight(120)
         clear = QPushButton(i18n("Clear"))
         clear.clicked.connect(self._clear_log)
+        logs = QPushButton(i18n("Logs…"))
+        logs.setToolTip(i18n("The full log, live: every command with its settings, times and errors"))
+        logs.clicked.connect(lambda: logview.show(self, "logs/krita.log"))
         v.addWidget(self.log)
-        v.addWidget(clear)
+        buttons = QHBoxLayout()
+        buttons.addWidget(clear)
+        buttons.addWidget(logs)
+        v.addLayout(buttons)
         lay.addWidget(box, 1)
 
         self.message = QLabel()
@@ -351,6 +357,7 @@ class McpDocker(DockWidget):
 
     def _regenerate(self):
         tok = protocol.write_new_token()
+        extension.trace("setting", "token: a new one was generated (connected AI apps must restart)")
         ext = self._ext()
         if ext and ext.server:
             ext.server.token = tok

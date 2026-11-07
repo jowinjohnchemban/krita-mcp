@@ -78,6 +78,7 @@ def chat(monkeypatch, tmp_path):
         if path == "/signout":
             return {"providers": {"gemini": {"signed_in": False, "needs_key": True, "chat": True}}}
         return {}
+    c._real_request = c._request  # for the test of what calls to the service log
     monkeypatch.setattr(c, "_request", fake_request)
     c._real_ensure_service = c._ensure_service  # for the test that exercises the real start-up
     monkeypatch.setattr(c, "_ensure_service", lambda: fake_request("GET", "/health"))
@@ -309,3 +310,40 @@ def test_skills_panel_lists_what_the_assistant_can_use(chat, monkeypatch, tmp_pa
     buttons["Find skills online"].click()
     assert (tmp_path / "skills").is_dir() and opened[1] == c.SKILLS_SITE
     assert opened[0].startswith("file:")
+
+
+def test_logs_window_follows_the_log_live(chat):
+    """Logs… shows the end of a log and every new line as it is written; the filter keeps matching lines."""
+    app, c, dock, sent = chat
+    tl = c.logview.tracelog
+    tl.write("krita.log", "command", "✓ layer.create 5ms {}")
+    dlg = c.logview.show(dock, "logs/krita.log")
+    pump(app, 0.7)
+    assert "layer.create" in dlg.view.toPlainText()
+    tl.write("krita.log", "command", "✗ brush.stroke 9ms {} - No active document")
+    pump(app, 0.8)
+    assert "brush.stroke" in dlg.view.toPlainText()
+    dlg.filter.setText("✗")
+    pump(app, 0.3)
+    assert "brush.stroke" in dlg.view.toPlainText() and "layer.create" not in dlg.view.toPlainText()
+    assert c.logview.show(dock) is dlg  # one window, raised again
+    dlg.close()
+
+
+def test_actions_settings_and_commands_are_logged_without_keys(chat):
+    app, c, dock, sent = chat
+    log = Path(os.environ["KRITA_MCP_HOME"]) / "logs" / "krita.log"
+    c.extension.set_setting("dialogs", "leave")
+    c.extension.set_setting("dialogs", "leave")  # unchanged: no second line
+    h = sys.modules["krita_mcp_bridge.handlers"]
+    h.HANDLERS["test.echo"] = lambda p: p
+    h.dispatch("test.echo", {"x": 1, "api_key": "sk-or-v1-" + "a" * 40})
+    c._send_request = lambda *a: {"session": "s1"}
+    c._real_request("POST", "/chat", {"provider": "gemini", "text": "paint a sunrise"})
+    c._real_request("POST", "/signin", {"provider": "gemini", "key": "AIzaSyC" + "k" * 33})
+    text = log.read_text(encoding="utf-8")
+    assert text.count("dialogs: 'cancel' -> 'leave'") + text.count("dialogs: '' -> 'leave'") == 1
+    assert "✓ test.echo" in text and '"x": 1' in text and "sk-or" not in text and "aaaaaaaa" not in text
+    assert "POST /chat" in text and "paint a sunrise" in text and "POST /signin" in text and "kkkk" not in text
+    line = text.strip().splitlines()[-1]
+    assert line[:4].isdigit() and line[10] == " " and line[19] == "."  # date, time and milliseconds

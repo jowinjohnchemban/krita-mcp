@@ -35,7 +35,7 @@ except ImportError:  # Krita 5
     _PASSWORD = QLineEdit.Password
     _RICH = Qt.RichText
 
-from . import extension, protocol
+from . import extension, logview, protocol
 from .handlers import _enum
 from .util import i18n
 
@@ -97,8 +97,30 @@ SHORT = {"gemini": "Gemini", "anthropic": "Claude", "openai": "GPT", "openrouter
 _SERVICE = {"proc": None}
 
 
+QUIET_PATHS = ("/health", "/events", "/oauth/status")  # polled every second or so: not worth a log line
+
+
+def trace(source, message):
+    extension.trace(source, message)
+
+
 def _request(method, path, body=None, timeout=10):
     """Call the assistant service (worker threads only)."""
+    loud = not path.startswith(QUIET_PATHS)
+    if loud:
+        safe = {k: v for k, v in (body or {}).items() if k not in ("key", "text")}
+        if body and "text" in body:
+            safe["text"] = str(body["text"])[:200]
+        trace("service", "%s %s %s" % (method, path, json.dumps(safe) if safe else ""))
+    try:
+        return _send_request(method, path, body, timeout)
+    except Exception as e:
+        if loud:
+            trace("service", "✗ %s %s: %s" % (method, path, e))
+        raise
+
+
+def _send_request(method, path, body, timeout):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request("http://127.0.0.1:%d%s" % (AGENT_PORT, path), data=data, method=method, headers={
         "Authorization": "Bearer " + protocol.load_or_create_token(), "Content-Type": "application/json"})
@@ -122,6 +144,7 @@ def _ensure_service():
         if _SERVICE.get("checked") or health.get("version") == _plugin_version():
             return health
         _SERVICE["checked"] = True  # replace it once; if the installed server is itself older, keep going
+        trace("service", "replacing assistant service %s (plugin is %s)" % (health.get("version"), _plugin_version()))
         try:
             _request("POST", "/shutdown", {}, timeout=3)
         except (OSError, RuntimeError):
@@ -140,6 +163,7 @@ def _ensure_service():
         args = shlex.split(cmd, posix=os.name != "nt") + ["--agent", "--agent-port", str(AGENT_PORT)]
         env = dict(os.environ, KRITA_MCP_PORT=str(extension.bridge_port()), KRITA_MCP_HOME=str(protocol.config_dir()))
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        trace("service", "starting the assistant service: %s" % " ".join(args))
         try:
             _SERVICE["proc"] = subprocess.Popen(args, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                                 stderr=subprocess.DEVNULL, creationflags=flags)
@@ -153,6 +177,7 @@ def _ensure_service():
         except (OSError, RuntimeError):
             if _SERVICE["proc"].poll() is not None:
                 break
+    trace("service", "✗ the assistant service did not start (exit code %s)" % _SERVICE["proc"].poll())
     raise RuntimeError("the assistant service did not start (run `krita-mcp --agent` in a terminal to see why)")
 
 
@@ -372,10 +397,14 @@ class ChatDocker(DockWidget):
         skills_btn = QPushButton(i18n("Skills…"))
         skills_btn.setToolTip(i18n("Know-how the assistant loads when a request needs it"))
         skills_btn.clicked.connect(self._skills)
+        logs_btn = QPushButton(i18n("Logs…"))
+        logs_btn.setToolTip(i18n("Follow what the assistant and Krita are doing, live, to find out what went wrong"))
+        logs_btn.clicked.connect(lambda: logview.show(self, "logs/assistant.log"))
         top.addWidget(self.provider, 1)
         top.addWidget(self.signin)
         top.addWidget(services)
         top.addWidget(skills_btn)
+        top.addWidget(logs_btn)
         lay.addLayout(top)
 
         row = QHBoxLayout()
@@ -459,6 +488,7 @@ class ChatDocker(DockWidget):
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
 
     def _error(self, msg):
+        trace("panel", "✗ shown to the user: %s" % msg)
         self._append("<p style='color:#e66'>%s</p>" % html.escape(msg))
         self._set_busy(False)
 
@@ -552,6 +582,7 @@ class ChatDocker(DockWidget):
             self.model.lineEdit().setPlaceholderText(i18n("Auto: %s") % info["default_model"])
 
     def _provider_changed(self):
+        trace("panel", "chat provider: %s" % self._key())
         extension.set_setting("chat_provider", self._key())
         self._set_models([], saved=extension.setting("chat_model_" + self._key(), ""))
         self._refresh_models()
@@ -593,6 +624,7 @@ class ChatDocker(DockWidget):
 
     def browser_sign_in(self, name):
         """OAuth in the user's browser; the assistant service receives the redirect and saves the key."""
+        trace("panel", "browser sign-in started: %s" % name)
         def opened(flow):
             QDesktopServices.openUrl(QUrl(flow["url"]))
             self._append("<p style='color:#8a8'>%s</p>" % html.escape(
@@ -653,6 +685,7 @@ class ChatDocker(DockWidget):
             text = "%s: %s" % (info.get("label") or name, state)
         else:
             text = "%s: %s" % (self.provider.currentText(), self.account.text())
+        trace("panel", text)
         self._append("<p style='color:#8a8'>%s</p>" % html.escape(text))
 
     # ---------------------------------------------------------------- chat
@@ -706,11 +739,13 @@ class ChatDocker(DockWidget):
 
     def _stop(self):
         sid = self.session
+        trace("panel", "Stop pressed (chat %s)" % sid)
         if sid:
             self._background(lambda: _request("POST", "/stop", {"session": sid}), lambda _: None)
 
     def _new_chat(self):
         sid = self.session
+        trace("panel", "New chat (was %s)" % sid)
         self.session, self.seen = None, 0
         self.poll_timer.stop()
         self.log.clear()

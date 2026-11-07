@@ -112,7 +112,23 @@ def dispatch(method, params):
             raise BridgeError("%s (%s)" % (e, note)) from None
         raise
     finally:
-        ACTIVITY.append((time.time(), method, ok, int((time.monotonic() - t0) * 1000), detail))
+        ms = int((time.monotonic() - t0) * 1000)
+        ACTIVITY.append((time.time(), method, ok, ms, detail))
+        _trace(method, params, ok, ms, detail)
+
+
+def _trace(method, params, ok, ms, detail):
+    """Every command in ~/.krita-mcp/logs/krita.log, with what it was asked and how it went."""
+    try:
+        import json
+        from . import tracelog
+        args = json.dumps(params, default=str, sort_keys=True)
+        if len(args) > 300:
+            args = args[:299] + "…"
+        tracelog.write("krita.log", "command", "%s %s %dms %s%s" % (
+            "✓" if ok else "✗", method, ms, args, (" - " + detail) if detail else ""))
+    except Exception:  # noqa: BLE001 - never fail a command because of its log line
+        pass
 
 
 # ---------------------------------------------------------------- helpers

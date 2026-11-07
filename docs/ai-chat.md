@@ -122,6 +122,14 @@ used by:
 
 An explicit `KRITA_MCP_…` environment variable still wins over a saved key. **Sign out** deletes the key.
 
+## When something goes wrong: Logs…
+
+**Logs…** opens the assistant's log live: each message, which model answered and how long each step
+took, every tool it called with the result, sign-ins, and errors with their trace, each line dated to the
+millisecond. Switch to the **Krita** log to see every command it ran in Krita, panel actions and settings
+changes. Type `✗` in the filter to see only what failed. Keys are masked, so **Copy** gives you text you
+can paste into a bug report. See [the Krita panel](krita-panel.md#logs) for the details.
+
 ## How it works
 
 ```

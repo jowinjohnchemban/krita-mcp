@@ -23,7 +23,7 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import oauth, skills
+from . import oauth, skills, tracelog
 from .providers import catalog, compat, free, gemini, http, keys
 from .providers.http import ProviderError, env, secret
 
@@ -155,8 +155,22 @@ async def tool_specs():
     return specs
 
 
+def trace(source, message):
+    """One line in ~/.krita-mcp/logs/assistant.log (shown by the Logs window in Krita; keys are masked)."""
+    tracelog.write("assistant.log", source, message)
+
+
 async def run_tool(name, args):
     """Execute one tool like the MCP server would. Returns (text, [png bytes])."""
+    t0 = time.monotonic()
+    text, images = await _run_tool(name, args)
+    trace("tool", "%s %s %.1fs%s -> %s" % ("✓" if not text.startswith("error:") else "✗", name,
+                                           time.monotonic() - t0, " +%d image(s)" % len(images) if images else "",
+                                           text[:400]))
+    return text, images
+
+
+async def _run_tool(name, args):
     from .server import TOOLS, Image, ToolError
     fn = TOOLS.get(name)
     if fn is None:
@@ -598,6 +612,13 @@ class Session:
     def emit(self, kind, **data):
         with self.lock:
             self.events.append(dict(data, type=kind, n=len(self.events), t=round(time.time(), 2)))
+        if kind == "tool":
+            what = "%s %s" % (data.get("name"), data.get("args", ""))
+        elif kind != "tool_result":  # results are traced by run_tool, with their duration
+            what = data.get("text", "")
+        else:
+            return
+        trace("chat", "[%s] %s%s" % (self.id, kind, (": " + what) if what else ""))
 
 
 def _short(args):
@@ -646,7 +667,11 @@ async def _turn(sess, m, text):
         if sess.stop:
             sess.emit("assistant", text="(stopped)")
             return
+        t0 = time.monotonic()
         reply, calls = await asyncio.to_thread(m.step, sess.history)
+        trace("model", "[%s] step %d: %.1fs, %d tool call(s)%s" % (
+            sess.id, step + 1, time.monotonic() - t0, len(calls),
+            (" " + ", ".join(c[1] for c in calls)) if calls else ""))
         if getattr(m, "note", None):
             sess.emit("note", text=m.note)
             m.note = None
@@ -681,6 +706,8 @@ def _worker(sess, text):
     except ProviderError as e:
         sess.emit("error", text=str(e))
     except Exception as e:  # noqa: BLE001
+        import traceback
+        trace("crash", traceback.format_exc().replace("\n", " | "))
         sess.emit("error", text="%s: %s" % (type(e).__name__, e))
     finally:
         sess.busy = False
@@ -695,6 +722,7 @@ def chat(session_id, provider, model, text):
     if sess is None or sess.provider != provider or (model and sess.model_name != model):
         sess = Session(provider, model)
         SESSIONS[sess.id] = sess
+        trace("chat", "[%s] new chat with %s, model %s" % (sess.id, provider, model or "auto"))
     if sess.busy:
         raise ValueError("the assistant is still working on the previous message")
     sess.busy, sess.stop = True, False
@@ -746,12 +774,19 @@ class Handler(BaseHTTPRequestHandler):
             from . import __version__
             return self._send(200, {"ok": True, "version": __version__, "providers": status()})
         if path == "/models":
+            prov = q.get("provider", "gemini")
             try:
-                return self._send(200, {"models": available_models(q.get("provider", "gemini"))})
+                found = available_models(prov)
+                trace("models", "%s: %d available" % (prov, len(found)))
+                return self._send(200, {"models": found})
             except ProviderError as e:
+                trace("models", "%s: ✗ %s" % (prov, e))
                 return self._send(200, {"models": [], "error": str(e)})
         if path == "/oauth/status":
-            return self._send(200, oauth.poll(q.get("id", "")))
+            r = oauth.poll(q.get("id", ""))
+            if r.get("status") != "pending":
+                trace("signin", "browser sign-in %s%s" % (r.get("status"), (": %s" % r["error"]) if r.get("error") else ""))
+            return self._send(200, r)
         if path == "/skills":
             found = skills.all_skills()
             return self._send(200, {"skills": found, "dirs": [str(d) for d in skills.dirs()],
@@ -768,9 +803,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self._authorized():
+            trace("http", "✗ POST %s refused: wrong token" % self.path)
             return self._send(401, {"error": "unauthorized"})
         try:
             b = self._body()
+            if self.path != "/chat":  # chats are traced as they run
+                trace("http", "POST %s %s" % (self.path, " ".join(
+                    "%s=%s" % (k, v) for k, v in b.items() if k in ("provider", "session", "base_url", "verify"))))
             if self.path == "/chat":
                 text = str(b.get("text") or "").strip()
                 if not text:
@@ -794,9 +833,11 @@ class Handler(BaseHTTPRequestHandler):
                 if key and b.get("verify", True):
                     ok, detail = oauth.verify(b["provider"], key)
                     if ok is False:
+                        trace("signin", "✗ %s: key refused (%s), not saved" % (b["provider"], detail))
                         return self._send(400, {"error": "%s - not saved" % detail})
                 keys.save(b["provider"], key=key, base_url=b.get("base_url"),
                           enable=True if b["provider"] in keys.OPTIONAL_KEY else None)
+                trace("signin", "✓ %s: %s" % (b["provider"], "key saved" if key else "turned on"))
                 return self._send(200, {"providers": status()})
             if self.path == "/verify":
                 ok, detail = oauth.verify(b["provider"], b.get("key"))
@@ -807,6 +848,7 @@ class Handler(BaseHTTPRequestHandler):
                 keys.save(b["provider"], remove=True)
                 return self._send(200, {"providers": status()})
         except (ValueError, KeyError) as e:
+            trace("http", "✗ POST %s: %s" % (self.path, e))
             return self._send(400, {"error": str(e)})
         return self._send(404, {"error": "not found"})
 
@@ -826,8 +868,27 @@ def serve(port=None, host="127.0.0.1", ready=None):
         raise SystemExit("the assistant service cannot use %s:%s (%s); is it already running?" % (host, port, e))
     if ready:
         ready(srv)
+    from . import __version__
+    import os
+    import platform
+    import sys
+    trace("service", "=" * 20 + " assistant service started " + "=" * 20)
+    trace("service", "krita-mcp %s on %s:%s, Python %s, %s, %s" % (
+        __version__, host, srv.server_address[1], platform.python_version(), platform.platform(), sys.executable))
+    try:
+        st = status()
+        trace("service", "signed in / turned on: %s" % (", ".join(n for n, i in sorted(st.items())
+                                                                     if i.get("signed_in")) or "nothing"))
+    except Exception as e:  # noqa: BLE001 - the report is a help only
+        trace("service", "could not read sign-ins: %s" % e)
+    env_vars = {k: v for k, v in os.environ.items() if k.startswith("KRITA_MCP_")}
+    trace("service", "settings: max_steps=%s keep_images=%s chat_image_size=%s %s" % (
+        max_steps(), keep_images(), chat_image_size(), " ".join(
+            "%s=%s" % (k, "***" if any(w in k for w in ("KEY", "TOKEN", "SECRET", "AUTH")) else v)
+            for k, v in sorted(env_vars.items()))))
     try:
         srv.serve_forever()
     finally:
         srv.server_close()
+        trace("service", "stopped")
 

@@ -83,6 +83,24 @@ A copy of the plugin bundled with Krita itself has no updater: it is updated wit
 A live log of every request: time, ✓/✗, command, duration and any error. This includes requests
 refused by the access mode.
 
+## Logs
+
+**Logs…** (under Activity, and in the AI Chat panel) opens a window that follows krita-mcp's logs live,
+like `tail -f`. It stays open beside Krita while you work. Pick a log at the top:
+
+| Log | File in `~/.krita-mcp` | What it records |
+|---|---|---|
+| Krita | `logs/krita.log` | Every command the AI ran, with its settings, time taken, result and any dialog it hit; panel actions; every settings change (old → new value); bridge start and stop; and at each Krita start the Krita, plugin, Python and Qt versions, the operating system and the current settings. |
+| AI Chat assistant | `logs/assistant.log` | Each message, the model used, how long each model step took, every tool call with its result and time, sign-ins and models listings, errors with their trace; at each start the version, system, which services are signed in and the settings. |
+| Updates | `update.log` | Server updates. |
+| Freezes | `hang.log` | Where Krita was stuck (see below). |
+
+Every line starts with the date and time to the millisecond. **Show only lines containing…** filters
+(type `✗` to see only failures). **Follow** keeps the newest lines in view (scrolling up pauses it).
+**Copy** copies what is shown for a bug report, and **Open folder** shows the files. Keys, tokens and
+passwords are masked before anything is written, so a log is safe to share. Each log keeps about 2 MB;
+older lines move to `NAME.1`.
+
 If a single request runs for more than a minute (`KRITA_MCP_HANG_SECONDS`), the bridge writes where
 Krita is stuck to `~/.krita-mcp/hang.log`, even while Krita's window is frozen. Include that file when
 you report a hang.

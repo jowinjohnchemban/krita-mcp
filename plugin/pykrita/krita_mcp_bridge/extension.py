@@ -10,7 +10,7 @@ try:
 except ImportError:  # Krita 5
     from PyQt5.QtCore import QTimer
 
-from . import handlers, util
+from . import handlers, tracelog, util
 from .util import i18n
 from .handlers import dispatch
 from .protocol import DEFAULT_PORT, BridgeServer
@@ -27,6 +27,12 @@ INSTANCE = None  # the running extension, for the docker
 
 def _log(msg):
     print("[krita-mcp] " + msg, file=sys.stderr)
+    trace("bridge", msg)
+
+
+def trace(source, message):
+    """One line in ~/.krita-mcp/logs/krita.log (the Logs window shows it live; keys are masked)."""
+    tracelog.write("krita.log", source, message)
 
 
 def bridge_port():
@@ -46,7 +52,30 @@ def setting(key, default):
 
 
 def set_setting(key, value):
+    old = Krita.instance().readSetting(SETTINGS, key, "")
     Krita.instance().writeSetting(SETTINGS, key, str(value))
+    if old != str(value):
+        shown = "***" if key in ("token",) or "key" in key else "%r -> %r" % (old, str(value))
+        trace("setting", "%s: %s" % (key, shown))
+
+
+def startup_report():
+    """Who and where: versions, system and settings, at the top of each Krita session in the log."""
+    import platform
+    try:
+        from PyQt6.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
+    except ImportError:
+        from PyQt5.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
+    trace("session", "=" * 20 + " Krita started " + "=" * 20)
+    trace("session", "Krita %s, plugin %s, Python %s, Qt %s / PyQt %s, %s (%s)" % (
+        Krita.instance().version(), handlers.BRIDGE_VERSION, platform.python_version(), QT_VERSION_STR,
+        PYQT_VERSION_STR, platform.platform(), platform.machine()))
+    names = ("port", "autostart", "access", "dialogs", "workspace", "client_command", "update_mode", "chat_provider")
+    trace("session", "settings: " + ", ".join("%s=%s" % (n, setting(n, "")) for n in names))
+    env = {k: v for k, v in os.environ.items() if k.startswith("KRITA_MCP_")}
+    if env:
+        trace("session", "environment: " + ", ".join("%s=%s" % (k, "***" if any(
+            w in k for w in ("KEY", "TOKEN", "SECRET", "AUTH")) else v) for k, v in sorted(env.items())))
 
 
 class KritaMcpBridge(Extension):
@@ -59,6 +88,10 @@ class KritaMcpBridge(Extension):
         self.last_error = None
 
     def setup(self):
+        try:
+            startup_report()
+        except Exception:  # noqa: BLE001 - the log is a help, never a reason not to start
+            _log("start-up report failed:\n" + traceback.format_exc())
         ws = setting("workspace", "")
         util.WORKSPACE_OVERRIDE = ws or None
         mode = setting("access", "full")
@@ -121,6 +154,7 @@ class KritaMcpBridge(Extension):
             self.server = BridgeServer(dispatch, port=self.port(), log=_log)
             self.server.start()
             self.last_error = None
+            trace("bridge", "listening on %s:%d" % (self.server.host, self.server.port))
         except Exception as e:  # noqa: BLE001
             _log("failed to start:\n" + traceback.format_exc())
             self.server = None
@@ -132,6 +166,8 @@ class KritaMcpBridge(Extension):
         return True
 
     def stop(self):
+        if self.server:
+            trace("bridge", "stopped")
         if self.timer:
             self.timer.stop()
             self.timer = None
