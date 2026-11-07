@@ -127,16 +127,35 @@ def test_sign_out_and_new_chat(chat):
     assert ("POST", "/reset", {"session": "s1"}) in sent
 
 
-def test_services_dialog_lists_every_service(chat):
+def test_services_dialog_lists_every_service(chat, monkeypatch):
     app, c, dock, sent = chat
     pump(app, 0.4)
     dlg = c.ServicesDialog(dock)
-    text = " ".join(w.text() for w in dlg.rows.findChildren(qtw.QLabel))
-    buttons = [b.text() for b in dlg.rows.findChildren(qtw.QPushButton)]
+    rows = dlg.scroll.widget()  # a long list scrolls instead of growing taller than the screen
+    text = " ".join(w.text() for w in rows.findChildren(qtw.QLabel))
+    buttons = [b.objectName() for b in rows.findChildren(qtw.QPushButton)]
     assert "Google Gemini" in text and "fal.ai" in text and "ComfyUI" in text
-    assert buttons.count("Sign out") == 1 and buttons.count("Sign in") == 2  # gemini is signed in
+    assert "Chat models" in text and "On this computer" in text  # grouped
+    # signed in: change the key or sign out, both right there; others: sign in
+    assert {"gemini:signin", "gemini:signout", "fal:signin", "comfyui:signin"} == set(buttons)
+    assert dlg.height() <= 760 and dlg.scroll.widgetResizable()
+    dlg.search.setText("fal")
+    assert [b.objectName() for b in dlg.scroll.widget().findChildren(qtw.QPushButton)] == ["fal:signin"]
+    dlg.search.setText("nothing like this")
+    assert "No service matches" in " ".join(w.text() for w in dlg.scroll.widget().findChildren(qtw.QLabel))
+    dlg.search.setText("")
     info = dock.providers["comfyui"]
-    sign = c.SignInDialog(dock, "comfyui", info)
+    real_dialog = c.SignInDialog
+    # "Sign out" signs out at once; "Change" opens the key dialog even though it is signed in
+    opened = []
+    monkeypatch.setattr(c, "SignInDialog", lambda *a: opened.append(a[1]) or types.SimpleNamespace(exec=lambda: 0))
+    dlg.scroll.widget().findChild(qtw.QPushButton, "gemini:signin").click()
+    assert opened == ["gemini"]
+    dlg.scroll.widget().findChild(qtw.QPushButton, "gemini:signout").click()
+    pump(app, 0.4)
+    assert ("POST", "/signout", {"provider": "gemini"}) in sent
+    assert "Google Gemini: not signed in" in dock.log.toPlainText()  # names the service that changed
+    sign = real_dialog(dock, "comfyui", info)
     labels = [w.text() for w in sign.findChildren(qtw.QLabel)]
     assert "API key" not in labels and "Server URL" in labels  # local servers need a URL, not a key
 
@@ -286,7 +305,7 @@ def test_free_services_turn_on_without_a_key(chat):
         horde={"signed_in": True, "needs_key": False, "optional_key": True, "toggle": True, "label": "AI Horde"},
         kilo={"signed_in": False, "needs_key": False, "optional_key": True, "chat": True, "label": "Kilo Gateway"})
     dlg = c.ServicesDialog(dock)
-    buttons = [b.text() for b in dlg.rows.findChildren(qtw.QPushButton)]
+    buttons = [b.text() for b in dlg.scroll.widget().findChildren(qtw.QPushButton)]
     assert "Turn on" in buttons and "Turn off" in buttons and "Add key" in buttons  # free chat needs no switch
     sign = c.SignInDialog(dock, "pollinations", c.service_info("pollinations", dock.providers["pollinations"]))
     labels = " ".join(w.text() for w in sign.findChildren(qtw.QLabel))
@@ -347,3 +366,39 @@ def test_actions_settings_and_commands_are_logged_without_keys(chat):
     assert "POST /chat" in text and "paint a sunrise" in text and "POST /signin" in text and "kkkk" not in text
     line = text.strip().splitlines()[-1]
     assert line[:4].isdigit() and line[10] == " " and line[19] == "."  # date, time and milliseconds
+
+
+def test_stop_responds_at_once_and_never_leaves_the_panel_stuck(chat, monkeypatch):
+    app, c, dock, sent = chat
+    monkeypatch.setattr(c, "STOP_WAIT_MS", 300)
+    dock.session = "s-gone"
+    dock._set_busy(True)
+    dock._stop()
+    assert not dock.stop_btn.isEnabled() and "Stopping" in dock.send_btn.text()  # visible at once
+    pump(app, 0.7)
+    assert ("POST", "/stop", {"session": "s-gone"}) in sent
+    assert not dock.busy and dock.send_btn.isEnabled() and "stopped waiting" in dock.log.toPlainText()
+
+
+def test_stop_before_the_service_answered_still_stops(chat):
+    app, c, dock, sent = chat
+    dock.session = None
+    dock._set_busy(True)
+    dock._stop()
+    dock._started({"session": "s2"})  # the message reached the service after Stop was pressed
+    pump(app, 0.4)
+    assert ("POST", "/stop", {"session": "s2"}) in sent
+
+
+def test_a_lost_service_does_not_leave_the_panel_working_forever(chat, monkeypatch):
+    app, c, dock, sent = chat
+
+    def gone(method, path, body=None, timeout=10):
+        raise RuntimeError("no such session")
+    monkeypatch.setattr(c, "_request", gone)
+    dock.session = "s-old"
+    dock._set_busy(True)
+    dock.poll_timer.start(50)
+    pump(app, 0.8)
+    assert not dock.busy and not dock.poll_timer.isActive()
+    assert "Send your message again" in dock.log.toPlainText()

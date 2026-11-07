@@ -55,6 +55,8 @@ Every step of the AI resends the conversation to the model, so the assistant kee
 - A message stops when **the same error repeats three times**, instead of retrying until it reaches the step
   limit (`KRITA_MCP_CHAT_MAX_STEPS`, default 40).
 - Each reply is capped (`KRITA_MCP_CHAT_MAX_TOKENS`), and on OpenRouter it is fitted to a low balance.
+- Gemini 3 models are asked to think briefly (`KRITA_MCP_GEMINI_THINKING`: `low` by default, or `medium`,
+  `high`, `off` for Google's default). Long thinking can take a minute per step and is billed as output.
 - `create_artwork` makes **one** image on paid cloud services (four on your own GPU, where they are free).
   Ask for options and it makes more.
 - After every answer, the chat shows the tokens it used, how many came from the cache, and the cost where
@@ -110,7 +112,15 @@ Skills are step-by-step know-how for kinds of work, each a folder with a `SKILL.
 - **Free services:** Pollinations, AI Horde and OmniRoute. They work without a key: **Turn on** /
   **Turn off**. A free key is optional and raises their limits.
 
-Click **Sign in** next to a service and paste its key, or its server URL.
+The list is grouped (chat models, images and video, on this computer), scrolls, and has a search box
+(try `free`, `images` or `video`). Signed-in services come first in each group. Next to each service:
+
+- **Sign in**: paste its key, or its server URL;
+- **Change**: replace the saved key or URL (a key that stopped working, say) without signing out first;
+- **Sign out**: delete the saved key.
+
+The free services show **Turn on** / **Turn off**, and **Add key** / **Change key** / **Remove key** for
+their optional key.
 
 Keys are stored only on your computer, in `~/.krita-mcp/agent_keys.json`. That file is readable only by
 your user on Linux and macOS; on Windows it is protected by your Windows account's permissions. They are
@@ -143,7 +153,13 @@ AI Chat docker ──127.0.0.1:5680 + token──▶ krita-mcp --agent ──mod
   (`pip install krita-mcp`). Opening Krita alone never starts it.
 - The service listens on loopback only and requires the same token as the bridge.
 - All network calls run off Krita's main thread, so Krita stays responsive while the AI works.
-- **Stop** ends the current task after the step in progress. **New chat** starts a fresh conversation.
+- **Stop** ends the current task at once, even while a model is still thinking: the answer it was
+  waiting for is dropped. A step already running inside Krita (a filter, say) finishes by itself. If the
+  assistant does not confirm within 8 seconds, the panel stops waiting anyway. **New chat** stops the
+  current task too and starts a fresh conversation.
+- When the model service is briefly unavailable (HTTP 500/502/503/504, a timeout, a dropped connection),
+  the assistant tries again after 3 and then 8 seconds and says so in the chat. A rejected key or missing
+  credit is not retried.
 
 ## Asset libraries
 

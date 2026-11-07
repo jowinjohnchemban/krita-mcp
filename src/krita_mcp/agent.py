@@ -266,7 +266,17 @@ class Gemini(_Adapter):
             raise ProviderError("Sign in to Gemini first (an API key from https://aistudio.google.com/apikey)")
         self.chosen, self.model, self.base = model, None, base_url_for("gemini")
         self.json_schema = True
+        self.thinking = True  # off for the session if the model refuses the setting
         self.note = None
+
+    def thinking_config(self):
+        """Gemini 3 thinks at length by default (a minute per step is common); a painting assistant mostly
+        needs quick tool calls. KRITA_MCP_GEMINI_THINKING: low (default), medium, high, or off (Google's default)."""
+        level = env("KRITA_MCP_GEMINI_THINKING", "low").strip().lower()
+        m = re.match(r"gemini-(\d+)", self.model or "")
+        if not self.thinking or level in ("off", "default", "") or not m or int(m.group(1)) < 3:
+            return None
+        return {"thinkingConfig": {"thinkingLevel": level}}
 
     def prepare(self):
         """Pick the model for this turn: the user's choice, else the newest Gemini Flash available now."""
@@ -291,6 +301,8 @@ class Gemini(_Adapter):
 
     def step(self, history):
         body = {"systemInstruction": {"parts": [{"text": SYSTEM}]}, "contents": history, "tools": self._tools()}
+        if self.thinking_config():
+            body["generationConfig"] = self.thinking_config()
         try:
             r, used = gemini.post(self.base, self.key, self.model, "generateContent", body)
             if used != self.model:  # Google retired the model and named its replacement
@@ -301,6 +313,9 @@ class Gemini(_Adapter):
         except ProviderError as e:
             if self.json_schema and "parametersJsonSchema" in str(e):
                 self.json_schema = False
+                return self.step(history)
+            if "generationConfig" in body and "HTTP 400" in str(e) and "thinking" in str(e).lower():
+                self.thinking = False  # this model takes no thinking level: Google's default then
                 return self.step(history)
             raise
         um = r.get("usageMetadata") or {}
@@ -415,6 +430,9 @@ class OpenAICompat(_Adapter):
         self.add_usage(u.get("prompt_tokens"), u.get("completion_tokens"),
                        (u.get("prompt_tokens_details") or {}).get("cached_tokens"), u.get("cost"))
         msg = (r.get("choices") or [{}])[0].get("message") or {}
+        for tc in msg.get("tool_calls") or []:
+            if isinstance(tc.get("function"), dict):
+                tc["function"]["name"] = clean_tool_name(tc["function"].get("name"))
         entry = {"role": "assistant", "content": msg.get("content") or ""}
         if msg.get("tool_calls"):
             entry["tool_calls"] = msg["tool_calls"]
@@ -626,18 +644,61 @@ def _short(args):
     return s if len(s) < 160 else s[:157] + "..."
 
 
+class Stopped(Exception):
+    """The user pressed Stop (or started a new chat)."""
+
+
+async def until_stopped(sess, aw):
+    """Await `aw`, but give up at once when the user presses Stop: a model can take a minute to answer, and
+    Stop must not wait for it. (A request already sent finishes in the background; its answer is dropped.)"""
+    task = asyncio.ensure_future(aw)
+    while True:
+        done, _ = await asyncio.wait({task}, timeout=0.2)
+        if done:
+            return task.result()
+        if sess.stop:
+            task.cancel()
+            raise Stopped()
+
+
+RETRY_WAITS = (3, 8)  # seconds before the 2nd and 3rd try when the model service is briefly unavailable
+
+
+def transient(error):
+    """Worth trying again: the service is overloaded or the connection dropped (not: a bad key, no credit)."""
+    text = str(error)
+    return (any("HTTP %d" % c in text for c in (500, 502, 503, 504)) or "cannot reach" in text
+            or "timed out" in text.lower())
+
+
+def _status_of(error):
+    m = re.search(r"HTTP (\d{3})", str(error))
+    return "HTTP " + m.group(1) if m else "connection problem"
+
+
+def clean_tool_name(name):
+    """Some models leak chat-template tokens into a tool name ('ai_backends<|channel|>commentary')."""
+    name = re.split(r"<\||\s", str(name or "").strip(), maxsplit=1)[0]
+    name = re.sub(r"^(?:functions|tools?)\.", "", name)  # 'functions.list_layers' from some templates
+    return re.sub(r"[^A-Za-z0-9_\-]", "", name)
+
+
 async def run_turn(sess, text):
-    if sess.model is None:
-        sess.model = make_model(sess.provider, sess.model_name)
-        sess.history = sess.model.start(await tool_specs())
-    m = sess.model
-    used = await asyncio.to_thread(m.prepare)  # models are listed fresh for every message
-    sess.emit("note", text="Model: %s" % used)
-    m.reset_usage()
+    m = None
     try:
+        if sess.model is None:
+            sess.model = make_model(sess.provider, sess.model_name)
+            sess.history = sess.model.start(await tool_specs())
+        m = sess.model
+        used = await until_stopped(sess, asyncio.to_thread(m.prepare))  # models are listed fresh every message
+        sess.emit("note", text="Model: %s" % used)
+        m.reset_usage()
         await _turn(sess, m, text)
+    except Stopped:
+        trace("chat", "[%s] stopped by the user" % sess.id)
+        sess.emit("assistant", text="(stopped)")
     finally:
-        spent = usage_text(m.usage)
+        spent = usage_text(m.usage) if m is not None else ""
         if spent:
             sess.emit("note", text=spent)
 
@@ -665,10 +726,22 @@ async def _turn(sess, m, text):
     last_errors, repeats = None, 0
     for step in range(max_steps()):
         if sess.stop:
-            sess.emit("assistant", text="(stopped)")
-            return
+            raise Stopped()
         t0 = time.monotonic()
-        reply, calls = await asyncio.to_thread(m.step, sess.history)
+        for attempt, wait in enumerate(RETRY_WAITS + (None,)):
+            work = list(sess.history)  # an abandoned (stopped) request must not write into the conversation
+            try:
+                reply, calls = await until_stopped(sess, asyncio.to_thread(m.step, work))
+                break
+            except ProviderError as e:
+                if wait is None or not transient(e):
+                    raise
+                trace("model", "[%s] busy, retry %d in %ds: %s" % (sess.id, attempt + 1, wait, str(e)[:200]))
+                sess.emit("note", text="The model service is busy (%s); trying again in %d s…" % (
+                    _status_of(e), wait))
+                await until_stopped(sess, asyncio.sleep(wait))
+        sess.history[:] = work
+        calls = [(cid, clean_tool_name(name), args) for cid, name, args in calls]
         trace("model", "[%s] step %d: %.1fs, %d tool call(s)%s" % (
             sess.id, step + 1, time.monotonic() - t0, len(calls),
             (" " + ", ".join(c[1] for c in calls)) if calls else ""))
@@ -680,12 +753,19 @@ async def _turn(sess, m, text):
         if not calls:
             return
         results = []
-        for cid, name, args in calls:
-            sess.emit("tool", name=name, args=_short(args))
-            out, images = await run_tool(name, dict(args))
-            sess.emit("tool_result", name=name, ok=not out.startswith("error:"), text=out[:300],
-                      images=len(images))
-            results.append((cid, name, out, images))
+        try:
+            for cid, name, args in calls:
+                if sess.stop:
+                    raise Stopped()
+                sess.emit("tool", name=name, args=_short(args))
+                out, images = await until_stopped(sess, run_tool(name, dict(args)))
+                sess.emit("tool_result", name=name, ok=not out.startswith("error:"), text=out[:300],
+                          images=len(images))
+                results.append((cid, name, out, images))
+        except Stopped:  # every call the model made still needs an answer, or the next message is refused
+            results += [(cid, name, "error: stopped by the user", []) for cid, name, _ in calls[len(results):]]
+            m.results(sess.history, results)
+            raise
         m.results(sess.history, results)
         m.compact(sess.history, turn_start)
         errors = sorted(out[:200] for _, _, out, _ in results if out.startswith("error:"))
@@ -701,8 +781,9 @@ async def _turn(sess, m, text):
 
 
 def _worker(sess, text):
+    loop = asyncio.new_event_loop()  # not asyncio.run: that would wait for a stopped request to finish
     try:
-        asyncio.run(run_turn(sess, text))
+        loop.run_until_complete(run_turn(sess, text))
     except ProviderError as e:
         sess.emit("error", text=str(e))
     except Exception as e:  # noqa: BLE001
@@ -710,6 +791,7 @@ def _worker(sess, text):
         trace("crash", traceback.format_exc().replace("\n", " | "))
         sess.emit("error", text="%s: %s" % (type(e).__name__, e))
     finally:
+        loop.close()
         sess.busy = False
         sess.emit("done")
 
@@ -821,8 +903,10 @@ class Handler(BaseHTTPRequestHandler):
                 if sess:
                     sess.stop = True
                 return self._send(200, {"ok": True})
-            if self.path == "/reset":
-                SESSIONS.pop(b.get("session", ""), None)
+            if self.path == "/reset":  # New chat: the old one stops too, it must not keep painting
+                old = SESSIONS.pop(b.get("session", ""), None)
+                if old:
+                    old.stop = True
                 return self._send(200, {"ok": True})
             if self.path == "/shutdown":  # the AI Chat panel replaces an outdated service
                 self._send(200, {"ok": True})

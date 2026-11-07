@@ -417,3 +417,11 @@ def test_open_instruct_models_count_as_chat_models():
            "stable-diffusion-xl-base-v10", "whisper-large-v3", "gpt-oss-120b"]
     kept = [i for i in ids if not catalog.NOT_CHAT.search(i)]
     assert kept == ["Meta-Llama-3_3-70B-Instruct", "gpt-oss-120b"]
+
+
+def test_no_working_image_service_points_to_the_free_ones(bridge, monkeypatch):
+    import asyncio
+    from krita_mcp import gen_tools
+    _backends(monkeypatch, ("gemini", False))
+    with pytest.raises(gen_tools.ToolError, match="turn on Pollinations or AI Horde in AI Chat > Services"):
+        asyncio.run(gen_tools.generate_image("a lake"))

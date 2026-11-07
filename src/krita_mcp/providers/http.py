@@ -67,6 +67,29 @@ _DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # local 
 _DEFAULT = urllib.request.build_opener()
 
 
+def error_message(text):
+    """The human part of an error body: {"error": {"message": ...}}, {"message": ...}, {"detail": ...} - or the
+    text itself, on one line."""
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return " ".join(text.split())
+    for _ in range(3):
+        if isinstance(obj, list) and obj:
+            obj = obj[0]
+        if isinstance(obj, dict):
+            inner = obj.get("error") if obj.get("error") is not None else None
+            msg = obj.get("message") or obj.get("detail") or obj.get("error_description")
+            if isinstance(inner, (dict, list)):
+                obj = inner
+                continue
+            msg = msg or inner
+            if msg:
+                return " ".join(str(msg if not isinstance(msg, (dict, list)) else json.dumps(msg)).split())
+        break
+    return " ".join(text.split())
+
+
 def request(method, url, body=None, headers=None, timeout=600, raw=False):
     """Returns (bytes, headers). body: dict -> JSON, bytes -> as is. Errors -> ProviderError."""
     hdrs = {"User-Agent": "krita-mcp"}
@@ -83,11 +106,15 @@ def request(method, url, body=None, headers=None, timeout=600, raw=False):
         with opener.open(req, timeout=timeout) as r:
             return r.read(MAX_DOWNLOAD + 1), r.headers
     except urllib.error.HTTPError as e:
-        detail = e.read(4000).decode("utf-8", "replace")
+        detail = error_message(e.read(4000).decode("utf-8", "replace"))
         hint = ""
         if e.code in (401, 403):
             hint = (" -- the service rejected the API key saved for Krita: sign out and sign in again "
                     "(AI Chat > Services...) with a new key")
+        elif e.code == 429:
+            hint = " -- rate limit or quota used up for this account (on free plans some models have none)"
+        elif e.code == 402:
+            hint = " -- not enough credit on this account"
         raise ProviderError("%s %s -> HTTP %d: %s%s" % (method, _redact(url), e.code, detail[:600], hint)) from None
     except (urllib.error.URLError, OSError) as e:
         raise ProviderError("cannot reach %s (%s)" % (_redact(url), getattr(e, "reason", e))) from None

@@ -439,3 +439,171 @@ def test_openai_uses_max_completion_tokens(home, bridge, monkeypatch):
     finally:
         m.srv.shutdown()
     assert body["max_completion_tokens"] == 4096 and "max_tokens" not in body  # newer OpenAI models need this
+
+
+class SlowModel(agent._Adapter):
+    """A model that takes its time, like a big model thinking: Stop must not wait for it."""
+
+    def __init__(self, replies, delay=5.0):
+        self.replies, self.delay, self.note, self.model = list(replies), delay, None, "slow"
+        self.reset_usage()
+
+    def prepare(self):
+        return "slow"
+
+    def start(self, specs):
+        return [{"role": "system", "content": "s"}]
+
+    def user(self, history, text):
+        history.append({"role": "user", "content": text})
+
+    def step(self, history):
+        time.sleep(self.delay)
+        reply, calls = self.replies.pop(0)
+        history.append({"role": "assistant", "content": reply, "calls": [c[1] for c in calls]})
+        return reply, calls
+
+    def results(self, history, results):
+        history.extend({"role": "tool", "id": cid, "name": n, "content": out} for cid, n, out, _ in results)
+
+    def compact(self, history, turn_start):
+        pass
+
+
+def test_stop_interrupts_a_slow_model_at_once(home, monkeypatch):
+    model = SlowModel([("thinking...", [])], delay=5.0)
+    monkeypatch.setattr(agent, "make_model", lambda p, m=None: model)
+    sess = agent.chat(None, "gemini", None, "paint a sunrise")
+    time.sleep(0.5)
+    t0 = time.monotonic()
+    sess.stop = True
+    events = _wait(sess, timeout=4)
+    assert not sess.busy and time.monotonic() - t0 < 2.0  # not the 5 s the model takes
+    assert events[-1]["type"] == "assistant" and events[-1]["text"] == "(stopped)"
+    time.sleep(5.2)  # the abandoned request finishes later: its answer must not enter the conversation
+    assert [m["role"] for m in sess.history] == ["system", "user"]
+
+
+def test_stop_during_tools_answers_every_call(home, bridge, monkeypatch):
+    calls = [("c1", "list_layers", {}), ("c2", "list_layers", {})]
+    model = SlowModel([("", calls), ("never", [])], delay=0.0)
+    monkeypatch.setattr(agent, "make_model", lambda p, m=None: model)
+    real = agent.run_tool
+
+    async def slow_tool(name, args):
+        import asyncio
+        await asyncio.sleep(3)
+        return await real(name, args)
+    monkeypatch.setattr(agent, "run_tool", slow_tool)
+    sess = agent.chat(None, "gemini", None, "go")
+    time.sleep(0.5)
+    sess.stop = True
+    events = _wait(sess, timeout=3)
+    assert events[-1]["text"] == "(stopped)"
+    answered = [m for m in sess.history if m["role"] == "tool"]
+    assert [m["id"] for m in answered] == ["c1", "c2"]  # the next message would be refused otherwise
+    assert all(m["content"] == "error: stopped by the user" for m in answered)
+
+
+def test_new_chat_stops_the_old_one(home, monkeypatch):
+    model = SlowModel([("x", [])], delay=5.0)
+    monkeypatch.setattr(agent, "make_model", lambda p, m=None: model)
+    srv, port = _serve()
+    try:
+        sess = agent.chat(None, "gemini", None, "paint")
+        time.sleep(0.3)
+        _post(port, "/reset", {"session": sess.id})
+        _wait(sess, timeout=3)
+        assert not sess.busy and sess.id not in agent.SESSIONS
+    finally:
+        srv.shutdown()
+
+
+def test_leaked_template_tokens_are_cleaned_from_tool_names():
+    assert agent.clean_tool_name("ai_backends<|channel|>commentary") == "ai_backends"
+    assert agent.clean_tool_name(" canvas_snapshot ") == "canvas_snapshot"
+    assert agent.clean_tool_name("functions.list_layers") == "list_layers"
+
+
+def _serve():
+    ready = threading.Event()
+    box = {}
+
+    def go():
+        agent.serve(port=0, ready=lambda s: (box.update(srv=s), ready.set()))
+    threading.Thread(target=go, daemon=True).start()
+    ready.wait(5)
+    return box["srv"], box["srv"].server_address[1]
+
+
+def _post(port, path, body):
+    req = urllib.request.Request("http://127.0.0.1:%d%s" % (port, path), data=json.dumps(body).encode(),
+                                 method="POST", headers={"Authorization": "Bearer test-token",
+                                                         "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return json.loads(r.read())
+
+
+def test_gemini_3_thinks_briefly_unless_told_otherwise(home, monkeypatch):
+    agent.save_key("gemini", "k")
+    g = agent.Gemini(None)
+    g.model = "gemini-3.8-flash"
+    assert g.thinking_config() == {"thinkingConfig": {"thinkingLevel": "low"}}
+    monkeypatch.setenv("KRITA_MCP_GEMINI_THINKING", "off")
+    assert g.thinking_config() is None
+    monkeypatch.delenv("KRITA_MCP_GEMINI_THINKING")
+    g.model = "gemini-2.5-flash"
+    assert g.thinking_config() is None  # older models have no thinking level
+
+
+def test_a_model_without_thinking_levels_still_answers(home, monkeypatch):
+    m = Mock()
+    seen = []
+
+    def reply(h, b):
+        body = json.loads(b)
+        seen.append("generationConfig" in body)
+        if "generationConfig" in body:
+            return 400, "application/json", json.dumps(
+                {"error": {"message": "Thinking level is not supported for this model."}}).encode()
+        return 200, "application/json", json.dumps(
+            {"candidates": [{"content": {"role": "model", "parts": [{"text": "ok"}]}}]}).encode()
+    try:
+        m.routes[("POST", "/models/gemini-3.8-flash:generateContent")] = reply
+        monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", m.url)
+        agent.save_key("gemini", "k")
+        events = _wait(agent.chat(None, "gemini", "gemini-3.8-flash", "hi"))
+    finally:
+        m.srv.shutdown()
+    assert events[-1]["text"] == "ok" and seen == [True, False]
+
+
+def test_a_busy_model_service_is_tried_again(home, monkeypatch):
+    monkeypatch.setattr(agent, "RETRY_WAITS", (0.1, 0.1))
+    model = SlowModel([("done", [])], delay=0.0)
+    fails = ["HTTP 503: The model is overloaded. Please try again later."]
+    real_step = model.step
+
+    def step(history):
+        if fails:
+            raise agent.ProviderError("POST https://x/generateContent -> " + fails.pop())
+        return real_step(history)
+    model.step = step
+    monkeypatch.setattr(agent, "make_model", lambda p, m=None: model)
+    events = _wait(agent.chat(None, "gemini", None, "hi"), timeout=5)
+    assert events[-1]["text"] == "done"
+    assert any("busy (HTTP 503)" in e.get("text", "") for e in events)
+
+
+def test_a_bad_key_is_not_retried(home, monkeypatch):
+    monkeypatch.setattr(agent, "RETRY_WAITS", (0.1, 0.1))
+    model = SlowModel([], delay=0.0)
+    tries = []
+
+    def step(history):
+        tries.append(1)
+        raise agent.ProviderError("HTTP 401: API key not valid")
+    model.step = step
+    monkeypatch.setattr(agent, "make_model", lambda p, m=None: model)
+    events = _wait(agent.chat(None, "gemini", None, "hi"), timeout=5)
+    assert len(tries) == 1 and events[-1]["type"] == "error"

@@ -23,17 +23,21 @@ try:
     from PyQt6.QtCore import Qt, QTimer, QUrl
     from PyQt6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut
     from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
-                                 QLineEdit, QPlainTextEdit, QPushButton, QTextBrowser, QVBoxLayout, QWidget)
+                                 QGridLayout, QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QTextBrowser,
+                                 QVBoxLayout, QWidget)
     _PASSWORD = QLineEdit.EchoMode.Password
     _RICH = Qt.TextFormat.RichText
+    _TOP = Qt.AlignmentFlag.AlignTop
 except ImportError:  # Krita 5
     from PyQt5.QtCore import Qt, QTimer, QUrl
     from PyQt5.QtGui import QDesktopServices, QGuiApplication, QKeySequence
     from PyQt5.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
-                                 QLineEdit, QPlainTextEdit, QPushButton, QShortcut, QTextBrowser, QVBoxLayout,
+                                 QGridLayout, QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QShortcut,
+                                 QTextBrowser, QVBoxLayout,
                                  QWidget)
     _PASSWORD = QLineEdit.Password
     _RICH = Qt.RichText
+    _TOP = Qt.AlignTop
 
 from . import extension, logview, protocol
 from .handlers import _enum
@@ -44,6 +48,7 @@ PROVIDERS = [("gemini", "Google Gemini"), ("anthropic", "Anthropic Claude"), ("o
              ("openrouter", "OpenRouter (browser sign-in)"), ("ollama", "Local model (Ollama, LM Studio)"),
              ("pollinations", "Pollinations (free, no sign-in)")]
 SKILLS_SITE = "https://skills.sh/"
+STOP_WAIT_MS = 8000  # after Stop, how long the panel waits for the assistant to confirm
 OAUTH_WAIT = 600  # seconds the panel waits for a browser sign-in to be approved
 # what each service's keys look like, to pick them up from the clipboard while the key page is open
 KEY_PATTERNS = {
@@ -277,46 +282,115 @@ def find_key(service, text):
 
 
 class ServicesDialog(QDialog):
-    """Every AI service in one place: chat models, image / video generators, local servers."""
+    """Every AI service in one place: chat models, image / video generators, local servers. The list scrolls
+    and can be searched; each service has Sign in, or Change and Sign out once signed in."""
+
+    GROUPS = [("chat", "Chat models"), ("media", "Images, video and more"), ("local", "On this computer")]
 
     def __init__(self, docker):
         super().__init__(docker)
         self.docker = docker
         self.setWindowTitle(i18n("AI services"))
-        self.setMinimumWidth(460)
-        self.lay = QVBoxLayout(self)
+        self.setMinimumWidth(520)
+        lay = QVBoxLayout(self)
         note = QLabel(i18n("Sign in once here: the AI Chat panel and AI apps connected through MCP (Claude Desktop, "
                            "Gemini CLI, Cursor, ...) both use these services."))
         note.setWordWrap(True)
-        self.lay.addWidget(note)
-        self.rows = QWidget()
-        self.lay.addWidget(self.rows)
+        lay.addWidget(note)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(i18n("Search services… (e.g. free, images, video, local)"))
+        self.search.textChanged.connect(lambda _t: self.refresh())
+        lay.addWidget(self.search)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        lay.addWidget(self.scroll, 1)
+        self.summary = QLabel()
         close = QPushButton(i18n("Close"))
         close.clicked.connect(self.accept)
-        self.lay.addWidget(close)
+        bottom = QHBoxLayout()
+        bottom.addWidget(self.summary, 1)
+        bottom.addWidget(close)
+        lay.addLayout(bottom)
+        screen = QGuiApplication.primaryScreen()
+        height = int(screen.availableGeometry().height() * 0.75) if screen is not None else 640
+        self.resize(600, max(420, min(760, height)))
         self.refresh()
 
+    @staticmethod
+    def group(info):
+        if info.get("chat"):
+            return "chat"
+        return "local" if info.get("has_url") and not info.get("needs_key", True) else "media"
+
+    @staticmethod
+    def buttons(info):
+        """(label, action) pairs: what can be done with this service now."""
+        signed = info.get("signed_in")
+        if info.get("toggle"):  # free image services: off until the user turns them on
+            return [(i18n("Turn off"), "signout")] if signed else [(i18n("Turn on"), "signin")]
+        if info.get("optional_key"):  # free without a key; a key only raises the limits
+            return ([(i18n("Change key"), "signin"), (i18n("Remove key"), "signout")] if signed
+                    else [(i18n("Add key"), "signin")])
+        if signed:
+            return [(i18n("Change"), "signin"), (i18n("Sign out"), "signout")]
+        return [(i18n("Sign in"), "signin")]
+
     def refresh(self):
-        old = self.rows
-        self.rows = QWidget()
-        grid = QFormLayout(self.rows)
-        for name, info in sorted(self.docker.providers.items(), key=lambda kv: (not kv[1].get("chat"), kv[0])):
-            mark = "✓ " if info.get("signed_in") else "○ "
-            label = QLabel("%s<b>%s</b> <span style='color:#999'>%s</span>" % (
-                mark, html.escape(info.get("label", name)), html.escape(info.get("use", ""))))
-            label.setTextFormat(_RICH)
-            label.setWordWrap(True)
-            if info.get("toggle"):  # free image services: off until the user turns them on
-                btn = QPushButton(i18n("Turn off") if info.get("signed_in") else i18n("Turn on"))
-            elif info.get("optional_key"):  # free without a key; a key only raises the limits
-                btn = QPushButton(i18n("Remove key") if info.get("signed_in") else i18n("Add key"))
-            else:
-                signed_with_key = info.get("signed_in") and info.get("needs_key")
-                btn = QPushButton(i18n("Sign out") if signed_with_key else i18n("Sign in"))
-            btn.clicked.connect(lambda _=False, n=name: self.docker.sign_in_service(n, self))
-            grid.addRow(label, btn)
-        self.lay.replaceWidget(old, self.rows)
-        old.deleteLater()
+        bar = self.scroll.verticalScrollBar()
+        keep = bar.value()
+        want = self.search.text().strip().lower()
+        rows = QWidget()
+        grid = QGridLayout(rows)
+        grid.setColumnStretch(0, 1)  # names and descriptions get the room; buttons stay their own size
+        grid.setVerticalSpacing(6)
+        line = 0
+        shown = 0
+        items = sorted(self.docker.providers.items(),
+                       key=lambda kv: (not kv[1].get("signed_in"), str(kv[1].get("label", kv[0])).lower()))
+        for key, title in self.GROUPS:
+            members = []
+            for name, info in items:
+                words = "%s %s %s %s" % (name, info.get("label", ""), info.get("use", ""),
+                                         "free" if info.get("free") or info.get("optional_key") else "")
+                if self.group(info) == key and (not want or want in words.lower()):
+                    members.append((name, info))
+            if not members:
+                continue
+            head = QLabel("<b>%s</b>" % html.escape(i18n(title)))
+            head.setTextFormat(_RICH)
+            if line:
+                head.setContentsMargins(0, 10, 0, 0)
+            grid.addWidget(head, line, 0, 1, 2)
+            line += 1
+            for name, info in members:
+                shown += 1
+                mark = "<span style='color:#4a4'>✓</span> " if info.get("signed_in") else "○ "
+                label = QLabel("%s<b>%s</b> <span style='color:#999'>%s</span>" % (
+                    mark, html.escape(info.get("label", name)), html.escape(info.get("use", ""))))
+                label.setTextFormat(_RICH)
+                label.setWordWrap(True)
+                cell = QWidget()
+                row = QHBoxLayout(cell)
+                row.setContentsMargins(0, 0, 0, 0)
+                row.addStretch(1)
+                for text, action in self.buttons(info):
+                    btn = QPushButton(text)
+                    btn.setObjectName("%s:%s" % (name, action))
+                    btn.clicked.connect(lambda _=False, n=name, a=action: self.docker.sign_in_service(n, self, a))
+                    row.addWidget(btn)
+                grid.addWidget(label, line, 0)
+                grid.addWidget(cell, line, 1, _TOP)
+                line += 1
+        if not shown:
+            grid.addWidget(QLabel(i18n("No service matches.")), 0, 0)
+        grid.setRowStretch(line + 1, 1)  # a short (searched) list stays at the top
+        old = self.scroll.takeWidget()
+        self.scroll.setWidget(rows)
+        if old is not None:
+            old.deleteLater()
+        bar.setValue(keep)
+        signed = sum(1 for i in self.docker.providers.values() if i.get("signed_in"))
+        self.summary.setText(i18n("%d services, %d signed in or turned on") % (len(self.docker.providers), signed))
 
 
 class SkillsDialog(QDialog):
@@ -606,11 +680,17 @@ class ChatDocker(DockWidget):
         dlg = SkillsDialog(self, r)
         dlg.exec()
 
-    def sign_in_service(self, name, parent=None):
+    def sign_in_service(self, name, parent=None, action=None):
+        """action: "signin" (ask for a key / URL, also to change it), "signout", or None: whichever fits now
+        (the panel's own Sign in / Sign out button)."""
         info = service_info(name, self.providers.get(name))
-        if info.get("signed_in") and (info.get("needs_key") or info.get("optional_key")):
+        if action is None:
+            removable = info.get("signed_in") and (info.get("needs_key") or info.get("optional_key"))
+            action = "signout" if removable else "signin"
+        trace("panel", "%s: %s" % (name, action))
+        if action == "signout":
             self._background(lambda: _ensure_service() and _request("POST", "/signout", {"provider": name}),
-                             self._signed)
+                             lambda r: self._signed(r, name))
             return
         dlg = SignInDialog(parent or self, name, info)
         if not dlg.exec():
@@ -620,7 +700,8 @@ class ChatDocker(DockWidget):
         body = {"provider": name, "key": dlg.key.text().strip(), "base_url": dlg.base.text().strip() or None}
         if info.get("needs_key", True) and not info.get("optional_key") and not body["key"]:
             return self._error(i18n("No key entered."))
-        self._background(lambda: _ensure_service() and _request("POST", "/signin", body), self._signed)
+        self._background(lambda: _ensure_service() and _request("POST", "/signin", body),
+                         lambda r: self._signed(r, name))
 
     def browser_sign_in(self, name):
         """OAuth in the user's browser; the assistant service receives the redirect and saves the key."""
@@ -679,7 +760,7 @@ class ChatDocker(DockWidget):
         self._refresh_models()
         if getattr(self, "services_dialog", None) is not None:
             self.services_dialog.refresh()
-        if name and name != self._key():  # a service other than the selected chat provider
+        if name:  # name the service that changed, not the selected chat provider
             info = service_info(name, self.providers.get(name))
             state = "✓ " + i18n("signed in") if info.get("signed_in") else i18n("not signed in")
             text = "%s: %s" % (info.get("label") or name, state)
@@ -702,7 +783,11 @@ class ChatDocker(DockWidget):
     def _started(self, result):
         if result.get("session") != self.session:
             self.session, self.seen = result["session"], 0
+        self._poll_failures = 0
         self.poll_timer.start(400)
+        if getattr(self, "_stop_pending", False):  # Stop was pressed before the service answered
+            self._stop_pending = False
+            self._stop()
 
     def _poll(self):
         if getattr(self, "_polling", False) or not self.session:
@@ -710,10 +795,31 @@ class ChatDocker(DockWidget):
         self._polling = True
         sid, since = self.session, self.seen
 
+        def ask():
+            try:
+                return _request("GET", "/events?session=%s&since=%d" % (sid, since))
+            except Exception as e:  # noqa: BLE001 - handled in done(), never leaves the panel stuck
+                return {"_failed": str(e)}
+
         def done(r):
             self._polling = False
+            if sid != self.session:
+                return  # a new chat started meanwhile
+            if "_failed" in r:
+                return self._poll_failed(r["_failed"])
+            self._poll_failures = 0
             self._events(r)
-        self._background(lambda: _request("GET", "/events?session=%s&since=%d" % (sid, since)), done)
+        self._background(ask, done)
+
+    def _poll_failed(self, why):
+        """The service did not answer: a few misses are normal while it is busy; then stop waiting."""
+        self._poll_failures = getattr(self, "_poll_failures", 0) + 1
+        lost = "no such session" in why
+        if lost or self._poll_failures >= 8:
+            self.poll_timer.stop()
+            self._error(i18n("The assistant service restarted and this reply was lost. Send your message again.")
+                        if lost else i18n("Lost contact with the assistant service (%s). Send again to restart it.")
+                        % why)
 
     def _events(self, r):
         for ev in r.get("events", []):
@@ -740,12 +846,28 @@ class ChatDocker(DockWidget):
     def _stop(self):
         sid = self.session
         trace("panel", "Stop pressed (chat %s)" % sid)
-        if sid:
-            self._background(lambda: _request("POST", "/stop", {"session": sid}), lambda _: None)
+        if not self.busy:
+            return
+        self.stop_btn.setEnabled(False)
+        self.send_btn.setText(i18n("Stopping…"))
+        if not sid:  # the message is still on its way: stop as soon as the service has it
+            self._stop_pending = True
+        else:
+            self._background(lambda: _request("POST", "/stop", {"session": sid}), lambda _: None, quiet=True)
+
+        def give_up():  # the service answers "(stopped)" within a second; never leave the panel stuck
+            if self.busy and self.session == sid:
+                self.poll_timer.stop()
+                self._stop_pending = False
+                self._append("<p style='color:#999; font-size:small'>%s</p>" % html.escape(
+                    i18n("(stopped waiting for the assistant)")))
+                self._set_busy(False)
+        QTimer.singleShot(STOP_WAIT_MS, give_up)
 
     def _new_chat(self):
         sid = self.session
         trace("panel", "New chat (was %s)" % sid)
+        self._stop_pending = False
         self.session, self.seen = None, 0
         self.poll_timer.stop()
         self.log.clear()

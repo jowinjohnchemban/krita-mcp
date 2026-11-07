@@ -62,6 +62,13 @@ async def ai_backends(details: bool = False) -> dict:
     return out
 
 
+def _free_hint():
+    """What to tell the user when no image service works: the free ones they have not turned on."""
+    off = [label for cls, label in ((gen_images.PollinationsImages, "Pollinations"), (gen_images.HordeImages, "AI Horde"))
+           if not cls().configured()]
+    return (" Free, no account needed: the user can turn on %s in AI Chat > Services." % " or ".join(off)) if off else ""
+
+
 async def _generate(prompt, mode="auto", negative_prompt=None, count=1, backend=None, model=None, strength=None,
                     seed=None, steps=None, cfg=None, sampler=None, scheduler=None, size=None, workflow=None,
                     region="auto", x=None, y=None, width=None, height=None, padding=32, name=None, extra=None,
@@ -92,7 +99,8 @@ async def _generate(prompt, mode="auto", negative_prompt=None, count=1, backend=
                                   % (be.name, "; ".join(t.split(":")[0] + " refused the account" for t in tried)))
             return out
         if tried:
-            raise ToolError("No connected image service accepted the request: %s" % " | ".join(tried))
+            raise ToolError("No connected image service accepted the request: %s.%s" % (
+                " | ".join(tried), _free_hint()))
         await _provider(gen_images.pick)  # nothing configured: the usual "how to connect one" message
     be = await _provider(gen_images.pick, backend)
     count = max(1, min(int(count or 1), gen_images.MAX_COUNT))
