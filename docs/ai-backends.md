@@ -50,6 +50,13 @@ When `backend` is not given, the server uses `KRITA_MCP_IMAGE_BACKEND`. If that 
 uses the first local service that answers (ComfyUI, then AUTOMATIC1111), then the first cloud
 service that has a key, and last the free services you turned on (Pollinations, then AI Horde).
 
+If the service it chose refuses the account (a key that is no longer valid, no credit left, a rate
+limit), it moves on to the next one in that order. The result names the service that made the picture,
+and the AI tells you which one was skipped and why so you can fix it in **AI Chat ▸ Services**. A
+service you name with `backend` (or `KRITA_MCP_IMAGE_BACKEND`) is never swapped for another one. If
+`create_artwork` decided by itself to generate and no service accepts the account, it sets the
+document up for painting by hand instead.
+
 ### ComfyUI (local, recommended)
 
 Start ComfyUI as usual, then set `KRITA_MCP_COMFYUI_URL` (default `http://127.0.0.1:8188`).

@@ -73,6 +73,27 @@ async def _generate(prompt, mode="auto", negative_prompt=None, count=1, backend=
     except ValueError as e:
         raise ToolError(str(e)) from None
     controls = _controls(control)
+    if backend is None and not gen_images.env("KRITA_MCP_IMAGE_BACKEND"):
+        # no service named: when one refuses the account (bad key, no credit), go on to the next connected one
+        tried = []
+        for be in await _provider(lambda: list(gen_images.candidates())):
+            try:
+                out = await _generate(prompt, mode, negative_prompt, count, be.name, model, strength, seed, steps,
+                                      cfg, sampler, scheduler, size, workflow, region, x, y, width, height,
+                                      padding, name, extra, control, style)
+            except ToolError as e:
+                if not gen_images.unusable(e):
+                    raise
+                tried.append("%s: %s" % (be.name, str(e)[:200]))
+                continue
+            if tried:
+                out[0]["skipped"] = tried
+                out[0]["note"] = ("Used %s because %s. Tell the user so they can fix it in AI Chat > Services."
+                                  % (be.name, "; ".join(t.split(":")[0] + " refused the account" for t in tried)))
+            return out
+        if tried:
+            raise ToolError("No connected image service accepted the request: %s" % " | ".join(tried))
+        await _provider(gen_images.pick)  # nothing configured: the usual "how to connect one" message
     be = await _provider(gen_images.pick, backend)
     count = max(1, min(int(count or 1), gen_images.MAX_COUNT))
     guides = [{"layer": c.get("layer"), "invert": c.get("invert", be.native_control and not c.get("preprocess")
@@ -349,8 +370,16 @@ async def create_artwork(prompt: str, approach: str = "auto", style: Optional[st
                 count = 4 if be.kind == "local" else 1
             except ProviderError:
                 count = 1
-        out = await _generate(prompt, "txt2img", None, count, backend, model, None, seed, region="canvas",
-                              padding=0, name=prompt[:60], style=style)
+        try:
+            out = await _generate(prompt, "txt2img", None, count, backend, model, None, seed, region="canvas",
+                                  padding=0, name=prompt[:60], style=style)
+        except ToolError as e:
+            if why == "requested" or not gen_images.unusable(e):
+                raise
+            # auto chose to generate, but no connected service accepts the account: paint it instead
+            approach, why = "paint", "no image service accepted the account (%s); painting by hand" % str(e)[:300]
+            head.update(approach=approach, why=why)
+    if approach in ("generate", "hybrid"):
         head.update(out[0])
         if approach == "hybrid":
             head["paint_layers"] = [(await _call("layer.create", name=n)).get("name", n)

@@ -833,21 +833,40 @@ def get(name):
     return BACKENDS[key]()
 
 
-def pick(name=None):
-    """The requested backend, else KRITA_MCP_IMAGE_BACKEND, else the first local one that answers, else the
-    first configured cloud one."""
+def candidates(name=None):
+    """Backends to try, best first: the requested one (or KRITA_MCP_IMAGE_BACKEND) alone, else the local ones
+    that answer, then every configured cloud service, then the free services that are turned on."""
     name = name or env("KRITA_MCP_IMAGE_BACKEND")
     if name:
-        return get(name)
+        yield get(name)
+        return
     for cls in (ComfyUI, A1111):
         b = cls()
         if b.status().get("reachable"):
-            return b
+            yield b
     for cls in [OpenAIImages, Gemini, Stability, Replicate, Fal] + [
             BACKENDS[n] for n, i in compat.COMPAT.items() if i[5]] + [PollinationsImages, HordeImages]:
         b = cls()
         if b.configured():
-            return b
+            yield b
+
+
+UNUSABLE = ("rejected", "http 401", "http 402", "http 403", "http 429", "api key", "unauthorized", "forbidden",
+            "insufficient", "quota", "credit", "billing", "payment", "rate limit", "not signed in")
+
+
+def unusable(error):
+    """True when a service failed because of the account (bad key, no credit, rate limit), not the request:
+    the next connected service may still work."""
+    text = str(error).lower()
+    return any(w in text for w in UNUSABLE)
+
+
+def pick(name=None):
+    """The requested backend, else KRITA_MCP_IMAGE_BACKEND, else the first local one that answers, else the
+    first configured cloud one."""
+    for b in candidates(name):
+        return b
     raise ProviderError(
         "No image-generation backend found. Start ComfyUI (127.0.0.1:8188) or AUTOMATIC1111/Forge with --api "
         "(127.0.0.1:7860), or set one of KRITA_MCP_OPENAI_API_KEY, KRITA_MCP_GEMINI_API_KEY, "

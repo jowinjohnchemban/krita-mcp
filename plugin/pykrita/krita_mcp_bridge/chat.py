@@ -44,6 +44,7 @@ PROVIDERS = [("gemini", "Google Gemini"), ("anthropic", "Anthropic Claude"), ("o
              ("openrouter", "OpenRouter (browser sign-in)"), ("ollama", "Local model (Ollama, LM Studio)"),
              ("pollinations", "Pollinations (free, no sign-in)")]
 SKILLS_SITE = "https://skills.sh/"
+OAUTH_WAIT = 600  # seconds the panel waits for a browser sign-in to be approved
 # what each service's keys look like, to pick them up from the clipboard while the key page is open
 KEY_PATTERNS = {
     "gemini": r"AIza[0-9A-Za-z_\-]{30,}", "anthropic": r"sk-ant-[0-9A-Za-z_\-]{20,}",
@@ -596,38 +597,63 @@ class ChatDocker(DockWidget):
             QDesktopServices.openUrl(QUrl(flow["url"]))
             self._append("<p style='color:#8a8'>%s</p>" % html.escape(
                 i18n("Your browser opened: approve Krita there. This panel updates when you are signed in.")))
-            self.oauth_id = flow["id"]
-            self.oauth_timer = QTimer(self)
-            self.oauth_timer.timeout.connect(self._oauth_poll)
+            # one sign-in is watched at a time: a new one replaces the old (clicking again must not
+            # leave a second timer reporting "signed in" every second)
+            self.oauth_id, self.oauth_name, self._oauth_polling = flow["id"], name, False
+            self._oauth_until = time.monotonic() + OAUTH_WAIT
+            if getattr(self, "oauth_timer", None) is None:
+                self.oauth_timer = QTimer(self)
+                self.oauth_timer.timeout.connect(self._oauth_poll)
             self.oauth_timer.start(1000)
         self._background(lambda: _ensure_service() and _request("POST", "/oauth/start", {"provider": name}), opened)
 
+    def _oauth_stop(self):
+        self.oauth_id = None
+        if getattr(self, "oauth_timer", None) is not None:
+            self.oauth_timer.stop()
+
     def _oauth_poll(self):
+        fid, name = getattr(self, "oauth_id", None), getattr(self, "oauth_name", None)
+        if not fid:
+            return self._oauth_stop()
+        if time.monotonic() > getattr(self, "_oauth_until", 0):
+            self._oauth_stop()
+            return self._error(i18n("Browser sign-in timed out. Try again."))
         if getattr(self, "_oauth_polling", False):
             return
         self._oauth_polling = True
-        fid = self.oauth_id
+
+        def ask():
+            try:
+                return _request("GET", "/oauth/status?id=%s" % fid, timeout=10)
+            except Exception:  # noqa: BLE001 - the service may be restarting: ask again next tick
+                return {"status": "pending"}
 
         def got(r):
             self._oauth_polling = False
-            if r.get("status") == "pending":
-                return
-            self.oauth_timer.stop()
+            if fid != self.oauth_id or r.get("status") == "pending":
+                return  # an old sign-in, or not approved yet
+            self._oauth_stop()
             if r.get("status") == "done":
-                self._background(lambda: _request("GET", "/health"), lambda h: self._signed(h))
+                self._background(lambda: _request("GET", "/health"), lambda h: self._signed(h, name))
             else:
                 self._error(i18n("Browser sign-in failed: %s") % (r.get("error") or "?"))
-        self._background(lambda: _request("GET", "/oauth/status?id=%s" % fid), got)
+        self._background(ask, got)
 
-    def _signed(self, result):
+    def _signed(self, result, name=None):
         self.providers = (result or {}).get("providers", self.providers)
         self._sync_providers()
         self._show_account()
         self._refresh_models()
         if getattr(self, "services_dialog", None) is not None:
             self.services_dialog.refresh()
-        self._append("<p style='color:#8a8'>%s</p>" % html.escape(
-            "%s: %s" % (self.provider.currentText(), self.account.text())))
+        if name and name != self._key():  # a service other than the selected chat provider
+            info = service_info(name, self.providers.get(name))
+            state = "✓ " + i18n("signed in") if info.get("signed_in") else i18n("not signed in")
+            text = "%s: %s" % (info.get("label") or name, state)
+        else:
+            text = "%s: %s" % (self.provider.currentText(), self.account.text())
+        self._append("<p style='color:#8a8'>%s</p>" % html.escape(text))
 
     # ---------------------------------------------------------------- chat
     def _send(self):

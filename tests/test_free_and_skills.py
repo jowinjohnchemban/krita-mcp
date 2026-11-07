@@ -299,6 +299,62 @@ def test_create_artwork_makes_one_cloud_image_but_four_local(bridge, monkeypatch
     assert seen == [1, 4, 2]
 
 
+def _backends(monkeypatch, *names_ok):
+    """Fake image services in order; (name, True) works, (name, False) rejects the saved key."""
+    from krita_mcp import gen_tools
+    made, used = {}, []
+    for n, ok in names_ok:
+        class Be:
+            name, kind, native_control, mask_format, multiple, sizes, default_side = n, "cloud", False, "gray", 8, None, 512
+            works = ok
+
+            def generate(self, job):
+                used.append(self.name)
+                if not self.works:
+                    raise gen_tools.ProviderError("Google rejected the Gemini API key saved for Krita.")
+                return [PNG], {}
+        made[n] = Be
+    monkeypatch.setattr(gen_tools.gen_images, "candidates", lambda name=None: [c() for c in made.values()])
+    monkeypatch.setattr(gen_tools.gen_images, "pick", lambda name=None: made[name or next(iter(made))]())
+    return used
+
+
+def test_a_rejected_key_falls_through_to_the_next_image_service(bridge, monkeypatch):
+    import asyncio
+    from krita_mcp import gen_tools
+    used = _backends(monkeypatch, ("gemini", False), ("pollinations", True))
+    out = asyncio.run(gen_tools.create_artwork("sunrise over green mountains", approach="generate"))
+    assert used == ["gemini", "pollinations"]
+    assert out[0]["backend"] == "pollinations" and "gemini" in out[0]["note"] and out[0]["skipped"]
+
+
+def test_a_named_image_service_is_never_swapped(bridge, monkeypatch):
+    import asyncio
+    from krita_mcp import gen_tools
+    used = _backends(monkeypatch, ("gemini", False), ("pollinations", True))
+    with pytest.raises(gen_tools.ToolError, match="rejected"):
+        asyncio.run(gen_tools.generate_image("a lake", backend="gemini"))
+    assert used == ["gemini"]
+
+
+def test_auto_artwork_paints_by_hand_when_no_service_accepts_the_account(bridge, monkeypatch):
+    import asyncio
+    from krita_mcp import gen_tools
+    _backends(monkeypatch, ("gemini", False))
+    out = asyncio.run(gen_tools.create_artwork("a photo of sunrise over mountains"))
+    assert out[0]["approach"] == "paint" and "Gemini" in out[0]["why"] and out[0]["layers"]
+    with pytest.raises(gen_tools.ToolError, match="No connected image service"):  # asked to generate: say so
+        asyncio.run(gen_tools.create_artwork("a photo of sunrise", approach="generate"))
+
+
+def test_account_problems_are_told_apart_from_bad_requests():
+    from krita_mcp.providers import images
+    for e in ("HTTP 401 unauthorized", "Google rejected the Gemini API key", "HTTP 402: insufficient credits",
+              "HTTP 429 rate limit"):
+        assert images.unusable(e), e
+    assert not images.unusable("HTTP 400: prompt too long") and not images.unusable("inpaint needs a selection")
+
+
 def test_every_built_in_skill_is_valid_and_names_only_real_tools():
     import re
     from krita_mcp.server import TOOLS

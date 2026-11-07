@@ -168,6 +168,11 @@ def test_key_detection_and_browser_flows(chat, monkeypatch):
         if path.startswith("/oauth/status"):
             state["n"] += 1
             return {"status": "done" if state["n"] > 1 else "pending", "error": None}
+        if path == "/health" and state["n"] > 1:  # approved: the service now holds an OpenRouter key
+            h = real(method, path, body, timeout)
+            h["providers"]["openrouter"] = {"signed_in": True, "needs_key": True, "chat": True,
+                                            "label": "OpenRouter (sign in with browser)"}
+            return h
         return real(method, path, body, timeout)
     monkeypatch.setattr(c, "_request", oauth_request)
     dock.browser_sign_in("openrouter")
@@ -175,6 +180,15 @@ def test_key_detection_and_browser_flows(chat, monkeypatch):
     assert ("POST", "/oauth/start", {"provider": "openrouter"}) in sent
     assert "https://openrouter.ai/auth?x=1" in opened and not dock.oauth_timer.isActive()
     assert "approve Krita" in dock.log.toPlainText()
+    # clicking browser sign-in twice used to leave the first timer running: "signed in" every second, forever
+    state["n"] = 0
+    dock.log.clear()
+    dock.browser_sign_in("openrouter")
+    dock.browser_sign_in("openrouter")
+    pump(app, 4.0)
+    log = dock.log.toPlainText()
+    assert log.count("✓ signed in") == 1 and not dock.oauth_timer.isActive()
+    assert "OpenRouter" in log.splitlines()[-1]  # names the service signed in to, not the selected one
 
 
 def test_key_page_button_without_a_running_service(chat):
