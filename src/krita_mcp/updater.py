@@ -31,6 +31,42 @@ class UpdateError(RuntimeError):
     pass
 
 
+# Runs in its own process after krita-mcp has exited. On Windows every running krita-mcp (AI apps connected
+# through MCP, the AI Chat assistant service) locks its files, and pip would then remove the old version and
+# fail to write the new one - so it waits for them, and leaves the installation untouched if they stay.
+HELPER = r'''
+import subprocess, sys, time
+log, version, cmd = sys.argv[1], sys.argv[2], sys.argv[3:]
+
+
+def running():
+    if sys.platform != "win32":
+        return False
+    out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq krita-mcp.exe", "/NH"],
+                         capture_output=True, text=True).stdout
+    return "krita-mcp.exe" in out.lower()
+
+
+with open(log, "w", encoding="utf-8") as f:
+    f.write("updating krita-mcp to %s\n" % version)
+    f.flush()
+    time.sleep(3)  # let the krita-mcp that started this exit
+    waited = 0
+    while running() and waited < 180:
+        if waited == 0:
+            f.write("waiting for running krita-mcp programs to exit (close AI apps connected to Krita)...\n")
+            f.flush()
+        time.sleep(5)
+        waited += 5
+    if running():
+        f.write("result: skipped - krita-mcp is still running; close the AI apps using it and update again. "
+                "The installed version was left untouched.\n")
+        sys.exit(2)
+    code = subprocess.call(cmd, stdout=f, stderr=subprocess.STDOUT)
+    f.write("\nresult: %s\n" % ("updated" if code == 0 else "failed (%d)" % code))
+'''
+
+
 def api_url():
     return os.environ.get("KRITA_MCP_UPDATE_API") or "https://api.github.com/repos/%s/releases/latest" % REPO
 
@@ -103,12 +139,7 @@ def update(force=False):
     pip = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--upgrade",
            str(wheel) + extra]
     log = _log_path()
-    helper = ("import subprocess, sys, time\n"
-              "time.sleep(3)  # let krita-mcp exit so Windows releases its files\n"
-              "with open(sys.argv[1], 'w', encoding='utf-8') as f:\n"
-              "    f.write('updating krita-mcp to %s\\n' % sys.argv[2]); f.flush()\n"
-              "    code = subprocess.call(sys.argv[3:], stdout=f, stderr=subprocess.STDOUT)\n"
-              "    f.write('\\nresult: %s\\n' % ('updated' if code == 0 else 'failed (%d)' % code))\n")
+    helper = HELPER
     flags = 0
     if os.name == "nt":
         flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)

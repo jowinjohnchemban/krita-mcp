@@ -113,3 +113,20 @@ def test_server_update_refuses_a_tampered_wheel(github, monkeypatch):
     with pytest.raises(updater.UpdateError, match="checksum"):
         updater.update()
     assert json.loads(json.dumps({"ok": True}))
+
+
+def test_update_helper_never_breaks_a_locked_installation(tmp_path, monkeypatch):
+    """While another krita-mcp runs (files locked on Windows) the helper waits, then skips - never half-installs."""
+    import subprocess
+    import sys
+    from krita_mcp import updater
+    log = tmp_path / "update.log"
+    fake_pip = [sys.executable, "-c", "open(r'%s', 'w').write('pip ran')" % (tmp_path / "pip_ran")]
+    script = updater.HELPER.replace('sys.platform != "win32"', "False").replace(
+        'return "krita-mcp.exe" in out.lower()', "return True").replace("time.sleep(", "(lambda s: None)(")
+    code = subprocess.call([sys.executable, "-c", script, str(log), "2099.1.1"] + fake_pip)
+    assert code == 2 and "skipped" in log.read_text() and not (tmp_path / "pip_ran").exists()
+    script = updater.HELPER.replace("time.sleep(", "(lambda s: None)(").replace(
+        'if sys.platform != "win32":', "if True:")
+    code = subprocess.call([sys.executable, "-c", script, str(log), "2099.1.1"] + fake_pip)
+    assert code == 0 and "result: updated" in log.read_text() and (tmp_path / "pip_ran").exists()
