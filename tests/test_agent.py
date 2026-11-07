@@ -723,3 +723,43 @@ def test_auto_does_not_move_on_after_stop(home, monkeypatch):
     _wait(sess, timeout=3)
     time.sleep(1.5)  # the abandoned request fails now
     assert sess.model.name == "a"
+
+
+def test_a_model_that_cannot_see_pictures_gets_text_instead(home, bridge, monkeypatch):
+    """Kilo's free model answered HTTP 400 'supports text input only... contains an image' after a snapshot."""
+    m = Mock()
+    replies = iter([
+        {"choices": [{"message": {"content": "", "tool_calls": [{"id": "c1", "type": "function",
+                                                                  "function": {"name": "canvas_snapshot",
+                                                                               "arguments": "{}"}}]}}]},
+        "refuse",
+        {"choices": [{"message": {"content": "The sky looks warm."}}]},
+    ])
+    seen = []
+
+    def chat(h, b):
+        body = json.loads(b)
+        seen.append(any(isinstance(x.get("content"), list) and any(p.get("type") == "image_url" for p in x["content"])
+                        for x in body["messages"]))
+        r = next(replies)
+        if r == "refuse":
+            return 400, "application/json", json.dumps({"error": {"message": "This API supports text input only. "
+                                                                             "This conversation contains an image."}}).encode()
+        return 200, "application/json", json.dumps(r).encode()
+    try:
+        m.routes[("POST", "/v1/chat/completions")] = chat
+        agent.save_key("ollama", "", base_url=m.url + "/v1")
+        events = _wait(agent.chat(None, "ollama", "textonly", "how does it look?"))
+    finally:
+        m.srv.shutdown()
+    assert events[-1]["text"] == "The sky looks warm."
+    assert seen == [False, True, False]  # the picture was refused once, then replaced by a note
+    assert any("cannot look at pictures" in e.get("text", "") for e in events if e["type"] == "note")
+
+
+def test_auto_tries_a_provider_that_just_failed_last(home, monkeypatch):
+    monkeypatch.setattr(agent, "RECENT_FAILURES", {"pollinations": time.time()})
+    order = agent.auto_order()
+    assert order[-1] == "pollinations" and order[0] == "kilo"
+    monkeypatch.setattr(agent, "RECENT_FAILURES", {"pollinations": time.time() - 3600})  # long ago: back in place
+    assert agent.auto_order()[0] == "pollinations"

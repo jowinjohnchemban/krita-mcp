@@ -129,8 +129,13 @@ AUTO_FIRST = ("anthropic", "openai", "gemini", "openrouter")  # strongest first 
 AUTO_FREE = ("pollinations", "kilo", "ovhcloud", "llm7")  # then the free ones, best-behaved first
 
 
+RECENT_FAILURES = {}  # provider -> when Auto last had to leave it (this service's lifetime)
+RECENT_SECONDS = 1800
+
+
 def auto_order(st=None):
-    """The providers Auto uses, in turn: the ones you signed in to or set up, then the free ones.
+    """The providers Auto uses, in turn: the ones you signed in to or set up, then the free ones; a provider that
+    failed in the last 30 minutes goes last (a new chat should not wait on it again).
     KRITA_MCP_AUTO_ORDER (comma-separated names) sets your own order."""
     st = st or keys.status()
     custom = [n.strip().lower() for n in env("KRITA_MCP_AUTO_ORDER", "").split(",") if n.strip()]
@@ -142,7 +147,9 @@ def auto_order(st=None):
                               st[n].get("setup") == "local", n))
     free_ = [n for n in AUTO_FREE if n in PROVIDERS] + sorted(
         n for n in PROVIDERS if n in st and st[n].get("setup") == "free" and n not in AUTO_FREE)
-    return yours + free_
+    now = time.time()
+    order = yours + free_
+    return sorted(order, key=lambda n: now - RECENT_FAILURES.get(n, 0) < RECENT_SECONDS)  # stable: keeps the rest
 
 
 # ------------------------------------------------------------------ tools
@@ -452,6 +459,11 @@ class OpenAICompat(_Adapter):
         try:
             r = http.post_json(self.url, body, self.headers, timeout=chat_timeout())
         except ProviderError as e:
+            if not self.blind and refuses_pictures(e) and drop_pictures(history):
+                self.blind = True  # from now on it gets text instead of pictures
+                self.note = ("%s cannot look at pictures; it checks the canvas with analyze_image and read_pixels "
+                             "instead." % (self.model or PROVIDERS[self.provider]["label"]))
+                return self.step(history)
             m = re.search(r"can only afford (\d+)", str(e))
             if not m or int(m.group(1)) < 600:
                 if "HTTP 402" in str(e):
@@ -689,6 +701,7 @@ class Auto(_Adapter):
                 used = m.prepare()
             except ProviderError as e:
                 self.failed[name] = _brief(e)
+                RECENT_FAILURES[name] = time.time()
                 trace("model", "auto: %s skipped: %s" % (name, _brief(e)))
                 continue
             self.inner, self.name, self.used, self.fresh = m, name, used, True
@@ -756,6 +769,7 @@ class Auto(_Adapter):
                     raise  # (stopped: an abandoned request must not go on to - and pay - the next provider)
                 old, why = self.name, _brief(e)
                 self.failed[old] = why
+                RECENT_FAILURES[old] = time.time()
                 self._next()
                 history[:] = self.inner.start(self.specs)
                 self.inner.user(history, self.recap("%s - %s" % (self._label(old), why)) + "\n\nContinue the task.")
@@ -789,6 +803,31 @@ class Auto(_Adapter):
 
     def compact(self, history, turn_start):
         self.inner.compact(history, turn_start)
+
+
+PICTURE_REFUSALS = ("text input only", "does not support image", "image input is not supported",
+                    "not support image", "image_url is not supported", "only supports text", "no vision",
+                    "does not support vision", "multimodal is not supported", "contains an image")
+
+
+def refuses_pictures(error):
+    """The model said it cannot take pictures (an HTTP 400 that names images)."""
+    text = str(error).lower()
+    return "http 400" in text and any(w in text for w in PICTURE_REFUSALS)
+
+
+def drop_pictures(history):
+    """Replace every picture in an OpenAI-style conversation with a short note; True if any was there."""
+    dropped = False
+    for msg in history:
+        content = msg.get("content")
+        if isinstance(content, list):
+            for i, part in enumerate(content):
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    content[i] = {"type": "text", "text": "[a picture was here; this model cannot see pictures - use "
+                                                          "analyze_image, read_pixels or find_color]"}
+                    dropped = True
+    return dropped
 
 
 def _brief(error):

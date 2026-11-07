@@ -476,3 +476,22 @@ def test_ai_horde_uses_a_served_model_when_asked_for_one_it_does_not_have(home, 
         m.srv.shutdown()
     posts = [json.loads(c[3])["models"] for c in m.calls if c[0] == "POST"]
     assert posts == [["popular"], ["Deliberate"]]  # an unknown name is ignored; a served one is used
+
+
+def test_ai_horde_makes_at_most_two_variations(bridge, monkeypatch):
+    import asyncio
+    from krita_mcp import gen_tools
+    seen = []
+
+    class Horde:
+        name, kind, native_control, mask_format, multiple, sizes, default_side = "horde", "cloud", False, "gray", 64, None, 576
+
+        def configured(self):
+            return True
+
+        def generate(self, job):
+            seen.append(job.count)
+            return [PNG] * job.count, {}
+    monkeypatch.setattr(gen_tools.gen_images, "pick", lambda name=None: Horde())
+    out = asyncio.run(gen_tools.generate_image("hills", count=4, backend="horde"))
+    assert seen == [2] and "volunteers" in out[0]["note"]

@@ -74,6 +74,9 @@ def _usable_backend(name):
     return bool(b.configured())
 
 
+HORDE_MAX = 2
+
+
 def _free_hint():
     """What to tell the user when no image service works: the free ones they have not turned on."""
     off = [label for cls, label in ((gen_images.PollinationsImages, "Pollinations"), (gen_images.HordeImages, "AI Horde"))
@@ -123,6 +126,10 @@ async def _generate(prompt, mode="auto", negative_prompt=None, count=1, backend=
         await _provider(gen_images.pick)  # nothing configured: the usual "how to connect one" message
     be = await _provider(gen_images.pick, backend)
     count = max(1, min(int(count or 1), gen_images.MAX_COUNT))
+    if be.name == "horde" and count > HORDE_MAX:  # a volunteer queue: each picture can take minutes
+        note = (note + " " if note else "") + "AI Horde is a queue of volunteers' GPUs, so %d variations (not %d)." % (
+            HORDE_MAX, count)
+        count = HORDE_MAX
     guides = [{"layer": c.get("layer"), "invert": c.get("invert", be.native_control and not c.get("preprocess")
                                                        and (c.get("type") or "") in gen_images.LINE_TYPES)}
               for c in controls]
@@ -154,6 +161,8 @@ async def _generate(prompt, mode="auto", negative_prompt=None, count=1, backend=
     sheet = placed.pop("sheet_png", None)
     summary = {"backend": be.name, "mode": mode, "style": style, "generated_at": ctx["size"], "placed": placed,
                "meta": {k: v for k, v in meta.items() if v is not None}}
+    if note:
+        summary["note"] = note
     if len(imgs) > 1:
         summary["next"] = "Compare the numbered sheet, then pick_variation(group, index)."
     return [summary, Image(data=base64.b64decode(sheet), format="png")] if sheet else [summary]
