@@ -2,10 +2,11 @@
 """Stamp a version into every place it lives (pyproject.toml, __version__, the plugin's BRIDGE_VERSION, and
 the tool reference).
 
-    python scripts/bump_version.py 2026.11.7   # or: patch | minor | major
+    python scripts/bump_version.py 2026.11.7.158   # or 2026.11.7, or: patch | minor | major
 
-The release workflow runs this on its own build copy with the date as the version (YYYY.M.D) on every push
-to main; nothing is committed. Run it locally only to build a versioned package yourself.
+The release workflow runs this on its own build copy on every push to main, with the date and the build
+number as the version (YYYY.M.D.BUILD); nothing is committed. Run it locally only to build a versioned
+package yourself.
 """
 import re
 import subprocess
@@ -26,7 +27,7 @@ def current():
 
 
 def next_version(arg, cur):
-    if re.fullmatch(r"\d+\.\d+\.\d+([.-]?(a|b|rc|dev)\d*)?", arg):
+    if re.fullmatch(r"\d+\.\d+\.\d+(\.\d+)?([.-]?(a|b|rc|dev)\d*)?", arg):
         return arg
     major, minor, patch = (int(x) for x in re.match(r"(\d+)\.(\d+)\.(\d+)", cur).groups())
     if arg == "patch":
@@ -51,7 +52,8 @@ def main():
             sys.exit("could not find the version in %s" % rel)
         path.write_text(text, encoding="utf-8", newline="\n")
     subprocess.run([sys.executable, str(ROOT / "scripts" / "gen_tool_docs.py")], check=True)
-    print("%s -> %s (stamped in this copy; releases stamp their own build with the date)." % (cur, new))
+    print("%s -> %s (stamped in this copy; releases stamp their own build with the date and build number)."
+          % (cur, new))
 
 
 if __name__ == "__main__":

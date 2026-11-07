@@ -12,8 +12,10 @@ import re
 from . import gemini, http
 from .http import ProviderError
 
-NOT_CHAT = re.compile(r"(audio|realtime|transcri|tts|speech|search|embed|moderation|instruct|image|dall-e|sora|"
-                      r"whisper|davinci|babbage|computer-use|codex|omni-moderation)", re.I)
+# not chat models. "turbo-instruct" only: open models named "...-Instruct" ARE chat models
+NOT_CHAT = re.compile(r"(audio|realtime|transcri|tts|speech|search|embed|moderation|turbo-instruct|image|dall-e|"
+                      r"sora|whisper|davinci|babbage|computer-use|codex|omni-moderation|guard|bge-|rerank|"
+                      r"stable-diffusion|flux|voxtral|ocr)", re.I)
 SMALL = re.compile(r"(mini|nano|lite|small)", re.I)
 
 

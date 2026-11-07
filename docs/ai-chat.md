@@ -14,8 +14,9 @@ the chat, and its edits can be undone like any other AI edit.
 | Anthropic Claude | An API key from the [Anthropic Console](https://console.anthropic.com/settings/keys) (needs `pip install "krita-mcp[anthropic]"`) |
 | OpenAI / compatible | An OpenAI key, or the URL of any OpenAI-compatible service (a gateway, …) |
 | OpenRouter | **Sign in with browser**, no key to copy. One account reaches Gemini, Claude, GPT and hundreds of other models; leave the model empty to use your OpenRouter default, or enter one such as `anthropic/claude-sonnet-4.6` |
-| Mistral, Groq, DeepSeek, xAI Grok, Together, Fireworks, Cerebras, Hugging Face, NVIDIA, Qwen, Moonshot | An API key (**Get a key in the browser**); see [more providers](ai-backends.md#more-providers-openai-compatible) |
+| Mistral, Groq, DeepSeek, xAI Grok, Together, Fireworks, Cerebras, Hugging Face, NVIDIA, Qwen, Moonshot, SambaNova, Cohere, SiliconFlow, Z.AI, OpenCode Zen, Ollama Cloud, ModelScope, DeepInfra, Vercel AI Gateway, Requesty and more | An API key (**Get a key in the browser**); many have free tiers. See [more providers](ai-backends.md#more-providers-openai-compatible) |
 | Local model | Nothing: point it at [Ollama](https://ollama.com) (`http://127.0.0.1:11434/v1`) or LM Studio (`http://127.0.0.1:1234/v1`) |
+| **Kilo Gateway, OVHcloud, LLM7 (free)** | **Nothing.** Free models with no account; a key is optional. Only models that can use tools and cost nothing are offered without a key |
 | **Pollinations (free)** | **Nothing.** Free models that can use tools, with no account. A free key from [enter.pollinations.ai](https://enter.pollinations.ai/keys) is optional and unlocks more models |
 | **OmniRoute (free gateway)** | Nothing on this computer: run [OmniRoute](https://github.com/diegosouzapw/OmniRoute) (`npm install -g omniroute`, then `omniroute`) and pick it. It routes to 150+ providers, many of them free; its `auto` model chooses one that works |
 
@@ -28,7 +29,8 @@ answers.
 
 ## Free, no sign-in
 
-Two choices work with no account at all:
+These work with no account at all: **Kilo Gateway**, **OVHcloud AI Endpoints** and **LLM7** (pick one in
+the provider box and type), and:
 
 - **Pollinations**: choose it in the provider box and type. Free models are listed live, so you always get
   ones that can use Krita's tools. They are smaller than paid flagship models, so expect simpler results.

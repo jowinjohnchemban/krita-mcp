@@ -71,11 +71,17 @@ SERVICE_INFO = {
               "key_url": "https://github.com/lllyasviel/stable-diffusion-webui-forge"},
     # free: work without a key once turned on; a free key only raises the limits
     "pollinations": {"label": "Pollinations (free, no sign-in)", "key_url": "https://enter.pollinations.ai/keys",
-                     "needs_key": False, "optional_key": True},
+                     "needs_key": False, "optional_key": True, "toggle": True},
     "horde": {"label": "AI Horde (free, crowdsourced)", "key_url": "https://aihorde.net/register",
-              "needs_key": False, "optional_key": True},
+              "needs_key": False, "optional_key": True, "toggle": True},
     "omniroute": {"label": "OmniRoute (free AI gateway, local)", "needs_key": False, "optional_key": True,
                   "has_url": True, "key_url": "https://github.com/diegosouzapw/OmniRoute"},
+    "kilo": {"label": "Kilo Gateway (free, no sign-in)", "needs_key": False, "optional_key": True,
+             "key_url": "https://app.kilo.ai"},
+    "ovhcloud": {"label": "OVHcloud AI Endpoints (free, no sign-in)", "needs_key": False, "optional_key": True,
+                 "key_url": "https://endpoints.ai.cloud.ovh.net"},
+    "llm7": {"label": "LLM7 (free, no sign-in)", "needs_key": False, "optional_key": True,
+             "key_url": "https://token.llm7.io"},
 }
 
 
@@ -173,7 +179,9 @@ class SignInDialog(QDialog):
         self.base.setPlaceholderText(placeholders.get(service, ""))
         if info.get("optional_key"):
             free = QLabel(i18n("Free: works without a key - click OK to turn it on. A free key (optional) "
-                               "raises the limits."))
+                               "raises the limits.") if info.get("toggle") else
+                          i18n("Free: works without a key. A key (optional) raises the limits or unlocks more "
+                               "models."))
             free.setWordWrap(True)
             form.addRow(free)
             self.key.setPlaceholderText(i18n("optional"))
@@ -272,8 +280,10 @@ class ServicesDialog(QDialog):
                 mark, html.escape(info.get("label", name)), html.escape(info.get("use", ""))))
             label.setTextFormat(_RICH)
             label.setWordWrap(True)
-            if info.get("optional_key"):
+            if info.get("toggle"):  # free image services: off until the user turns them on
                 btn = QPushButton(i18n("Turn off") if info.get("signed_in") else i18n("Turn on"))
+            elif info.get("optional_key"):  # free without a key; a key only raises the limits
+                btn = QPushButton(i18n("Remove key") if info.get("signed_in") else i18n("Add key"))
             else:
                 signed_with_key = info.get("signed_in") and info.get("needs_key")
                 btn = QPushButton(i18n("Sign out") if signed_with_key else i18n("Sign in"))
@@ -531,8 +541,8 @@ class ChatDocker(DockWidget):
     def _show_account(self):
         info = service_info(self._key(), self.providers.get(self._key()))
         signed = info.get("signed_in")
-        if info.get("optional_key") and self._key() == "pollinations":
-            self.account.setText(i18n("free") + (" ✓ " + i18n("key") if signed else ""))
+        if info.get("optional_key"):
+            self.account.setText(i18n("free") + (" ✓ " + i18n("key") if signed and not info.get("toggle") else ""))
         else:
             self.account.setText("✓ " + i18n("signed in") if signed else i18n("not signed in"))
         removable = signed and (info.get("needs_key") or info.get("optional_key"))

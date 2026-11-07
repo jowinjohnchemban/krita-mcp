@@ -28,8 +28,9 @@ AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token�
   16-bit colour spaces.
 - **Chat with an AI inside Krita.** The *AI Chat* docker lets you sign in to Gemini, Claude, OpenAI,
   OpenRouter (with your browser, no key to copy), Mistral, Groq, DeepSeek, xAI Grok, Together, Fireworks,
-  Cerebras, Hugging Face, NVIDIA, Qwen, Moonshot or a local model (Ollama, LM Studio), or use it **free
-  with no sign-in** (Pollinations, or the OmniRoute gateway), type what you want and watch it work in your
+  Cerebras, Hugging Face, NVIDIA, Qwen, Moonshot, SambaNova, Cohere, Z.AI, DeepInfra, Vercel AI Gateway and
+  about 20 more, or a local model (Ollama, LM Studio), or use it **free with no sign-in** (Pollinations,
+  Kilo Gateway, OVHcloud, LLM7, or the OmniRoute gateway), type what you want and watch it work in your
   document. It keeps spending down (only the newest pictures are resent, Claude's prompt cache is used,
   repeated failures stop) and shows the tokens each answer used. **Skills** (39 built in - photoreal images,
   retouching, pixel art, logos, comics, animation, saving credits, ... - plus any you install) are found and

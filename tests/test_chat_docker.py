@@ -266,12 +266,13 @@ def test_free_services_turn_on_without_a_key(chat):
     app, c, dock, sent = chat
     pump(app, 0.3)
     dock.providers = dict(dock.providers, pollinations={
-        "signed_in": False, "needs_key": False, "optional_key": True, "chat": True,
+        "signed_in": False, "needs_key": False, "optional_key": True, "toggle": True, "chat": True,
         "label": "Pollinations (free, no sign-in)", "key_url": "https://enter.pollinations.ai/keys"},
-        horde={"signed_in": True, "needs_key": False, "optional_key": True, "label": "AI Horde"})
+        horde={"signed_in": True, "needs_key": False, "optional_key": True, "toggle": True, "label": "AI Horde"},
+        kilo={"signed_in": False, "needs_key": False, "optional_key": True, "chat": True, "label": "Kilo Gateway"})
     dlg = c.ServicesDialog(dock)
     buttons = [b.text() for b in dlg.rows.findChildren(qtw.QPushButton)]
-    assert "Turn on" in buttons and "Turn off" in buttons
+    assert "Turn on" in buttons and "Turn off" in buttons and "Add key" in buttons  # free chat needs no switch
     sign = c.SignInDialog(dock, "pollinations", c.service_info("pollinations", dock.providers["pollinations"]))
     labels = " ".join(w.text() for w in sign.findChildren(qtw.QLabel))
     assert "works without a key" in labels and "API key" in labels

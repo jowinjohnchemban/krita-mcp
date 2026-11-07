@@ -204,6 +204,28 @@ the variable. Models are listed live from each service; **KRITA_MCP_<NAME>_BASE_
 | Moonshot Kimi | `KRITA_MCP_MOONSHOT_API_KEY` | chat |
 | OmniRoute (free gateway on your computer) | none needed; `KRITA_MCP_OMNIROUTE_API_KEY` if you set one | chat through 150+ providers, many free; `auto` first |
 | Pollinations (free) | none needed; `KRITA_MCP_POLLINATIONS_API_KEY` optional | chat with free models that use tools |
+| Kilo Gateway (free) | none needed; `KRITA_MCP_KILO_API_KEY` optional | free models with no account (`kilo-auto/free` first); a key unlocks all |
+| OVHcloud AI Endpoints (free) | none needed; `KRITA_MCP_OVHCLOUD_API_KEY` optional | open models (gpt-oss, Qwen, Llama), rate-limited |
+| LLM7 (free) | none needed; `KRITA_MCP_LLM7_API_KEY` optional | free chat (`default` routes to a free model) |
+| SambaNova | `KRITA_MCP_SAMBANOVA_API_KEY` | very fast open models, free tier |
+| Cohere | `KRITA_MCP_COHERE_API_KEY` | Command models, free trial key |
+| SiliconFlow | `KRITA_MCP_SILICONFLOW_API_KEY` | DeepSeek, Qwen, GLM; some free models |
+| Z.AI GLM | `KRITA_MCP_ZAI_API_KEY` | GLM models, free Flash models |
+| OpenCode Zen | `KRITA_MCP_OPENCODE_API_KEY` | curated models, some free |
+| Ollama Cloud | `KRITA_MCP_OLLAMACLOUD_API_KEY` | large open models, free tier |
+| ModelScope | `KRITA_MCP_MODELSCOPE_API_KEY` | open models, free daily quota |
+| Tencent Hunyuan | `KRITA_MCP_TENCENT_API_KEY` | Hunyuan, free lite model |
+| Baidu Qianfan (ERNIE) | `KRITA_MCP_QIANFAN_API_KEY` | ERNIE, free speed models |
+| Scaleway, Hyperbolic, Nebius, Nscale | `KRITA_MCP_SCALEWAY_API_KEY`, `..._HYPERBOLIC_...`, `..._NEBIUS_...`, `..._NSCALE_...` | open models, starter credit |
+| DeepInfra, Novita, Featherless, Inference.net, Lambda, Chutes | `KRITA_MCP_DEEPINFRA_API_KEY`, `..._NOVITA_...`, `..._FEATHERLESS_...`, `..._INFERENCENET_...`, `..._LAMBDA_...`, `..._CHUTES_...` | open models at low prices |
+| Requesty, Vercel AI Gateway | `KRITA_MCP_REQUESTY_API_KEY`, `KRITA_MCP_VERCEL_API_KEY` | one key for hundreds of models (Vercel: monthly free credit) |
+| Venice, MiniMax, StepFun, Meta Llama API | `KRITA_MCP_VENICE_API_KEY`, `..._MINIMAX_...`, `..._STEPFUN_...`, `..._LLAMA_...` | their own models |
+
+These come from [OmniRoute](https://github.com/diegosouzapw/OmniRoute)'s provider registry: the services that
+speak the OpenAI API directly with an ordinary key, or with none. Services that only work through a
+browser cookie, a reverse-engineered web app or a third-party CLI are left out (OmniRoute itself marks
+many of them as against the provider's terms). To reach the rest of OmniRoute's 270+ providers, run
+OmniRoute and choose it in Krita.
 
 xAI and Together image generation is text-to-image; use another backend to edit or inpaint.
 

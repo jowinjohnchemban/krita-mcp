@@ -330,3 +330,34 @@ def test_skills_are_suggested_for_typical_requests():
     for text, want in cases.items():
         got = [s["name"] for s in skills.suggest(text)]
         assert got and got[0] == want, (text, got)
+
+
+def test_keyless_gateways_chat_without_any_key(home, bridge, monkeypatch):
+    m = Mock()
+    try:
+        m.json("GET", "/kilo/models", {"data": [{"id": "anthropic/claude-x", "created": 9},
+                                                {"id": "kilo-auto/balanced", "created": 8},
+                                                {"id": "nvidia/nemotron:free", "created": 7},
+                                                {"id": "kilo-auto/free", "created": 1}]})
+        m.json("POST", "/kilo/chat/completions", {"choices": [{"message": {"content": "free answer"}}]})
+        monkeypatch.setenv("KRITA_MCP_KILO_BASE_URL", m.url + "/kilo")
+        assert agent.available_models("kilo") == ["kilo-auto/free", "nvidia/nemotron:free"]  # only free ones
+        events = _wait(agent.chat(None, "kilo", None, "hi"))
+        keys.save("kilo", key="kilo-key")
+        assert agent.available_models("kilo")[:2] == ["kilo-auto/balanced", "kilo-auto/free"]
+    finally:
+        m.srv.shutdown()
+    post = [c for c in m.calls if c[0] == "POST"][0]
+    assert json.loads(post[3])["model"] == "kilo-auto/free" and "authorization" not in post[2]
+    assert events[-1]["text"] == "free answer"
+    st = keys.status()
+    assert st["kilo"]["optional_key"] and not st["kilo"]["toggle"] and st["pollinations"]["toggle"]
+    assert {"kilo", "ovhcloud", "llm7", "sambanova", "zai", "deepinfra", "vercel"} <= set(agent.PROVIDERS)
+
+
+def test_open_instruct_models_count_as_chat_models():
+    from krita_mcp.providers import catalog
+    ids = ["Meta-Llama-3_3-70B-Instruct", "gpt-3.5-turbo-instruct", "Qwen3Guard-Gen-8B", "bge-m3",
+           "stable-diffusion-xl-base-v10", "whisper-large-v3", "gpt-oss-120b"]
+    kept = [i for i in ids if not catalog.NOT_CHAT.search(i)]
+    assert kept == ["Meta-Llama-3_3-70B-Instruct", "gpt-oss-120b"]

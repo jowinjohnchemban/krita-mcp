@@ -2,8 +2,9 @@
 # File: .github/workflows/release.yml
 # Description: Publish krita-mcp (Krita plugin zip + MCP server wheel/sdist) on every push to main
 #
-# Modelled on GeoLite.mmdb's publisher: one job, the date is the version (YYYY.MM.DD), a release made the same
-# day is replaced, only the latest releases are kept, and nothing is ever committed to the repository.
+# One job: the version is the date plus the build number
+# (YYYY.MM.DD.<run number>), so several releases a day each get their own version; only the latest releases
+# are kept, and nothing is ever committed to the repository.
 #
 
 name: Release
@@ -34,10 +35,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Version from the date
+      - name: Version from the date and the build number
+        env:
+          BUILD: ${{ github.run_number }}  # grows with every build, so later builds always compare as newer
         run: |
-          echo "TAG_NAME=$(date -u +'%Y.%m.%d')" >> "$GITHUB_ENV"   # tag / release name, like GeoLite
-          echo "VERSION=$(date -u +'%Y.%-m.%-d')" >> "$GITHUB_ENV"   # the same date as a Python version
+          echo "TAG_NAME=$(date -u +'%Y.%m.%d').${BUILD}" >> "$GITHUB_ENV"   # tag / release name
+          echo "VERSION=$(date -u +'%Y.%-m.%-d').${BUILD}" >> "$GITHUB_ENV"  # the same as a Python version
+          echo "BUILD=${BUILD}" >> "$GITHUB_ENV"
+          echo "COMMIT=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
 
       - name: Install
         run: |
@@ -58,7 +63,7 @@ jobs:
           python -m build --outdir dist
           ls -lah dist
           {
-            echo "## 📦 krita-mcp $TAG_NAME"
+            echo "## 📦 krita-mcp $VERSION (build $BUILD, commit $COMMIT)"
             echo
             ls -lh dist | awk 'NR>1 {print "- **" $9 "**: " $5}'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -68,7 +73,7 @@ jobs:
           name: dist
           path: dist/*
 
-      - name: Delete existing release/tag if exists
+      - name: Delete existing release/tag if exists  # only when this same build is re-run
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -80,10 +85,12 @@ jobs:
         with:
           tag_name: ${{ env.TAG_NAME }}
           target_commitish: ${{ github.sha }}
-          name: krita-mcp ${{ env.TAG_NAME }}
+          name: krita-mcp ${{ env.VERSION }} (build ${{ env.BUILD }}, ${{ env.COMMIT }})
           make_latest: true
           generate_release_notes: true
           body: |
+            Build ${{ env.BUILD }} from commit [`${{ env.COMMIT }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}).
+
             ## Install
 
             **Krita plugin**: download `krita-mcp-bridge-${{ env.VERSION }}.zip`, then in Krita choose *Tools > Scripts >

@@ -51,6 +51,9 @@ def test_versions_compare_dates_and_semver():
     newer = plugin_updater.is_newer
     assert newer("2026.11.7", "1.0.4") and newer("2026.11.10", "2026.11.9") and newer("v1.0.10", "1.0.9")
     assert not newer("2026.11.07", "2026.11.7") and not newer("1.0.4", "2026.11.7")
+    # several releases a day: date + build number
+    assert newer("2026.11.7.158", "2026.11.7") and newer("2026.11.7.158", "2026.11.7.99")
+    assert newer("2026.11.8.159", "2026.11.7.158") and not newer("2026.11.07.158", "2026.11.7.158")
 
 
 def test_latest_release_and_verified_download(github):

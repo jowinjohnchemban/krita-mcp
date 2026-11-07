@@ -333,7 +333,11 @@ class OpenAICompat(_Adapter):
             return
         self.base = base_url_for(provider).rstrip("/")
         self.url = self.base + "/chat/completions"
-        self.key = key_for(provider) or ("local" if http.is_loopback_url(self.base) else None)
+        self.key = key_for(provider)
+        if not self.key and provider in compat.KEYLESS:  # free, anonymous
+            self.headers = {}
+            return
+        self.key = self.key or ("local" if http.is_loopback_url(self.base) else None)
         if not self.key:
             raise ProviderError("Sign in to %s first (Services... > Sign in)" % PROVIDERS[provider]["label"])
         self.headers = {"Authorization": "Bearer " + self.key}
