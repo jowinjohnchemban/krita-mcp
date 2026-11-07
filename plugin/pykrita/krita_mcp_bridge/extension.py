@@ -20,6 +20,7 @@ SETTINGS = "krita_mcp"
 # panel pops up until the user presses Start in Settings > Dockers > AI Bridge (MCP).
 AUTOSTART_DEFAULT = True
 INTRODUCE_PANEL = True
+UPDATER_ENABLED = True  # over-the-air updates from GitHub releases (off in a copy bundled with Krita)
 
 INSTANCE = None  # the running extension, for the docker
 
@@ -67,6 +68,11 @@ class KritaMcpBridge(Extension):
         autostart = env != "0" if env is not None else setting("autostart", default) == "true"
         if autostart:
             self.start()
+        try:  # look for updates once Krita is up (never delays start-up)
+            from . import autoupdate
+            QTimer.singleShot(20000, autoupdate.startup)
+        except Exception:  # noqa: BLE001 - updates are optional
+            _log("updater unavailable:\n" + traceback.format_exc())
 
     def createActions(self, window):
         toggle = window.createAction("krita_mcp_toggle", i18n("Krita MCP Bridge: start / stop"), "tools/scripts")

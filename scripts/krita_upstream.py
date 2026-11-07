@@ -71,7 +71,9 @@ def main():
             if f.name == "extension.py":  # bundled copy: opt-in, quiet
                 text, n = re.subn(r"^AUTOSTART_DEFAULT = True$", "AUTOSTART_DEFAULT = False", text, flags=re.M)
                 text, m = re.subn(r"^INTRODUCE_PANEL = True$", "INTRODUCE_PANEL = False", text, flags=re.M)
-                if not (n and m):
+                # Krita ships updates of a bundled copy; it must not replace itself from GitHub
+                text, u = re.subn(r"^UPDATER_ENABLED = True", "UPDATER_ENABLED = False", text, flags=re.M)
+                if not (n and m and u):
                     sys.exit("extension.py no longer has the AUTOSTART_DEFAULT / INTRODUCE_PANEL switches")
             (dest / f.name).write_text(spdx(text, holder, year), encoding="utf-8", newline="\n")
         elif f.name == "Manual.html":

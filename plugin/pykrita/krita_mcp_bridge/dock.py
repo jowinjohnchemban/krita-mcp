@@ -172,6 +172,33 @@ class McpDocker(DockWidget):
         v.addLayout(row)
         lay.addWidget(box)
 
+        # --- updates (over the air, from GitHub releases)
+        from . import autoupdate
+        self.update_status = None
+        if autoupdate.enabled():
+            box = QGroupBox(i18n("Updates"))
+            v = QVBoxLayout(box)
+            self.update_mode = QComboBox()
+            for key, label in autoupdate.MODES:
+                self.update_mode.addItem(i18n(label), key)
+            self.update_mode.setCurrentIndex([k for k, _ in autoupdate.MODES].index(autoupdate.mode()))
+            self.update_mode.currentIndexChanged.connect(
+                lambda _i: extension.set_setting("update_mode", self.update_mode.currentData()))
+            self.update_status = QLabel(i18n("Version %s") % handlers.BRIDGE_VERSION)
+            self.update_status.setWordWrap(True)
+            row = QHBoxLayout()
+            check = QPushButton(i18n("Check now"))
+            check.clicked.connect(lambda: autoupdate.check())
+            self.update_btn = QPushButton(i18n("Update now"))
+            self.update_btn.clicked.connect(lambda: autoupdate.install())
+            self.update_btn.setVisible(False)
+            row.addWidget(check)
+            row.addWidget(self.update_btn)
+            v.addWidget(self.update_mode)
+            v.addWidget(self.update_status)
+            v.addLayout(row)
+            lay.addWidget(box)
+
         # --- activity
         box = QGroupBox(i18n("Activity"))
         v = QVBoxLayout(box)
@@ -216,7 +243,17 @@ class McpDocker(DockWidget):
         self.access.setCurrentIndex(idx)
         self._update_snippet()
 
+    def _refresh_updates(self):
+        if self.update_status is None:
+            return
+        from . import autoupdate
+        st = autoupdate.STATE
+        if st["status"] != "idle":
+            self.update_status.setText(i18n(st["message"]) if st["message"] else "")
+        self.update_btn.setVisible(st["status"] == "available")
+
     def refresh(self):
+        self._refresh_updates()
         ext = self._ext()
         running = bool(ext and ext.running)
         if running:

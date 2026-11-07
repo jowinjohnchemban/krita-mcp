@@ -64,6 +64,10 @@ AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token�
 Built-in **prompts** (`create`, `generative_inpaint`, `concept_variations`, `retouch_photo`, `product_shot`,
 `paint_scene`, `animate`) appear as slash commands in clients that support MCP prompts.
 
+The plugin **updates itself** from this project's GitHub releases: it tells you when a new version is out
+(or installs it automatically, if you choose), checks every download against GitHub's published checksum,
+and updates the `krita-mcp` server too.
+
 An **AI Bridge (MCP)** panel inside Krita shows the status and a live activity log. From it you can
 make the AI read-only or pause it, undo AI edits, set the workspace and token, and copy a ready-made
 config for your AI client.
@@ -88,7 +92,8 @@ Details: [installation](docs/installation.md) · [clients](docs/clients.md) · [
 ## Command-line flags
 
 ```
-krita-mcp [--transport {stdio,http}] [--host HOST] [--port PORT] [--agent [--agent-port N]] [--version]
+krita-mcp [--transport {stdio,http}] [--host HOST] [--port PORT] [--agent [--agent-port N]]
+          [--check-update | --update] [--version]
 ```
 
 | Flag | Default | Meaning |
@@ -98,6 +103,8 @@ krita-mcp [--transport {stdio,http}] [--host HOST] [--port PORT] [--agent [--age
 | `--port` | `8765` | HTTP port (the endpoint is `http://HOST:PORT/mcp`). |
 | `--agent` | | Run the in-Krita assistant service for the *AI Chat* docker instead of an MCP server. The docker starts it by itself. |
 | `--agent-port` | `5680` | Port of that service (loopback only, bridge-token auth). Also `KRITA_MCP_AGENT_PORT`. |
+| `--check-update` | | Ask GitHub whether a newer release exists (prints JSON). |
+| `--update` | | Download, verify and install the newest release of the server. |
 | `--version` | | Print the version and exit. |
 
 Environment variables:

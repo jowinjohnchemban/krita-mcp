@@ -778,8 +778,15 @@ def main(argv=None):
                     help="run the in-Krita assistant service for the AI Chat docker instead of an MCP server")
     ap.add_argument("--agent-port", type=int, default=None,
                     help="assistant service port (default 5680 or KRITA_MCP_AGENT_PORT)")
+    ap.add_argument("--check-update", action="store_true", help="check GitHub for a newer release (JSON)")
+    ap.add_argument("--update", action="store_true",
+                    help="download, verify and install the newest release of this server from GitHub")
     ap.add_argument("--version", action="version", version="krita-mcp " + __version__)
     args = ap.parse_args(argv)
+
+    if args.check_update or args.update:
+        from . import updater
+        sys.exit(updater.main("check" if args.check_update else "update"))
 
     if args.agent:
         from . import agent

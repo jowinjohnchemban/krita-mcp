@@ -40,6 +40,31 @@ This shows how many AI edits can be undone or redone in the active document, and
 ones. **Undo AI edit** and **Redo** step through them, exactly like the agent's own `undo` and `redo`
 tools. See [Undo](undo-and-safety.md#undo).
 
+## Updates
+
+The plugin updates itself over the air from this project's GitHub releases.
+
+| Setting | What happens |
+|---|---|
+| **Tell me when an update is available** (default) | Shortly after Krita starts (at most every 6 hours) the panel checks GitHub. A newer release shows a message on the canvas and an **Update now** button here. |
+| **Install updates automatically** | A newer release is downloaded and installed without asking; a message on the canvas says so. |
+| **Never check** | No requests to GitHub. |
+
+**Check now** checks at any time. An update:
+
+1. downloads the release's plugin zip from GitHub (only from GitHub's own addresses, over HTTPS);
+2. checks it against the SHA-256 checksum GitHub publishes for it, and refuses files with unexpected or unsafe
+   paths;
+3. swaps the plugin folder in one step (the old one comes back if anything fails); the new version is
+   used after Krita restarts;
+4. also updates the `krita-mcp` server (`krita-mcp --update`): it stops the assistant service, downloads and
+   checks the server package, and upgrades it in the background once `krita-mcp` has exited (on Windows,
+   files of a running program are locked). Progress is written to `~/.krita-mcp/update.log`.
+
+From a terminal: `krita-mcp --check-update` and `krita-mcp --update`.
+
+A copy of the plugin bundled with Krita itself has no updater: it is updated with Krita.
+
 ## Activity
 
 A live log of every request: time, ✓/✗, command, duration and any error. This includes requests

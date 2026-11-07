@@ -21,7 +21,8 @@ up to the Krita maintainers. This page covers how to propose it and what they ar
      `kritapykrita_krita_mcp_bridge.desktop` and `Manual.html`
    - one new line in `plugins/python/CMakeLists.txt`
 
-   In this copy the bridge is **off by default**. Nothing listens and no panel opens until the user
+   In this copy the over-the-air updater is removed (Krita ships the updates) and the bridge is **off by
+   default**. Nothing listens and no panel opens until the user
    presses *Start* in *Settings ▸ Dockers ▸ AI Bridge (MCP)*.
 4. Build Krita from the branch and check that the plugin shows up in the Python Plugin Manager, that the
    docker opens, and that `python scripts/smoke_krita.py` passes against it. (The bundled copy needs
