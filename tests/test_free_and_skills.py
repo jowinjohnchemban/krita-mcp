@@ -474,8 +474,28 @@ def test_ai_horde_uses_a_served_model_when_asked_for_one_it_does_not_have(home, 
         b.generate(images.ImageJob(prompt="hills", width=576, height=256, model="Deliberate"))
     finally:
         m.srv.shutdown()
-    posts = [json.loads(c[3])["models"] for c in m.calls if c[0] == "POST"]
-    assert posts == [["popular"], ["Deliberate"]]  # an unknown name is ignored; a served one is used
+    posts = [json.loads(c[3]) for c in m.calls if c[0] == "POST"]
+    assert [x["models"] for x in posts] == [["popular"], ["Deliberate"]]  # unknown name ignored; served one used
+    assert "seed_variation" not in posts[0]["params"]  # one picture: one seed
+
+
+def test_ai_horde_variations_get_different_seeds(home, monkeypatch):
+    """Two variations with one seed came out identical in a live run: each must get the next seed."""
+    m = Mock()
+    try:
+        m.json("GET", "/horde/status/models", [{"name": "popular", "count": 9}])
+        m.json("POST", "/horde/generate/async", {"id": "j3"})
+        m.json("GET", "/horde/generate/check/j3", {"done": True})
+        m.json("GET", "/horde/generate/status/j3", {"generations": [{"img": B64, "seed": "42"},
+                                                                    {"img": B64, "seed": "43"}]})
+        monkeypatch.setenv("KRITA_MCP_HORDE_URL", m.url + "/horde")
+        monkeypatch.setenv("KRITA_MCP_HORDE_POLL", "0")
+        monkeypatch.setenv("KRITA_MCP_FREE_SERVICES", "horde")
+        images.get("horde").generate(images.ImageJob(prompt="hills", width=576, height=256, count=2, seed=42))
+    finally:
+        m.srv.shutdown()
+    params = [json.loads(c[3]) for c in m.calls if c[0] == "POST"][0]["params"]
+    assert params["seed"] == "42" and params["n"] == 2 and params["seed_variation"] == 1
 
 
 def test_ai_horde_makes_at_most_two_variations(bridge, monkeypatch):

@@ -184,6 +184,8 @@ class HordeImages:
                   "cfg_scale": float(job.cfg or 7), "seed": str(job.seed_or_random())}
         if job.sampler:
             params["sampler_name"] = job.sampler
+        if job.count > 1:  # each picture gets the next seed; with one seed for all, the variations were identical
+            params["seed_variation"] = 1
         body = {"prompt": job.prompt + (" ### " + job.negative if job.negative else ""), "params": params,
                 "models": [model], "r2": True, "nsfw": False, "censor_nsfw": True}
         if job.mode == "img2img" and job.image:
