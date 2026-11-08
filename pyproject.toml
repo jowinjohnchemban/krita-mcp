@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,7 +7,9 @@ name = "kritapilot"
 version = "1.0.0"
 description = "Krita MCP server and AI assistant: AI agents (Claude, ChatGPT, Gemini, Cursor, ...) and an AI Chat inside Krita paint, edit and generate art, photos, animation and video, with ComfyUI, OpenAI, Gemini, free models and more"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "jowinjohnchemban" }]
 requires-python = ">=3.10"
 dependencies = ["mcp>=1.9", "uvicorn>=0.30"]
 keywords = ["krita", "krita-mcp", "krita-mcp-server", "krita-plugin", "krita-ai", "mcp", "mcp-server", "model-context-protocol", "ai", "ai-agents", "art", "painting",
@@ -17,7 +19,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "Environment :: Plugins",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -31,6 +33,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/jowinjohnchemban/kritapilot"
+Repository = "https://github.com/jowinjohnchemban/kritapilot"
 Documentation = "https://github.com/jowinjohnchemban/kritapilot/tree/main/docs"
 Issues = "https://github.com/jowinjohnchemban/kritapilot/issues"
 Releases = "https://github.com/jowinjohnchemban/kritapilot/releases"

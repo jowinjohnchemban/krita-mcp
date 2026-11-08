@@ -3,10 +3,9 @@
 [![CI](https://github.com/jowinjohnchemban/kritapilot/actions/workflows/ci.yml/badge.svg)](https://github.com/jowinjohnchemban/kritapilot/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/jowinjohnchemban/kritapilot?sort=semver)](https://github.com/jowinjohnchemban/kritapilot/releases/latest)
 [![PyPI](https://img.shields.io/pypi/v/kritapilot?logo=pypi&logoColor=white)](https://pypi.org/p/kritapilot)
-[![Downloads](https://img.shields.io/github/downloads/jowinjohnchemban/kritapilot/total)](https://github.com/jowinjohnchemban/kritapilot/releases)
 [![Tested on Krita 5.3.4](https://img.shields.io/badge/tested%20on-Krita%205.3.4-3daee9?logo=krita&logoColor=white)](#status)
-[![Python](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjowinjohnchemban%2Fkritapilot%2Fmain%2Fpyproject.toml&query=%24.project%5B'requires-python'%5D&label=python&logo=python&logoColor=white&color=3776ab)](https://github.com/jowinjohnchemban/kritapilot/blob/main/pyproject.toml)
-[![MCP SDK](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjowinjohnchemban%2Fkritapilot%2Fmain%2Fpyproject.toml&query=%24.project.dependencies%5B0%5D&label=MCP%20SDK&color=6b4fbb)](https://modelcontextprotocol.io)
+[![Python](https://img.shields.io/pypi/pyversions/kritapilot?logo=python&logoColor=white)](https://pypi.org/p/kritapilot)
+[![MCP server](https://img.shields.io/badge/MCP-server-6b4fbb)](https://modelcontextprotocol.io)
 [![License](https://img.shields.io/github/license/jowinjohnchemban/kritapilot)](https://github.com/jowinjohnchemban/kritapilot/tree/main/LICENSE)
 
 **Let AI create and edit art, photos, animation and video inside a running [Krita](https://krita.org).**
