@@ -11,7 +11,6 @@
 **Let AI create and edit art, photos, animation and video inside a running [Krita](https://krita.org).**
 KritaPilot is a **Krita MCP server** for any MCP client - Claude, ChatGPT, Gemini, Cursor, VS Code Copilot,
 Codex and others - and an **AI Chat inside Krita** that works with 40+ AI providers, including free ones.
-(Formerly *krita-mcp*.)
 
 ```
 AI client ──MCP (stdio or HTTP)──▶ KritaPilot ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
