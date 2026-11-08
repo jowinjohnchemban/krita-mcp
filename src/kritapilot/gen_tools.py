@@ -100,7 +100,7 @@ async def _generate(prompt, mode="auto", negative_prompt=None, count=1, backend=
         # the AI named a service the user has not set up (models invent these): choose automatically instead
         note = "%s is not set up, so the image service was chosen automatically." % backend
         backend, model = None, None  # a model named for that service would not exist on the one chosen
-    if backend is None and not gen_images.env("KRITA_MCP_IMAGE_BACKEND"):
+    if backend is None and not gen_images.env("KRITAPILOT_IMAGE_BACKEND"):
         # no service named: when one refuses the account (bad key, no credit), go on to the next connected one
         tried = []
         for be in await _provider(lambda: list(gen_images.candidates())):
@@ -200,7 +200,7 @@ async def generate_image(prompt: str, mode: str = "auto", negative_prompt: Optio
     The region is the selection's bounds + padding (or x/y/width/height, or region='canvas'); results are
     cut to the selection, so nothing outside it changes. count 1-8 = variations in a group plus a numbered
     comparison sheet (choose with pick_variation). backend: comfyui, a1111, openai, gemini, stability,
-    replicate, fal (default: KRITA_MCP_IMAGE_BACKEND or the first available - see ai_backends).
+    replicate, fal (default: KRITAPILOT_IMAGE_BACKEND or the first available - see ai_backends).
     model = checkpoint / model id (Replicate 'owner/name', fal 'fal-ai/...'). size = longest side to
     generate at (default 1024). workflow = a ComfyUI API-format graph saved as <workspace>/workflows/NAME.json
     using {{prompt}} {{negative}} {{seed}} {{image}} {{mask}} {{width}} {{height}} {{strength}} placeholders

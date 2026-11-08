@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 # Before anything is imported or collected: modules that write logs at import time (the plugin's) must land in
-# a throw-away folder, never in the user's real ~/.krita-mcp. Each test then gets its own (isolated_keys).
-os.environ["KRITA_MCP_HOME"] = tempfile.mkdtemp(prefix="krita-mcp-tests-")
+# a throw-away folder, never in the user's real ~/.kritapilot. Each test then gets its own (isolated_keys).
+os.environ["KRITAPILOT_HOME"] = tempfile.mkdtemp(prefix="kritapilot-tests-")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -18,19 +18,19 @@ from test_providers import B64  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def isolated_keys(monkeypatch, tmp_path_factory):
-    """Never read the user's real ~/.krita-mcp (saved API keys!) from tests - and never call real services."""
-    monkeypatch.setenv("KRITA_MCP_HOME", str(tmp_path_factory.mktemp("krita-mcp-home")))
-    for name in ("KRITA_MCP_USE_ENV_KEYS", "KRITA_MCP_GEMINI_API_KEY", "KRITA_MCP_OPENAI_API_KEY",
-                 "KRITA_MCP_ANTHROPIC_API_KEY", "KRITA_MCP_OPENROUTER_API_KEY", "KRITA_MCP_STABILITY_API_KEY",
-                 "KRITA_MCP_REPLICATE_API_TOKEN", "KRITA_MCP_FAL_KEY", "KRITA_MCP_HEYGEN_API_KEY",
-                 "KRITA_MCP_IMAGE_BACKEND", "KRITA_MCP_VIDEO_BACKEND", "KRITA_MCP_VISION_PROVIDER",
-                 "KRITA_MCP_POLLINATIONS_API_KEY", "KRITA_MCP_HORDE_API_KEY", "KRITA_MCP_OMNIROUTE_API_KEY",
-                 "KRITA_MCP_FREE_SERVICES", "KRITA_MCP_CHAT_KEEP_IMAGES", "KRITA_MCP_CHAT_IMAGE_SIZE",
-                 "KRITA_MCP_CHAT_MAX_STEPS"):
+    """Never read the user's real ~/.kritapilot (saved API keys!) from tests - and never call real services."""
+    monkeypatch.setenv("KRITAPILOT_HOME", str(tmp_path_factory.mktemp("kritapilot-home")))
+    for name in ("KRITAPILOT_USE_ENV_KEYS", "KRITAPILOT_GEMINI_API_KEY", "KRITAPILOT_OPENAI_API_KEY",
+                 "KRITAPILOT_ANTHROPIC_API_KEY", "KRITAPILOT_OPENROUTER_API_KEY", "KRITAPILOT_STABILITY_API_KEY",
+                 "KRITAPILOT_REPLICATE_API_TOKEN", "KRITAPILOT_FAL_KEY", "KRITAPILOT_HEYGEN_API_KEY",
+                 "KRITAPILOT_IMAGE_BACKEND", "KRITAPILOT_VIDEO_BACKEND", "KRITAPILOT_VISION_PROVIDER",
+                 "KRITAPILOT_POLLINATIONS_API_KEY", "KRITAPILOT_HORDE_API_KEY", "KRITAPILOT_OMNIROUTE_API_KEY",
+                 "KRITAPILOT_FREE_SERVICES", "KRITAPILOT_CHAT_KEEP_IMAGES", "KRITAPILOT_CHAT_IMAGE_SIZE",
+                 "KRITAPILOT_CHAT_MAX_STEPS"):
         monkeypatch.delenv(name, raising=False)
     # skills: only the built-in ones (never whatever is installed in the user's home)
     from kritapilot import skills
-    monkeypatch.setenv("KRITA_MCP_SKILLS_DIRS", str(skills.BUNDLED))
+    monkeypatch.setenv("KRITAPILOT_SKILLS_DIRS", str(skills.BUNDLED))
 
 
 @pytest.fixture()

@@ -7,7 +7,7 @@ on Krita 5.3.4; Krita 6 (PyQt6) is covered by unit tests only.
 
 ### From a release (recommended)
 
-1. Download `krita-mcp-bridge-<version>.zip` from the
+1. Download `kritapilot-plugin-<version>.zip` from the
    [Releases page](https://github.com/jowinjohnchemban/kritapilot/releases).
 2. In Krita, choose **Tools ▸ Scripts ▸ Import Python Plugin from File…** and select the zip.
 3. Restart Krita when it asks. Then make sure the plugin is ticked under **Settings ▸ Configure Krita ▸
@@ -25,7 +25,7 @@ Then enable it in the Python Plugin Manager as above. To find the resource folde
 
 ### Check it
 
-On start-up the plugin creates `~/.krita-mcp/token` and listens on `127.0.0.1:5679`. Open the panel
+On start-up the plugin creates `~/.kritapilot/token` and listens on `127.0.0.1:5679`. Open the panel
 with **Settings ▸ Dockers ▸ AI Bridge (MCP)** (it also opens by itself the first time). It should say
 **● Running on 127.0.0.1:5679**. Dockers appear only while a document is open.
 
@@ -35,13 +35,15 @@ Pick one:
 
 ```bash
 pip install kritapilot                                  # from PyPI
-pipx install kritapilot                                 # the same, in its own environment
+pip install "git+https://github.com/jowinjohnchemban/kritapilot"   # from GitHub (latest main)
+pip install "git+https://github.com/jowinjohnchemban/kritapilot@v1.0.0"   # from GitHub, one release
+pipx install kritapilot                                 # PyPI, in its own environment
 uvx kritapilot                                          # run without installing
 pip install kritapilot-<version>-py3-none-any.whl       # the wheel from a GitHub release
 pip install .                                           # from a source checkout
 ```
 
-This provides the `kritapilot` command (and `krita-mcp`, its old name, for existing setups). Don't run
+This provides the `kritapilot` command. Don't run
 `pip install krita-mcp`: that name on PyPI belongs to a different project. It talks MCP over stdio by default; `kritapilot --help` lists
 the options.
 
@@ -61,10 +63,10 @@ which take priority:
 
 | Setting | Environment variable | Default |
 |---|---|---|
-| Port | `KRITA_MCP_PORT` | `5679` |
-| Start with Krita | `KRITA_MCP_AUTOSTART=0` to disable | on |
-| Workspace folder (the only place the AI can read/write files) | `KRITA_MCP_WORKSPACE` | `~/KritaMCP` |
-| Token folder | `KRITA_MCP_HOME` | `~/.krita-mcp` |
-| ffmpeg/ffprobe folder (video) | `KRITA_MCP_FFMPEG` | the copy bundled with Krita, then `PATH` |
+| Port | `KRITAPILOT_PORT` | `5679` |
+| Start with Krita | `KRITAPILOT_AUTOSTART=0` to disable | on |
+| Workspace folder (the only place the AI can read/write files) | `KRITAPILOT_WORKSPACE` | `~/KritaMCP` |
+| Token folder | `KRITAPILOT_HOME` | `~/.kritapilot` |
+| ffmpeg/ffprobe folder (video) | `KRITAPILOT_FFMPEG` | the copy bundled with Krita, then `PATH` |
 
-The MCP server also reads `KRITA_MCP_PORT`, `KRITA_MCP_HOME`, `KRITA_MCP_HOST` and `KRITA_MCP_TOKEN`.
+The MCP server also reads `KRITAPILOT_PORT`, `KRITAPILOT_HOME`, `KRITAPILOT_HOST` and `KRITAPILOT_TOKEN`.

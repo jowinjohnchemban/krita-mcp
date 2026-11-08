@@ -5,7 +5,7 @@ Every client runs the `kritapilot` command and talks to it over stdio. The Krita
 with your command and port. If `kritapilot` is not on your PATH, use the full path, for example
 `C:\Users\you\AppData\Local\Programs\Python\Python313\Scripts\kritapilot.exe`.
 
-If you changed the port, add `KRITA_MCP_PORT` to the server's environment (the panel does this for you).
+If you changed the port, add `KRITAPILOT_PORT` to the server's environment (the panel does this for you).
 
 ## Claude Code
 
@@ -56,14 +56,14 @@ args = []
 Run the HTTP transport:
 
 ```bash
-KRITA_MCP_HTTP_TOKEN=<long-random-secret> kritapilot --transport http --port 8765
+KRITAPILOT_HTTP_TOKEN=<long-random-secret> kritapilot --transport http --port 8765
 # endpoint: http://127.0.0.1:8765/mcp     header: Authorization: Bearer <secret>
 ```
 
 Hosted clients need a public HTTPS URL, so you would have to put a tunnel or reverse proxy in front.
 Before you do, remember that anyone who can reach that URL with the token can draw in your Krita and
 write files in your workspace. Only expose it if your client can send the bearer header (or you add
-your own auth proxy). The server refuses to bind a non-loopback address unless `KRITA_MCP_HTTP_TOKEN` is set.
+your own auth proxy). The server refuses to bind a non-loopback address unless `KRITAPILOT_HTTP_TOKEN` is set.
 
 ## Troubleshooting
 

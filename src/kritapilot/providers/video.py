@@ -28,7 +28,7 @@ class VideoJob:
 
 
 def _timeout():
-    return int(env("KRITA_MCP_VIDEO_TIMEOUT", "1800"))
+    return int(env("KRITAPILOT_VIDEO_TIMEOUT", "1800"))
 
 
 def _poll(fetch, done, failed, what):
@@ -41,7 +41,7 @@ def _poll(fetch, done, failed, what):
         if err:
             raise ProviderError("%s failed: %s" % (what, str(err)[:500]))
         if time.monotonic() > deadline:
-            raise ProviderError("%s did not finish within %d s (KRITA_MCP_VIDEO_TIMEOUT)" % (what, _timeout()))
+            raise ProviderError("%s did not finish within %d s (KRITAPILOT_VIDEO_TIMEOUT)" % (what, _timeout()))
         time.sleep(3)
 
 
@@ -51,16 +51,16 @@ class HeyGen:
     upload_api = "https://upload.heygen.com"
 
     def __init__(self):
-        self.key = secret("KRITA_MCP_HEYGEN_API_KEY", "HEYGEN_API_KEY")
-        self.api = env("KRITA_MCP_HEYGEN_BASE_URL", self.api).rstrip("/")
-        self.upload_api = env("KRITA_MCP_HEYGEN_UPLOAD_URL", self.upload_api).rstrip("/")
+        self.key = secret("KRITAPILOT_HEYGEN_API_KEY", "HEYGEN_API_KEY")
+        self.api = env("KRITAPILOT_HEYGEN_BASE_URL", self.api).rstrip("/")
+        self.upload_api = env("KRITAPILOT_HEYGEN_UPLOAD_URL", self.upload_api).rstrip("/")
 
     def configured(self):
         return bool(self.key)
 
     def _hdr(self):
         if not self.key:
-            raise ProviderError("HeyGen is not configured: set KRITA_MCP_HEYGEN_API_KEY")
+            raise ProviderError("HeyGen is not configured: set KRITAPILOT_HEYGEN_API_KEY")
         return {"X-Api-Key": self.key, "Accept": "application/json"}
 
     def status(self, details=False):
@@ -124,9 +124,9 @@ class Sora:
     name = "openai"
 
     def __init__(self):
-        self.base = http.service_url("KRITA_MCP_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
-        self.key = secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY")
-        self.model = env("KRITA_MCP_OPENAI_VIDEO_MODEL")  # None: the newest video model this key can use
+        self.base = http.service_url("KRITAPILOT_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
+        self.key = secret("KRITAPILOT_OPENAI_API_KEY", "OPENAI_API_KEY")
+        self.model = env("KRITAPILOT_OPENAI_VIDEO_MODEL")  # None: the newest video model this key can use
 
     def configured(self):
         return bool(self.key)
@@ -136,12 +136,12 @@ class Sora:
 
     def generate(self, job):
         if not self.key:
-            raise ProviderError("OpenAI is not configured: set KRITA_MCP_OPENAI_API_KEY")
+            raise ProviderError("OpenAI is not configured: set KRITAPILOT_OPENAI_API_KEY")
         hdr = {"Authorization": "Bearer " + self.key}
         # OpenAI cannot be asked which sizes / lengths a video model accepts: they are settings (with today's
         # values as defaults), and a size or seconds given in `extra` is sent exactly as given.
-        sizes = env("KRITA_MCP_OPENAI_VIDEO_SIZES", "1280x720,720x1280").split(",")
-        lengths = [float(x) for x in env("KRITA_MCP_OPENAI_VIDEO_SECONDS", "4,8,12").split(",")]
+        sizes = env("KRITAPILOT_OPENAI_VIDEO_SIZES", "1280x720,720x1280").split(",")
+        lengths = [float(x) for x in env("KRITAPILOT_OPENAI_VIDEO_SECONDS", "4,8,12").split(",")]
         size = http.nearest_size(job.width, job.height, sizes)
         secs = min(lengths, key=lambda s: abs(s - (job.seconds or lengths[0])))
         model = job.model or self.model or catalog.first(catalog.openai_models(self.base, self.key, "video"),
@@ -165,9 +165,9 @@ class Veo:
     name = "gemini"
 
     def __init__(self):
-        self.key = secret("KRITA_MCP_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
-        self.base = env("KRITA_MCP_GEMINI_BASE_URL", GEMINI_BASE).rstrip("/")
-        self.model = env("KRITA_MCP_GEMINI_VIDEO_MODEL")  # None: the newest Veo model this key can use
+        self.key = secret("KRITAPILOT_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
+        self.base = env("KRITAPILOT_GEMINI_BASE_URL", GEMINI_BASE).rstrip("/")
+        self.model = env("KRITAPILOT_GEMINI_VIDEO_MODEL")  # None: the newest Veo model this key can use
 
     def configured(self):
         return bool(self.key)
@@ -177,7 +177,7 @@ class Veo:
 
     def generate(self, job):
         if not self.key:
-            raise ProviderError("Gemini is not configured: set KRITA_MCP_GEMINI_API_KEY")
+            raise ProviderError("Gemini is not configured: set KRITAPILOT_GEMINI_API_KEY")
         hdr = {"x-goog-api-key": self.key}
         inst = {"prompt": job.prompt}
         if job.image is not None:
@@ -254,13 +254,13 @@ ALIASES = {"sora": "openai", "veo": "gemini", "google": "gemini"}
 
 
 def get(name=None):
-    name = name or env("KRITA_MCP_VIDEO_BACKEND")
+    name = name or env("KRITAPILOT_VIDEO_BACKEND")
     if not name:
         for key, cls in BACKENDS.items():
             if cls().configured():
                 return cls()
-        raise ProviderError("No video backend configured. Set KRITA_MCP_HEYGEN_API_KEY, KRITA_MCP_OPENAI_API_KEY, "
-                            "KRITA_MCP_GEMINI_API_KEY, KRITA_MCP_REPLICATE_API_TOKEN or KRITA_MCP_FAL_KEY.")
+        raise ProviderError("No video backend configured. Set KRITAPILOT_HEYGEN_API_KEY, KRITAPILOT_OPENAI_API_KEY, "
+                            "KRITAPILOT_GEMINI_API_KEY, KRITAPILOT_REPLICATE_API_TOKEN or KRITAPILOT_FAL_KEY.")
     key = ALIASES.get(str(name).lower(), str(name).lower())
     if key not in BACKENDS:
         raise ProviderError("unknown video backend %r; choose from %s" % (name, ", ".join(BACKENDS)))

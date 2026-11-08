@@ -14,7 +14,7 @@ PNG = base64.b64decode(B64)
 
 @pytest.fixture()
 def home(tmp_path, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_TOKEN", "test-token")
+    monkeypatch.setenv("KRITAPILOT_TOKEN", "test-token")
     agent.SESSIONS.clear()
     return tmp_path
 
@@ -28,7 +28,7 @@ def _wait(sess, timeout=20):
 
 # ---------------------------------------------------------------- spending
 def test_history_keeps_only_the_newest_pictures_and_short_old_results(monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_CHAT_KEEP_IMAGES", "1")
+    monkeypatch.setenv("KRITAPILOT_CHAT_KEEP_IMAGES", "1")
     m = agent.OpenAICompat.__new__(agent.OpenAICompat)
     pic = {"type": "image_url", "image_url": {"url": "data:image/png;base64," + B64}}
     history = [{"role": "system", "content": "s"}, {"role": "user", "content": "first"},
@@ -48,7 +48,7 @@ def test_history_keeps_only_the_newest_pictures_and_short_old_results(monkeypatc
 
 
 def test_gemini_and_claude_histories_are_compacted_too(monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_CHAT_KEEP_IMAGES", "0")
+    monkeypatch.setenv("KRITAPILOT_CHAT_KEEP_IMAGES", "0")
     g = agent.Gemini.__new__(agent.Gemini)
     gh = [{"role": "user", "parts": [{"functionResponse": {"name": "x", "response": {"result": "r" * 3000}}},
                                      {"inline_data": {"mime_type": "image/png", "data": B64}}]}]
@@ -109,9 +109,9 @@ def test_openrouter_claude_gets_a_cached_system_prompt_and_reports_cost(home, br
 
 # ---------------------------------------------------------------- free services
 def _pollinations(monkeypatch, m):
-    monkeypatch.setenv("KRITA_MCP_POLLINATIONS_TEXT_URL", m.url + "/text")
-    monkeypatch.setenv("KRITA_MCP_POLLINATIONS_GEN_URL", m.url + "/gen")
-    monkeypatch.setenv("KRITA_MCP_POLLINATIONS_IMAGE_URL", m.url + "/image")
+    monkeypatch.setenv("KRITAPILOT_POLLINATIONS_TEXT_URL", m.url + "/text")
+    monkeypatch.setenv("KRITAPILOT_POLLINATIONS_GEN_URL", m.url + "/gen")
+    monkeypatch.setenv("KRITAPILOT_POLLINATIONS_IMAGE_URL", m.url + "/image")
 
 
 def test_pollinations_chat_works_without_any_sign_in(home, bridge, monkeypatch):
@@ -167,8 +167,8 @@ def test_free_image_services_need_turning_on(home, monkeypatch):
         m.json("GET", "/image/models", ["flux", "turbo"])
         m.raw("GET", "/image/prompt/*", PNG, "image/jpeg")
         _pollinations(monkeypatch, m)
-        monkeypatch.setenv("KRITA_MCP_COMFYUI_URL", "http://127.0.0.1:9")  # no local GPU server here
-        monkeypatch.setenv("KRITA_MCP_A1111_URL", "http://127.0.0.1:9")
+        monkeypatch.setenv("KRITAPILOT_COMFYUI_URL", "http://127.0.0.1:9")  # no local GPU server here
+        monkeypatch.setenv("KRITAPILOT_A1111_URL", "http://127.0.0.1:9")
         with pytest.raises(ProviderError, match="No image-generation backend"):
             images.pick()  # nothing is sent anywhere until the user says so
         assert keys.status()["pollinations"]["signed_in"] is False
@@ -185,7 +185,7 @@ def test_free_image_services_need_turning_on(home, monkeypatch):
     assert got[0].startswith("/image/prompt/red%20apple?") and "width=512" in got[0] and "seed=7" in got[0]
     keys.save("pollinations", remove=True)
     assert images.PollinationsImages().configured() is False
-    monkeypatch.setenv("KRITA_MCP_FREE_SERVICES", "horde,pollinations")
+    monkeypatch.setenv("KRITAPILOT_FREE_SERVICES", "horde,pollinations")
     assert images.PollinationsImages().configured() and images.HordeImages().configured()
 
 
@@ -198,9 +198,9 @@ def test_ai_horde_queue_round_trip(home, monkeypatch):
         m.json("POST", "/horde/generate/async", {"id": "job1"})
         m.json("GET", "/horde/generate/check/job1", lambda h, b: next(checks))
         m.json("GET", "/horde/generate/status/job1", {"generations": [{"img": B64, "seed": "5"}]})
-        monkeypatch.setenv("KRITA_MCP_HORDE_URL", m.url + "/horde")
-        monkeypatch.setenv("KRITA_MCP_HORDE_POLL", "0")
-        monkeypatch.setenv("KRITA_MCP_FREE_SERVICES", "horde")
+        monkeypatch.setenv("KRITAPILOT_HORDE_URL", m.url + "/horde")
+        monkeypatch.setenv("KRITAPILOT_HORDE_POLL", "0")
+        monkeypatch.setenv("KRITAPILOT_FREE_SERVICES", "horde")
         b = images.get("aihorde")
         assert b.default_side == 576  # anonymous requests stay small
         imgs, meta = b.generate(images.ImageJob(prompt="a castle", negative="blurry", width=576, height=576))
@@ -218,7 +218,7 @@ def test_omniroute_needs_no_key_on_this_computer_and_prefers_auto(home, monkeypa
     try:
         m.json("GET", "/v1/models", {"data": [{"id": "glm/glm-5.2", "created": 9}, {"id": "auto", "created": 1},
                                               {"id": "auto/cheap", "created": 2}]})
-        monkeypatch.setenv("KRITA_MCP_OMNIROUTE_BASE_URL", m.url + "/v1")
+        monkeypatch.setenv("KRITAPILOT_OMNIROUTE_BASE_URL", m.url + "/v1")
         assert compat.api_key("omniroute") == "local"
         assert compat.chat_models("omniroute")[:2] == ["auto", "auto/cheap"]
     finally:
@@ -246,7 +246,7 @@ def test_user_skills_are_picked_up_live_and_read_safely(tmp_path, monkeypatch):
         "# Steps\nUse a G-pen preset.\n", encoding="utf-8")
     (mine / "ink-comics" / "references" / "panels.md").write_text("Six-panel grid.", encoding="utf-8")
     (mine / "ink-comics" / "run.py").write_text("print('never run')", encoding="utf-8")
-    monkeypatch.setenv("KRITA_MCP_SKILLS_DIRS", str(mine) + __import__("os").pathsep + str(skills.BUNDLED))
+    monkeypatch.setenv("KRITAPILOT_SKILLS_DIRS", str(mine) + __import__("os").pathsep + str(skills.BUNDLED))
     found = skills.find("comic lines")
     assert found[0]["name"] == "ink-comics" and found[0]["description"] == "Ink comic pages with bold lines and screentones"
     s = skills.load("ink-comics")
@@ -264,7 +264,7 @@ def test_user_skills_are_picked_up_live_and_read_safely(tmp_path, monkeypatch):
 
 
 def test_default_skill_folders(monkeypatch):
-    monkeypatch.delenv("KRITA_MCP_SKILLS_DIRS")
+    monkeypatch.delenv("KRITAPILOT_SKILLS_DIRS")
     d = [str(x) for x in skills.dirs()]
     assert d[0].endswith("skills") and d[1] == str(skills.BUNDLED)
     assert len(d) == 2  # coding assistants' skills (~/.claude/skills: security-audit, ...) are not offered
@@ -410,7 +410,7 @@ def test_keyless_gateways_chat_without_any_key(home, bridge, monkeypatch):
                                                 {"id": "nvidia/nemotron:free", "created": 7},
                                                 {"id": "kilo-auto/free", "created": 1}]})
         m.json("POST", "/kilo/chat/completions", {"choices": [{"message": {"content": "free answer"}}]})
-        monkeypatch.setenv("KRITA_MCP_KILO_BASE_URL", m.url + "/kilo")
+        monkeypatch.setenv("KRITAPILOT_KILO_BASE_URL", m.url + "/kilo")
         assert agent.available_models("kilo") == ["kilo-auto/free", "nvidia/nemotron:free"]  # only free ones
         events = _wait(agent.chat(None, "kilo", None, "hi"))
         keys.save("kilo", key="kilo-key")
@@ -454,7 +454,7 @@ def test_a_made_up_image_service_falls_back_to_the_automatic_choice(bridge, monk
 def test_model_calls_give_up_after_the_chat_timeout(monkeypatch):
     from kritapilot import agent
     assert agent.chat_timeout() == 180
-    monkeypatch.setenv("KRITA_MCP_CHAT_TIMEOUT", "60")
+    monkeypatch.setenv("KRITAPILOT_CHAT_TIMEOUT", "60")
     assert agent.chat_timeout() == 60
     assert agent.transient("cannot reach https://text.pollinations.ai/openai (The read operation timed out)")
 
@@ -466,9 +466,9 @@ def test_ai_horde_uses_a_served_model_when_asked_for_one_it_does_not_have(home, 
         m.json("POST", "/horde/generate/async", {"id": "job2"})
         m.json("GET", "/horde/generate/check/job2", {"done": True})
         m.json("GET", "/horde/generate/status/job2", {"generations": [{"img": B64, "seed": "1"}]})
-        monkeypatch.setenv("KRITA_MCP_HORDE_URL", m.url + "/horde")
-        monkeypatch.setenv("KRITA_MCP_HORDE_POLL", "0")
-        monkeypatch.setenv("KRITA_MCP_FREE_SERVICES", "horde")
+        monkeypatch.setenv("KRITAPILOT_HORDE_URL", m.url + "/horde")
+        monkeypatch.setenv("KRITAPILOT_HORDE_POLL", "0")
+        monkeypatch.setenv("KRITAPILOT_FREE_SERVICES", "horde")
         b = images.get("horde")
         b.generate(images.ImageJob(prompt="hills", width=576, height=256, model="stable-diffusion-3.5"))
         b.generate(images.ImageJob(prompt="hills", width=576, height=256, model="Deliberate"))
@@ -488,9 +488,9 @@ def test_ai_horde_variations_get_different_seeds(home, monkeypatch):
         m.json("GET", "/horde/generate/check/j3", {"done": True})
         m.json("GET", "/horde/generate/status/j3", {"generations": [{"img": B64, "seed": "42"},
                                                                     {"img": B64, "seed": "43"}]})
-        monkeypatch.setenv("KRITA_MCP_HORDE_URL", m.url + "/horde")
-        monkeypatch.setenv("KRITA_MCP_HORDE_POLL", "0")
-        monkeypatch.setenv("KRITA_MCP_FREE_SERVICES", "horde")
+        monkeypatch.setenv("KRITAPILOT_HORDE_URL", m.url + "/horde")
+        monkeypatch.setenv("KRITAPILOT_HORDE_POLL", "0")
+        monkeypatch.setenv("KRITAPILOT_FREE_SERVICES", "horde")
         images.get("horde").generate(images.ImageJob(prompt="hills", width=576, height=256, count=2, seed=42))
     finally:
         m.srv.shutdown()

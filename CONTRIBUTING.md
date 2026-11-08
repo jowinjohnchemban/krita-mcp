@@ -11,7 +11,7 @@ Open an [issue](https://github.com/jowinjohnchemban/kritapilot/issues/new/choose
 - what you asked the AI and what happened instead;
 - the relevant lines from **Logs…** (in the AI Chat or AI Bridge panel). Keys are masked, so the text is
   safe to paste. **Copy** copies what the window shows; type `✗` in its filter to see only failures;
-- if Krita froze: `~/.krita-mcp/hang.log`.
+- if Krita froze: `~/.kritapilot/hang.log`.
 
 Security problems: please don't open a public issue; see [SECURITY.md](SECURITY.md).
 

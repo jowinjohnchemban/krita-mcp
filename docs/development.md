@@ -4,8 +4,8 @@
 
 ```
 plugin/pykrita/
-  krita_mcp_bridge.desktop     Krita plugin manifest
-  krita_mcp_bridge/
+  kritapilot_plugin.desktop     Krita plugin manifest
+  kritapilot_plugin/
     __init__.py                registers the extension (only inside Krita)
     extension.py               starts/stops the bridge, settings, Tools ▸ Scripts actions
     dock.py                    the "AI Bridge (MCP)" docker

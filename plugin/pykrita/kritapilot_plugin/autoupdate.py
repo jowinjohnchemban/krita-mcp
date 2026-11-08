@@ -9,11 +9,13 @@ import threading
 import time
 
 from . import extension, updater
-from .handlers import BRIDGE_VERSION
+from .handlers import BRIDGE_COMMIT, BRIDGE_VERSION, version_text
 
 MODES = (("notify", "Tell me when an update is available"), ("auto", "Install updates automatically"),
          ("off", "Never check"))
-CHECK_EVERY = 6 * 3600
+from . import config  # noqa: E402
+
+CHECK_EVERY = config.UPDATE_EVERY
 STATE = {"status": "idle", "latest": None, "message": "", "changed": 0.0}
 _lock = threading.Lock()
 
@@ -49,10 +51,10 @@ def check(install_if_newer=False):
         try:
             info = updater.latest()
             extension.set_setting("update_last_check", str(int(time.time())))
-            if not updater.is_newer(info["version"], BRIDGE_VERSION):
-                _set("up_to_date", "Up to date (%s)" % BRIDGE_VERSION, info)
+            if not updater.update_available(info["version"], BRIDGE_VERSION, info.get("commit"), BRIDGE_COMMIT):
+                _set("up_to_date", "Up to date (%s)" % version_text(), info)
                 return
-            _set("available", "Update available: %s (you have %s)" % (info["version"], BRIDGE_VERSION), info)
+            _set("available", "Update available: %s (you have %s)" % (info["version"], version_text()), info)
             if install_if_newer:
                 _install(info)
         except updater.UpdateError as e:

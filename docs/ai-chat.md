@@ -56,17 +56,17 @@ provider: Auto uses it first and falls back to the free ones when its credit run
 
 Every step of the AI resends the conversation to the model, so the assistant keeps that cheap:
 
-- Only the **two newest pictures** stay in the conversation (`KRITA_MCP_CHAT_KEEP_IMAGES`). Older snapshots
+- Only the **two newest pictures** stay in the conversation (`KRITAPILOT_CHAT_KEEP_IMAGES`). Older snapshots
   are replaced by a short note, and the AI takes a new snapshot if it needs to look again.
-- Snapshots go to the model at **768 px** (`KRITA_MCP_CHAT_IMAGE_SIZE`) unless it asks for more.
+- Snapshots go to the model at **768 px** (`KRITAPILOT_CHAT_IMAGE_SIZE`) unless it asks for more.
 - Long tool results from earlier messages are shortened when resent.
 - **Claude** uses prompt caching: the tool list and the conversation so far are re-read from Anthropic's
   cache at a fraction of the price. OpenAI, Gemini and DeepSeek cache automatically. Claude models through
   OpenRouter get the system prompt cached too.
 - A message stops when **the same error repeats three times**, instead of retrying until it reaches the step
-  limit (`KRITA_MCP_CHAT_MAX_STEPS`, default 40).
-- Each reply is capped (`KRITA_MCP_CHAT_MAX_TOKENS`), and on OpenRouter it is fitted to a low balance.
-- Gemini 3 models are asked to think briefly (`KRITA_MCP_GEMINI_THINKING`: `low` by default, or `medium`,
+  limit (`KRITAPILOT_CHAT_MAX_STEPS`, default 40).
+- Each reply is capped (`KRITAPILOT_CHAT_MAX_TOKENS`), and on OpenRouter it is fitted to a low balance.
+- Gemini 3 models are asked to think briefly (`KRITAPILOT_GEMINI_THINKING`: `low` by default, or `medium`,
   `high`, `off` for Google's default). Long thinking can take a minute per step and is billed as output.
 - `create_artwork` makes **one** image on paid cloud services (four on your own GPU, where they are free;
   at most two on AI Horde). Ask for options and it makes more.
@@ -93,11 +93,11 @@ Skills are step-by-step know-how for kinds of work, each a folder with a `SKILL.
 - For every message, the assistant looks for the few skills that fit what you asked and names them to the
   model. The model loads a skill's full text (`use_skill`) only when it helps. Unused skills cost nothing.
 - Skills are found fresh every time, nothing is cached. Add one and it is used from the next message on.
-- **Skills…** in the chat lists them. **Open my skills folder** opens `~/.krita-mcp/skills`: copy a skill
+- **Skills…** in the chat lists them. **Open my skills folder** opens `~/.kritapilot/skills`: copy a skill
   folder there. **Find skills online** opens [skills.sh](https://skills.sh/).
 - Skills installed for coding assistants (`~/.claude/skills`, `~/.agents/skills`: code review, security
   audits and the like) are not used: they don't fit painting. To use a folder of skills anyway, list it in
-  `KRITA_MCP_SKILLS_DIRS`, which replaces the list of folders.
+  `KRITAPILOT_SKILLS_DIRS`, which replaces the list of folders.
 - AI apps connected through MCP get the same skills with the `find_skills` and `use_skill` tools.
 - Skills are read as text. KritaPilot never runs scripts that a skill folder contains, and it only reads
   files inside the skill's own folder.
@@ -138,7 +138,7 @@ has an API key:
    ("OpenRouter could not go on (HTTP 402 ...); switched to Kilo Gateway"). Conversations cannot move between
    services as they are, so the next one gets a short recap of what you asked and what was already done, and
    carries on in the same document. A real mistake (a bad request) is reported, not hidden by switching.
-   Hover over the provider count for the order; `KRITA_MCP_AUTO_ORDER` (comma-separated names, e.g.
+   Hover over the provider count for the order; `KRITAPILOT_AUTO_ORDER` (comma-separated names, e.g.
    `anthropic,kilo`) sets your own. Existing installs are switched to Auto once; pick another provider and
    that choice stays.
 2. The providers you can use now - signed in, set up, or free - always listed.
@@ -146,7 +146,7 @@ has an API key:
    is ready.
 4. **Manage services…** opens Services.
 
-Keys are stored only on your computer, in `~/.krita-mcp/agent_keys.json`. That file is readable only by
+Keys are stored only on your computer, in `~/.kritapilot/agent_keys.json`. That file is readable only by
 your user on Linux and macOS; on Windows it is protected by your Windows account's permissions. They are
 used by:
 
@@ -154,7 +154,7 @@ used by:
 - AI apps connected through MCP (Claude Desktop, Gemini CLI, Cursor, …). Signing in to fal.ai here, for
   example, lets Claude Desktop's `generate_image` use it too.
 
-An explicit `KRITA_MCP_…` environment variable still wins over a saved key. **Sign out** deletes the key.
+An explicit `KRITAPILOT_…` environment variable still wins over a saved key. **Sign out** deletes the key.
 
 ## When something goes wrong: Logs…
 
@@ -190,7 +190,7 @@ AI Chat docker ──127.0.0.1:5680 + token──▶ kritapilot --agent ──mo
 - When the model service is briefly unavailable (HTTP 500/502/503/504, a timeout, a dropped connection),
   the assistant tries again after 3 and then 8 seconds and says so in the chat. A rejected key or missing
   credit is not retried (on Auto, the next provider takes over).
-- One model answer may take at most three minutes (`KRITA_MCP_CHAT_TIMEOUT`, in seconds; default 180).
+- One model answer may take at most three minutes (`KRITAPILOT_CHAT_TIMEOUT`, in seconds; default 180).
   Longer counts as the service being unavailable, so a stalled free service cannot hold the chat.
 - A model that answers that it cannot take pictures gets them replaced by a short note, and the request
   is sent again. From then on it measures the canvas instead of looking at it.
@@ -201,16 +201,16 @@ AI Chat docker ──127.0.0.1:5680 + token──▶ kritapilot --agent ──mo
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KRITA_MCP_AUTO_ORDER` | yours, then the free ones | Auto's order, comma-separated (`anthropic,kilo`) |
-| `KRITA_MCP_CHAT_TIMEOUT` | `180` | Seconds one model answer may take |
-| `KRITA_MCP_CHAT_MAX_STEPS` | `40` | Steps per message before the AI stops and asks |
-| `KRITA_MCP_CHAT_MAX_TOKENS` | `4096` (Claude `16000`) | Longest reply |
-| `KRITA_MCP_CHAT_KEEP_IMAGES` | `2` | Pictures kept in the conversation |
-| `KRITA_MCP_CHAT_IMAGE_SIZE` | `768` | Size of the snapshots sent to the model |
-| `KRITA_MCP_GEMINI_THINKING` | `low` | How long Gemini 3 thinks: `low`, `medium`, `high`, `off` |
-| `KRITA_MCP_<PROVIDER>_CHAT_MODEL` | Auto | Fix a provider's model, e.g. `KRITA_MCP_GEMINI_CHAT_MODEL` |
-| `KRITA_MCP_SKILLS_DIRS` | `~/.krita-mcp/skills` + built-in | Folders to read skills from |
-| `KRITA_MCP_AGENT_PORT` | `5680` | Port of the assistant service |
+| `KRITAPILOT_AUTO_ORDER` | yours, then the free ones | Auto's order, comma-separated (`anthropic,kilo`) |
+| `KRITAPILOT_CHAT_TIMEOUT` | `180` | Seconds one model answer may take |
+| `KRITAPILOT_CHAT_MAX_STEPS` | `40` | Steps per message before the AI stops and asks |
+| `KRITAPILOT_CHAT_MAX_TOKENS` | `4096` (Claude `16000`) | Longest reply |
+| `KRITAPILOT_CHAT_KEEP_IMAGES` | `2` | Pictures kept in the conversation |
+| `KRITAPILOT_CHAT_IMAGE_SIZE` | `768` | Size of the snapshots sent to the model |
+| `KRITAPILOT_GEMINI_THINKING` | `low` | How long Gemini 3 thinks: `low`, `medium`, `high`, `off` |
+| `KRITAPILOT_<PROVIDER>_CHAT_MODEL` | Auto | Fix a provider's model, e.g. `KRITAPILOT_GEMINI_CHAT_MODEL` |
+| `KRITAPILOT_SKILLS_DIRS` | `~/.kritapilot/skills` + built-in | Folders to read skills from |
+| `KRITAPILOT_AGENT_PORT` | `5680` | Port of the assistant service |
 
 ## Asset libraries
 

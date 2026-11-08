@@ -27,33 +27,33 @@ let you set them in the server entry. For example, in Claude Desktop's config:
 
 ```json
 { "mcpServers": { "krita": { "command": "kritapilot",
-    "env": { "KRITA_MCP_COMFYUI_URL": "http://127.0.0.1:8188", "KRITA_MCP_OPENAI_API_KEY": "sk-..." } } } }
+    "env": { "KRITAPILOT_COMFYUI_URL": "http://127.0.0.1:8188", "KRITAPILOT_OPENAI_API_KEY": "sk-..." } } } }
 ```
 
 ## Privacy: nothing leaves your computer unless you say so
 
 - Local backends (ComfyUI, AUTOMATIC1111) run on your machine. Their requests never go through a proxy.
-- A cloud service is used only if you give it a key **in a `KRITA_MCP_…` variable**. Generic keys that
+- A cloud service is used only if you give it a key **in a `KRITAPILOT_…` variable**. Generic keys that
   may already be in your environment for other reasons (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
   `GEMINI_API_KEY`, `REPLICATE_API_TOKEN`, `FAL_KEY`, `STABILITY_API_KEY`, `HEYGEN_API_KEY`) are
-  ignored unless you also set `KRITA_MCP_USE_ENV_KEYS=1`.
+  ignored unless you also set `KRITAPILOT_USE_ENV_KEYS=1`.
 - When a cloud tool is used, the region of the canvas it works on is uploaded to that service, along
   with the mask (and, for video, the start frame).
 - The AI cannot choose service URLs. Only you can, through these variables. Result files are downloaded
   only from public addresses.
 - Free services that need no key (Pollinations, AI Horde) are used only after you turn them on in
-  *AI Chat ▸ Services…*, or list them in `KRITA_MCP_FREE_SERVICES=pollinations,horde`.
+  *AI Chat ▸ Services…*, or list them in `KRITAPILOT_FREE_SERVICES=pollinations,horde`.
 
 ## Image backends
 
-When `backend` is not given, the server uses `KRITA_MCP_IMAGE_BACKEND`. If that is not set either, it
+When `backend` is not given, the server uses `KRITAPILOT_IMAGE_BACKEND`. If that is not set either, it
 uses the first local service that answers (ComfyUI, then AUTOMATIC1111), then the first cloud
 service that has a key, and last the free services you turned on (Pollinations, then AI Horde).
 
 If the service it chose refuses the account (a key that is no longer valid, no credit left, a rate
 limit), it moves on to the next one in that order. The result names the service that made the picture,
 and the AI tells you which one was skipped and why so you can fix it in **AI Chat ▸ Services**. A
-service you name with `backend` (or `KRITA_MCP_IMAGE_BACKEND`) is never swapped for another one once it is
+service you name with `backend` (or `KRITAPILOT_IMAGE_BACKEND`) is never swapped for another one once it is
 set up. If the name is unknown, or it is a cloud service without a key (models sometimes ask for a service
 you don't have), the service is chosen automatically as above, any `model` named for the missing service
 is dropped, and the result says so. If `create_artwork` decided by itself to generate and no service
@@ -61,7 +61,7 @@ accepts the account, it sets the document up for painting by hand instead.
 
 ### ComfyUI (local, recommended)
 
-Start ComfyUI as usual, then set `KRITA_MCP_COMFYUI_URL` (default `http://127.0.0.1:8188`).
+Start ComfyUI as usual, then set `KRITAPILOT_COMFYUI_URL` (default `http://127.0.0.1:8188`).
 
 - **Built-in graph.** Uses any checkpoint in `models/checkpoints` (SD 1.5, SDXL, Pony, …) for txt2img,
   img2img and inpainting (`SetLatentNoiseMask`, so normal checkpoints inpaint well). `model` picks the
@@ -77,8 +77,8 @@ Start ComfyUI as usual, then set `KRITA_MCP_COMFYUI_URL` (default `http://127.0.
 
 ### AUTOMATIC1111 / Forge / SD.Next (local)
 
-Start the WebUI with `--api`, then set `KRITA_MCP_A1111_URL` (default `http://127.0.0.1:7860`).
-If you use `--api-auth`, also set `KRITA_MCP_A1111_AUTH=user:password`.
+Start the WebUI with `--api`, then set `KRITAPILOT_A1111_URL` (default `http://127.0.0.1:7860`).
+If you use `--api-auth`, also set `KRITAPILOT_A1111_AUTH=user:password`.
 
 - Supports txt2img, img2img and inpainting.
 - `model` overrides the checkpoint for one request.
@@ -89,10 +89,10 @@ If you use `--api-auth`, also set `KRITA_MCP_A1111_AUTH=user:password`.
 
 | Variable | Default |
 |---|---|
-| `KRITA_MCP_OPENAI_API_KEY` | (none) |
-| `KRITA_MCP_OPENAI_BASE_URL` | `https://api.openai.com/v1` |
-| `KRITA_MCP_OPENAI_IMAGE_MODEL` | the newest image model your key can use (listed live) |
-| `KRITA_MCP_OPENAI_SIZES` | `1024x1024,1536x1024,1024x1536` |
+| `KRITAPILOT_OPENAI_API_KEY` | (none) |
+| `KRITAPILOT_OPENAI_BASE_URL` | `https://api.openai.com/v1` |
+| `KRITAPILOT_OPENAI_IMAGE_MODEL` | the newest image model your key can use (listed live) |
+| `KRITAPILOT_OPENAI_SIZES` | `1024x1024,1536x1024,1024x1536` |
 
 - Masked edits use `/images/edits`.
 - Point the base URL at any compatible service, such as a gateway or a local server. A loopback URL
@@ -100,7 +100,7 @@ If you use `--api-auth`, also set `KRITA_MCP_A1111_AUTH=user:password`.
 
 ### Google Gemini
 
-Set `KRITA_MCP_GEMINI_API_KEY`. The image model is set by `KRITA_MCP_GEMINI_IMAGE_MODEL` (default
+Set `KRITAPILOT_GEMINI_API_KEY`. The image model is set by `KRITAPILOT_GEMINI_IMAGE_MODEL` (default
 the newest Gemini image model your key can use, listed live).
 
 Gemini edits by instruction and has no mask input. KritaPilot sends the mask as a second image, then cuts
@@ -108,7 +108,7 @@ the result back to your selection, so nothing outside the selection changes.
 
 ### Stability AI
 
-Set `KRITA_MCP_STABILITY_API_KEY`.
+Set `KRITAPILOT_STABILITY_API_KEY`.
 
 | Task | What runs |
 |---|---|
@@ -120,7 +120,7 @@ Set `KRITA_MCP_STABILITY_API_KEY`.
 
 ### Replicate (thousands of models)
 
-Set `KRITA_MCP_REPLICATE_API_TOKEN`.
+Set `KRITAPILOT_REPLICATE_API_TOKEN`.
 
 - Pass any model as `model="owner/name"` or `"owner/name:version"`.
 - KritaPilot reads the model's input schema and maps the prompt, image, mask, size or aspect ratio, seed,
@@ -132,7 +132,7 @@ Set `KRITA_MCP_REPLICATE_API_TOKEN`.
 
 ### fal.ai
 
-Set `KRITA_MCP_FAL_KEY`.
+Set `KRITAPILOT_FAL_KEY`.
 
 - Pass any endpoint as `model="fal-ai/..."`. Requests go through fal's queue, so long jobs are fine.
 - fal.ai has no API for listing models, so choose the endpoint with `model` for every task (browse
@@ -140,28 +140,28 @@ Set `KRITA_MCP_FAL_KEY`.
 
 ### Pollinations (free, no account)
 
-Turn it on in *AI Chat ▸ Services…* (or `KRITA_MCP_FREE_SERVICES=pollinations`).
+Turn it on in *AI Chat ▸ Services…* (or `KRITAPILOT_FREE_SERVICES=pollinations`).
 
 - Text-to-image, free, with no key. The free models are listed live. A free key from
-  [enter.pollinations.ai](https://enter.pollinations.ai/keys) (`KRITA_MCP_POLLINATIONS_API_KEY`) moves it
+  [enter.pollinations.ai](https://enter.pollinations.ai/keys) (`KRITAPILOT_POLLINATIONS_API_KEY`) moves it
   to the newer API with more models.
-- `backend="pollinations"`; `KRITA_MCP_POLLINATIONS_IMAGE_MODEL` fixes the model.
+- `backend="pollinations"`; `KRITAPILOT_POLLINATIONS_IMAGE_MODEL` fixes the model.
 - Text-to-image only: use another backend to edit or inpaint.
 
 ### AI Horde (free, crowdsourced)
 
-Turn it on in *AI Chat ▸ Services…* (or `KRITA_MCP_FREE_SERVICES=horde`).
+Turn it on in *AI Chat ▸ Services…* (or `KRITAPILOT_FREE_SERVICES=horde`).
 
 - Stable Diffusion models on volunteers' GPUs ([aihorde.net](https://aihorde.net)). Requests wait in a
   queue, so a picture usually takes a few minutes. The model with the most workers online is used unless
-  you pass `model` (or set `KRITA_MCP_HORDE_MODEL`); a model no worker serves right now is ignored rather
+  you pass `model` (or set `KRITAPILOT_HORDE_MODEL`); a model no worker serves right now is ignored rather
   than refused.
 - At most two variations per request, because of the queue. Each variation gets its own seed (the next
   one after the seed you give), so they differ.
 - Text-to-image and img2img. Without an account, images are kept small (576 px). A free key from
-  [aihorde.net/register](https://aihorde.net/register) (`KRITA_MCP_HORDE_API_KEY`) moves you up the queue
+  [aihorde.net/register](https://aihorde.net/register) (`KRITAPILOT_HORDE_API_KEY`) moves you up the queue
   and allows larger images.
-- A request that waits longer than 10 minutes (`KRITA_MCP_HORDE_TIMEOUT`) is cancelled.
+- A request that waits longer than 10 minutes (`KRITAPILOT_HORDE_TIMEOUT`) is cancelled.
 
 ## Video backends
 
@@ -171,12 +171,12 @@ animation, so the agent can paint over it, grade it (`for_each_frame`) and rende
 
 | Backend | Variables | Notes |
 |---|---|---|
-| `heygen` | `KRITA_MCP_HEYGEN_API_KEY` | Talking avatars. Needs `script`, `avatar_id` and `voice_id` (list them with `ai_backends(details=true)`). The canvas becomes the background. With `character="photo"`, the character painted on the canvas itself talks. |
-| `openai` | `KRITA_MCP_OPENAI_API_KEY`, `KRITA_MCP_OPENAI_VIDEO_MODEL` (default: newest video model listed) | 4, 8 or 12 seconds, landscape or portrait. |
-| `gemini` | `KRITA_MCP_GEMINI_API_KEY`, `KRITA_MCP_GEMINI_VIDEO_MODEL` (default: newest Veo listed) | Veo; text-to-video or image-to-video. |
+| `heygen` | `KRITAPILOT_HEYGEN_API_KEY` | Talking avatars. Needs `script`, `avatar_id` and `voice_id` (list them with `ai_backends(details=true)`). The canvas becomes the background. With `character="photo"`, the character painted on the canvas itself talks. |
+| `openai` | `KRITAPILOT_OPENAI_API_KEY`, `KRITAPILOT_OPENAI_VIDEO_MODEL` (default: newest video model listed) | 4, 8 or 12 seconds, landscape or portrait. |
+| `gemini` | `KRITAPILOT_GEMINI_API_KEY`, `KRITAPILOT_GEMINI_VIDEO_MODEL` (default: newest Veo listed) | Veo; text-to-video or image-to-video. |
 | `replicate` / `fal` | as for images | Any text- or image-to-video model; pass `model`. |
 
-`KRITA_MCP_VIDEO_BACKEND` sets the default video backend. `KRITA_MCP_VIDEO_TIMEOUT` (seconds, default
+`KRITAPILOT_VIDEO_BACKEND` sets the default video backend. `KRITAPILOT_VIDEO_TIMEOUT` (seconds, default
 1800) limits how long to wait.
 
 ## Vision models (`ask_vision`)
@@ -187,51 +187,51 @@ one model write a detailed prompt for an image model.
 
 | Provider | Variables | Model when none is chosen (listed live) |
 |---|---|---|
-| `anthropic` (Claude) | `KRITA_MCP_ANTHROPIC_API_KEY`; needs `pip install anthropic` | newest Claude, Opus first (`KRITA_MCP_ANTHROPIC_MODEL`) |
-| `openai` | `KRITA_MCP_OPENAI_API_KEY` or a local `KRITA_MCP_OPENAI_BASE_URL` (Ollama: `http://127.0.0.1:11434/v1`) | newest chat model, or the newest installed local model (`KRITA_MCP_OPENAI_VISION_MODEL`) |
-| `gemini` | `KRITA_MCP_GEMINI_API_KEY` | newest Gemini Flash (`KRITA_MCP_GEMINI_VISION_MODEL`) |
+| `anthropic` (Claude) | `KRITAPILOT_ANTHROPIC_API_KEY`; needs `pip install anthropic` | newest Claude, Opus first (`KRITAPILOT_ANTHROPIC_MODEL`) |
+| `openai` | `KRITAPILOT_OPENAI_API_KEY` or a local `KRITAPILOT_OPENAI_BASE_URL` (Ollama: `http://127.0.0.1:11434/v1`) | newest chat model, or the newest installed local model (`KRITAPILOT_OPENAI_VISION_MODEL`) |
+| `gemini` | `KRITAPILOT_GEMINI_API_KEY` | newest Gemini Flash (`KRITAPILOT_GEMINI_VISION_MODEL`) |
 
-`KRITA_MCP_VISION_PROVIDER` sets the default. Claude requests use Anthropic's server-side refusal
+`KRITAPILOT_VISION_PROVIDER` sets the default. Claude requests use Anthropic's server-side refusal
 fallback, so a declined request is retried on a suitable model within the same call.
 
 ## More providers (OpenAI-compatible)
 
 These services speak the OpenAI API, so one connector serves them all: chat with tools in AI Chat,
 `ask_vision`, and image generation where the service offers it. Sign in under *AI Chat ▸ Services…*, or set
-the variable. Models are listed live from each service; **KRITA_MCP_<NAME>_BASE_URL** changes the address
+the variable. Models are listed live from each service; **KRITAPILOT_<NAME>_BASE_URL** changes the address
 (for a proxy, or a regional endpoint).
 
 | Service | Variable | Offers |
 |---|---|---|
-| Mistral AI | `KRITA_MCP_MISTRAL_API_KEY` | chat, vision |
-| Groq | `KRITA_MCP_GROQ_API_KEY` | very fast chat |
-| DeepSeek | `KRITA_MCP_DEEPSEEK_API_KEY` | chat |
-| xAI Grok | `KRITA_MCP_XAI_API_KEY` | chat, vision, **images** (`backend="xai"`) |
-| Together AI | `KRITA_MCP_TOGETHER_API_KEY` | chat, **images** with open models (`backend="together"`) |
-| Fireworks AI | `KRITA_MCP_FIREWORKS_API_KEY` | chat with open models |
-| Cerebras | `KRITA_MCP_CEREBRAS_API_KEY` | very fast chat |
-| Hugging Face Inference Providers | `KRITA_MCP_HUGGINGFACE_API_KEY` | chat with thousands of open models |
-| NVIDIA NIM | `KRITA_MCP_NVIDIA_API_KEY` | chat |
-| Alibaba Qwen (Model Studio) | `KRITA_MCP_QWEN_API_KEY` | chat, vision |
-| Moonshot Kimi | `KRITA_MCP_MOONSHOT_API_KEY` | chat |
-| OmniRoute (free gateway on your computer) | none needed; `KRITA_MCP_OMNIROUTE_API_KEY` if you set one | chat through 150+ providers, many free; `auto` first |
-| Pollinations (free) | none needed; `KRITA_MCP_POLLINATIONS_API_KEY` optional | chat with free models that use tools |
-| Kilo Gateway (free) | none needed; `KRITA_MCP_KILO_API_KEY` optional | free models with no account (`kilo-auto/free` first); a key unlocks all |
-| OVHcloud AI Endpoints (free) | none needed; `KRITA_MCP_OVHCLOUD_API_KEY` optional | open models (gpt-oss, Qwen, Llama), rate-limited |
-| LLM7 (free) | none needed; `KRITA_MCP_LLM7_API_KEY` optional | free chat (`default` routes to a free model) |
-| SambaNova | `KRITA_MCP_SAMBANOVA_API_KEY` | very fast open models, free tier |
-| Cohere | `KRITA_MCP_COHERE_API_KEY` | Command models, free trial key |
-| SiliconFlow | `KRITA_MCP_SILICONFLOW_API_KEY` | DeepSeek, Qwen, GLM; some free models |
-| Z.AI GLM | `KRITA_MCP_ZAI_API_KEY` | GLM models, free Flash models |
-| OpenCode Zen | `KRITA_MCP_OPENCODE_API_KEY` | curated models, some free |
-| Ollama Cloud | `KRITA_MCP_OLLAMACLOUD_API_KEY` | large open models, free tier |
-| ModelScope | `KRITA_MCP_MODELSCOPE_API_KEY` | open models, free daily quota |
-| Tencent Hunyuan | `KRITA_MCP_TENCENT_API_KEY` | Hunyuan, free lite model |
-| Baidu Qianfan (ERNIE) | `KRITA_MCP_QIANFAN_API_KEY` | ERNIE, free speed models |
-| Scaleway, Hyperbolic, Nebius, Nscale | `KRITA_MCP_SCALEWAY_API_KEY`, `..._HYPERBOLIC_...`, `..._NEBIUS_...`, `..._NSCALE_...` | open models, starter credit |
-| DeepInfra, Novita, Featherless, Inference.net, Lambda, Chutes | `KRITA_MCP_DEEPINFRA_API_KEY`, `..._NOVITA_...`, `..._FEATHERLESS_...`, `..._INFERENCENET_...`, `..._LAMBDA_...`, `..._CHUTES_...` | open models at low prices |
-| Requesty, Vercel AI Gateway | `KRITA_MCP_REQUESTY_API_KEY`, `KRITA_MCP_VERCEL_API_KEY` | one key for hundreds of models (Vercel: monthly free credit) |
-| Venice, MiniMax, StepFun, Meta Llama API | `KRITA_MCP_VENICE_API_KEY`, `..._MINIMAX_...`, `..._STEPFUN_...`, `..._LLAMA_...` | their own models |
+| Mistral AI | `KRITAPILOT_MISTRAL_API_KEY` | chat, vision |
+| Groq | `KRITAPILOT_GROQ_API_KEY` | very fast chat |
+| DeepSeek | `KRITAPILOT_DEEPSEEK_API_KEY` | chat |
+| xAI Grok | `KRITAPILOT_XAI_API_KEY` | chat, vision, **images** (`backend="xai"`) |
+| Together AI | `KRITAPILOT_TOGETHER_API_KEY` | chat, **images** with open models (`backend="together"`) |
+| Fireworks AI | `KRITAPILOT_FIREWORKS_API_KEY` | chat with open models |
+| Cerebras | `KRITAPILOT_CEREBRAS_API_KEY` | very fast chat |
+| Hugging Face Inference Providers | `KRITAPILOT_HUGGINGFACE_API_KEY` | chat with thousands of open models |
+| NVIDIA NIM | `KRITAPILOT_NVIDIA_API_KEY` | chat |
+| Alibaba Qwen (Model Studio) | `KRITAPILOT_QWEN_API_KEY` | chat, vision |
+| Moonshot Kimi | `KRITAPILOT_MOONSHOT_API_KEY` | chat |
+| OmniRoute (free gateway on your computer) | none needed; `KRITAPILOT_OMNIROUTE_API_KEY` if you set one | chat through 150+ providers, many free; `auto` first |
+| Pollinations (free) | none needed; `KRITAPILOT_POLLINATIONS_API_KEY` optional | chat with free models that use tools |
+| Kilo Gateway (free) | none needed; `KRITAPILOT_KILO_API_KEY` optional | free models with no account (`kilo-auto/free` first); a key unlocks all |
+| OVHcloud AI Endpoints (free) | none needed; `KRITAPILOT_OVHCLOUD_API_KEY` optional | open models (gpt-oss, Qwen, Llama), rate-limited |
+| LLM7 (free) | none needed; `KRITAPILOT_LLM7_API_KEY` optional | free chat (`default` routes to a free model) |
+| SambaNova | `KRITAPILOT_SAMBANOVA_API_KEY` | very fast open models, free tier |
+| Cohere | `KRITAPILOT_COHERE_API_KEY` | Command models, free trial key |
+| SiliconFlow | `KRITAPILOT_SILICONFLOW_API_KEY` | DeepSeek, Qwen, GLM; some free models |
+| Z.AI GLM | `KRITAPILOT_ZAI_API_KEY` | GLM models, free Flash models |
+| OpenCode Zen | `KRITAPILOT_OPENCODE_API_KEY` | curated models, some free |
+| Ollama Cloud | `KRITAPILOT_OLLAMACLOUD_API_KEY` | large open models, free tier |
+| ModelScope | `KRITAPILOT_MODELSCOPE_API_KEY` | open models, free daily quota |
+| Tencent Hunyuan | `KRITAPILOT_TENCENT_API_KEY` | Hunyuan, free lite model |
+| Baidu Qianfan (ERNIE) | `KRITAPILOT_QIANFAN_API_KEY` | ERNIE, free speed models |
+| Scaleway, Hyperbolic, Nebius, Nscale | `KRITAPILOT_SCALEWAY_API_KEY`, `..._HYPERBOLIC_...`, `..._NEBIUS_...`, `..._NSCALE_...` | open models, starter credit |
+| DeepInfra, Novita, Featherless, Inference.net, Lambda, Chutes | `KRITAPILOT_DEEPINFRA_API_KEY`, `..._NOVITA_...`, `..._FEATHERLESS_...`, `..._INFERENCENET_...`, `..._LAMBDA_...`, `..._CHUTES_...` | open models at low prices |
+| Requesty, Vercel AI Gateway | `KRITAPILOT_REQUESTY_API_KEY`, `KRITAPILOT_VERCEL_API_KEY` | one key for hundreds of models (Vercel: monthly free credit) |
+| Venice, MiniMax, StepFun, Meta Llama API | `KRITAPILOT_VENICE_API_KEY`, `..._MINIMAX_...`, `..._STEPFUN_...`, `..._LLAMA_...` | their own models |
 
 These come from [OmniRoute](https://github.com/diegosouzapw/OmniRoute)'s provider registry: the services that
 speak the OpenAI API directly with an ordinary key, or with none. Services that only work through a
@@ -261,8 +261,8 @@ account has it, and a retired model is never requested again:
 | fal.ai | Must be chosen (fal has no model list API) |
 
 Some limits cannot be looked up from a provider and are settings instead (today's values are the defaults):
-OpenAI image sizes (`KRITA_MCP_OPENAI_SIZES`) and Sora video sizes and lengths
-(`KRITA_MCP_OPENAI_VIDEO_SIZES`, `KRITA_MCP_OPENAI_VIDEO_SECONDS`). A `size` or `seconds` passed in `extra`
+OpenAI image sizes (`KRITAPILOT_OPENAI_SIZES`) and Sora video sizes and lengths
+(`KRITAPILOT_OPENAI_VIDEO_SIZES`, `KRITAPILOT_OPENAI_VIDEO_SECONDS`). A `size` or `seconds` passed in `extra`
 is sent exactly as given.
 
 If Google answers that a model is no longer available and names its replacement, the request is retried
@@ -275,9 +275,9 @@ providers and the **Auto** provider that switches between them, see [AI Chat](ai
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KRITA_MCP_IMAGE_BACKEND` | auto | Default image backend |
-| `KRITA_MCP_GEN_TIMEOUT` | `900` | Seconds to wait for an image job |
-| `KRITA_MCP_*_BASE_URL` | the official API | Override any service's address (gateways, proxies, self-hosted) |
+| `KRITAPILOT_IMAGE_BACKEND` | auto | Default image backend |
+| `KRITAPILOT_GEN_TIMEOUT` | `900` | Seconds to wait for an image job |
+| `KRITAPILOT_*_BASE_URL` | the official API | Override any service's address (gateways, proxies, self-hosted) |
 
 ## Just give it a prompt: `create_artwork`
 

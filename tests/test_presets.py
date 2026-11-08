@@ -40,11 +40,11 @@ def test_guess_style_and_approach():
 
 def test_create_artwork_paints_without_a_generator(bridge, monkeypatch):
     calls, _ = bridge
-    monkeypatch.setenv("KRITA_MCP_COMFYUI_URL", "http://127.0.0.1:9")
-    monkeypatch.setenv("KRITA_MCP_A1111_URL", "http://127.0.0.1:9")
-    for k in ("KRITA_MCP_IMAGE_BACKEND", "KRITA_MCP_OPENAI_API_KEY", "KRITA_MCP_GEMINI_API_KEY",
-              "KRITA_MCP_STABILITY_API_KEY", "KRITA_MCP_REPLICATE_API_TOKEN", "KRITA_MCP_FAL_KEY",
-              "KRITA_MCP_OPENAI_BASE_URL"):
+    monkeypatch.setenv("KRITAPILOT_COMFYUI_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("KRITAPILOT_A1111_URL", "http://127.0.0.1:9")
+    for k in ("KRITAPILOT_IMAGE_BACKEND", "KRITAPILOT_OPENAI_API_KEY", "KRITAPILOT_GEMINI_API_KEY",
+              "KRITAPILOT_STABILITY_API_KEY", "KRITAPILOT_REPLICATE_API_TOKEN", "KRITAPILOT_FAL_KEY",
+              "KRITAPILOT_OPENAI_BASE_URL"):
         monkeypatch.delenv(k, raising=False)
     out = asyncio.run(G.create_artwork("a watercolor fox in snow", aspect="16:9", style="watercolor"))[0]
     assert out["approach"] == "paint" and out["style"] == "watercolor"
@@ -62,9 +62,9 @@ def test_create_artwork_generates_realistic_photo(bridge, monkeypatch):
         m.json("GET", "/sdapi/v1/sd-models", [{"title": "real"}])
         m.json("POST", "/sdapi/v1/txt2img", lambda h, b: {"images": [B64] * json.loads(b)["batch_size"],
                                                            "info": "{}"})
-        monkeypatch.setenv("KRITA_MCP_A1111_URL", m.url)
-        monkeypatch.setenv("KRITA_MCP_COMFYUI_URL", "http://127.0.0.1:9")
-        monkeypatch.delenv("KRITA_MCP_IMAGE_BACKEND", raising=False)
+        monkeypatch.setenv("KRITAPILOT_A1111_URL", m.url)
+        monkeypatch.setenv("KRITAPILOT_COMFYUI_URL", "http://127.0.0.1:9")
+        monkeypatch.delenv("KRITAPILOT_IMAGE_BACKEND", raising=False)
         out = asyncio.run(G.create_artwork("realistic portrait of an old fisherman", count=2))
     finally:
         m.srv.shutdown()

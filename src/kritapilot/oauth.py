@@ -88,7 +88,7 @@ class Flow:
         return "http://localhost:%d/callback" % self.port
 
     def auth_url(self):
-        base = env("KRITA_MCP_OPENROUTER_AUTH_URL", "https://openrouter.ai/auth")
+        base = env("KRITAPILOT_OPENROUTER_AUTH_URL", "https://openrouter.ai/auth")
         return base + "?" + urllib.parse.urlencode({
             "callback_url": self.callback_url, "code_challenge": self.challenge, "code_challenge_method": "S256",
             "state": self.state, "key_label": "Krita MCP"})
@@ -102,7 +102,7 @@ class Flow:
         if not secrets.compare_digest(q.get("state", ""), self.state):
             return False, "Sign-in rejected", "This sign-in link does not belong to Krita's current request."
         try:
-            api = env("KRITA_MCP_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+            api = env("KRITAPILOT_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
             r = http.post_json(api + "/auth/keys", {"code": q["code"], "code_verifier": self.verifier,
                                                     "code_challenge_method": "S256"}, timeout=60)
             key = r.get("key")
@@ -141,10 +141,10 @@ def verify(provider, key):
         return False, "empty key"
     try:
         if provider == "gemini":
-            base = env("KRITA_MCP_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+            base = env("KRITAPILOT_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
             http.get_json(base + "/models?pageSize=1", {"x-goog-api-key": key}, timeout=20)
         elif provider in ("openai", "openrouter"):
-            base = http.service_url("KRITA_MCP_%s_BASE_URL" % provider.upper(), provider,
+            base = http.service_url("KRITAPILOT_%s_BASE_URL" % provider.upper(), provider,
                                     "https://api.openai.com/v1" if provider == "openai"
                                     else "https://openrouter.ai/api/v1")
             http.get_json(base + "/models", {"Authorization": "Bearer " + key}, timeout=20)

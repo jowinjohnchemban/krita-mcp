@@ -28,7 +28,7 @@ def test_generate_inpaints_selection_with_variations(bridge, monkeypatch):
     try:
         m.json("POST", "/sdapi/v1/img2img", lambda h, b: {"images": [B64] * json.loads(b)["batch_size"],
                                                            "info": json.dumps({"all_seeds": [4, 5]})})
-        monkeypatch.setenv("KRITA_MCP_A1111_URL", m.url)
+        monkeypatch.setenv("KRITAPILOT_A1111_URL", m.url)
         out = asyncio.run(G.generate_image("a red door", count=2, backend="a1111", size=512, seed=4))
     finally:
         m.srv.shutdown()
@@ -46,7 +46,7 @@ def test_generate_inpaints_selection_with_variations(bridge, monkeypatch):
 def test_inpaint_without_selection_is_refused(bridge, monkeypatch):
     _, state = bridge
     state["has_selection"] = False
-    monkeypatch.setenv("KRITA_MCP_A1111_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("KRITAPILOT_A1111_URL", "http://127.0.0.1:9")
     with pytest.raises(S.ToolError, match="selection"):
         asyncio.run(G.generate_image("x", mode="inpaint", backend="a1111"))
     with pytest.raises(S.ToolError, match="mode must be"):
@@ -65,7 +65,7 @@ def test_workflow_files_stay_inside_the_workspace(bridge, tmp_path):
 
 def test_remove_background_auto_falls_back_to_color(bridge, monkeypatch):
     calls, _ = bridge
-    monkeypatch.setenv("KRITA_MCP_IMAGE_BACKEND", "comfyui")  # ComfyUI has no background removal
+    monkeypatch.setenv("KRITAPILOT_IMAGE_BACKEND", "comfyui")  # ComfyUI has no background removal
     out = asyncio.run(G.remove_background(layer="Photo"))
     assert out["method"] == "color" and calls[-1][0] == "image.remove_background"
     with pytest.raises(S.ToolError):
@@ -86,8 +86,8 @@ def test_control_guides_are_inverted_only_for_controlnet_backends(bridge, monkey
         m.json("GET", "/controlnet/model_list", {"model_list": ["lineart-model"]})
         m.json("POST", "/sdapi/v1/txt2img", {"images": [B64], "info": "{}"})
         m.json("POST", "/v1/images/edits", {"data": [{"b64_json": B64}]})
-        monkeypatch.setenv("KRITA_MCP_A1111_URL", m.url)
-        monkeypatch.setenv("KRITA_MCP_OPENAI_BASE_URL", m.url + "/v1")
+        monkeypatch.setenv("KRITAPILOT_A1111_URL", m.url)
+        monkeypatch.setenv("KRITAPILOT_OPENAI_BASE_URL", m.url + "/v1")
         orig = S._client.call
 
         def with_controls(method, params):

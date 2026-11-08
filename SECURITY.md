@@ -18,12 +18,12 @@ You'll get an answer within a few days, and credit in the release notes if you w
 KritaPilot lets software control a creative application, so these matter most:
 
 - **The bridge.** It listens on loopback only and every request needs the token in
-  `~/.krita-mcp/token`. Anything that reaches Krita without the token, or from another machine, is a bug.
+  `~/.kritapilot/token`. Anything that reaches Krita without the token, or from another machine, is a bug.
 - **The workspace.** The AI may read and write files only inside one folder (`~/KritaMCP` by default).
   Any way out of it (paths, links, archives, export targets) is a bug.
 - **No code execution.** There is deliberately no tool that runs code, and skills are read as text only.
   Any way to make the plugin or the server run code is a bug.
-- **Keys.** API keys stay in `~/.krita-mcp/agent_keys.json`, are never shown, and are masked in logs.
+- **Keys.** API keys stay in `~/.kritapilot/agent_keys.json`, are never shown, and are masked in logs.
   A key that leaks into a log, a message, a request to another service or a crash report is a bug.
 - **Downloads.** Updates are taken only from this project's GitHub releases and checked against GitHub's
   checksums; generated media is fetched only from public addresses.

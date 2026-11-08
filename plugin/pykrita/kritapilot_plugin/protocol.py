@@ -20,16 +20,17 @@ import time
 import traceback
 from pathlib import Path
 
+from . import config
 from .util import BridgeError
 
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 5679
+DEFAULT_HOST = config.BRIDGE_HOST
+DEFAULT_PORT = config.BRIDGE_PORT
 MAX_MESSAGE_BYTES = 64 * 1024 * 1024
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 
 
 def config_dir() -> Path:
-    return Path(os.environ.get("KRITA_MCP_HOME") or (Path.home() / ".krita-mcp")).expanduser()
+    return config.home()
 
 
 def write_new_token() -> str:

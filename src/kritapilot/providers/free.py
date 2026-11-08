@@ -7,7 +7,7 @@ AI Horde      text-to-image on volunteers' GPUs (https://aihorde.net); anonymous
 OmniRoute     (in compat.py) a local gateway in front of 150+ providers, many of them free.
 
 Nothing here runs by surprise: the image services are used only after you turn them on in Krita's
-AI Chat > Services (or KRITA_MCP_FREE_SERVICES=pollinations,horde), and the Pollinations chat only when you
+AI Chat > Services (or KRITAPILOT_FREE_SERVICES=pollinations,horde), and the Pollinations chat only when you
 choose it in the AI Chat panel. Models are listed live, never hard-coded.
 """
 import time
@@ -26,19 +26,19 @@ def _client_agent():
 
 # ====================================================================== Pollinations
 def pollinations_key():
-    return secret("KRITA_MCP_POLLINATIONS_API_KEY")
+    return secret("KRITAPILOT_POLLINATIONS_API_KEY")
 
 
 def _text_url():
-    return env("KRITA_MCP_POLLINATIONS_TEXT_URL", "https://text.pollinations.ai").rstrip("/")
+    return env("KRITAPILOT_POLLINATIONS_TEXT_URL", "https://text.pollinations.ai").rstrip("/")
 
 
 def _gen_url():
-    return env("KRITA_MCP_POLLINATIONS_GEN_URL", "https://gen.pollinations.ai").rstrip("/")
+    return env("KRITAPILOT_POLLINATIONS_GEN_URL", "https://gen.pollinations.ai").rstrip("/")
 
 
 def _image_url():
-    return env("KRITA_MCP_POLLINATIONS_IMAGE_URL", "https://image.pollinations.ai").rstrip("/")
+    return env("KRITAPILOT_POLLINATIONS_IMAGE_URL", "https://image.pollinations.ai").rstrip("/")
 
 
 def pollinations_chat(key=None):
@@ -87,7 +87,7 @@ class PollinationsImages:
 
     def __init__(self):
         self.key = pollinations_key()
-        self.model = env("KRITA_MCP_POLLINATIONS_IMAGE_MODEL")
+        self.model = env("KRITAPILOT_POLLINATIONS_IMAGE_MODEL")
 
     def configured(self):
         return keys.enabled("pollinations")
@@ -132,7 +132,7 @@ class PollinationsImages:
 
 # ====================================================================== AI Horde
 def _horde_url():
-    return env("KRITA_MCP_HORDE_URL", "https://aihorde.net/api/v2").rstrip("/")
+    return env("KRITAPILOT_HORDE_URL", "https://aihorde.net/api/v2").rstrip("/")
 
 
 class HordeImages:
@@ -145,8 +145,8 @@ class HordeImages:
     sizes = None
 
     def __init__(self):
-        self.key = secret("KRITA_MCP_HORDE_API_KEY")
-        self.model = env("KRITA_MCP_HORDE_MODEL")
+        self.key = secret("KRITAPILOT_HORDE_API_KEY")
+        self.model = env("KRITAPILOT_HORDE_MODEL")
         # anonymous requests are limited in size; a (free) account allows more
         self.default_side = 1024 if self.key else 576
 
@@ -196,8 +196,8 @@ class HordeImages:
         rid = http.post_json(_horde_url() + "/generate/async", body, self._headers(), timeout=60).get("id")
         if not rid:
             raise ProviderError("AI Horde did not accept the request")
-        poll = float(env("KRITA_MCP_HORDE_POLL", "4"))
-        deadline = time.time() + float(env("KRITA_MCP_HORDE_TIMEOUT", "600"))
+        poll = float(env("KRITAPILOT_HORDE_POLL", "4"))
+        deadline = time.time() + float(env("KRITAPILOT_HORDE_TIMEOUT", "600"))
         while True:
             st = http.get_json("%s/generate/check/%s" % (_horde_url(), rid), self._headers(), timeout=30)
             if st.get("done"):

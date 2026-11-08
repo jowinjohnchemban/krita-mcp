@@ -50,11 +50,11 @@ def chat(monkeypatch, tmp_path):
     mod.DockWidgetFactory = lambda *a: None
     mod.DockWidgetFactoryBase = types.SimpleNamespace(DockRight=1)
     monkeypatch.setitem(sys.modules, "krita", mod)
-    monkeypatch.setenv("KRITA_MCP_HOME", str(tmp_path))
-    saved = {m: sys.modules.pop(m) for m in [m for m in sys.modules if m.startswith("krita_mcp_bridge")]}
+    monkeypatch.setenv("KRITAPILOT_HOME", str(tmp_path))
+    saved = {m: sys.modules.pop(m) for m in [m for m in sys.modules if m.startswith("kritapilot_plugin")]}
     monkeypatch.syspath_prepend(str(ROOT / "plugin" / "pykrita"))
     import importlib
-    c = importlib.import_module("krita_mcp_bridge.chat")
+    c = importlib.import_module("kritapilot_plugin.chat")
     sent = []
     events = [{"type": "user", "n": 0, "text": "paint a fox"},
               {"type": "tool", "n": 1, "name": "create_artwork", "args": '{"prompt": "a fox"}'},
@@ -86,7 +86,7 @@ def chat(monkeypatch, tmp_path):
     yield app, c, dock, sent
     dock.timer.stop()
     dock.poll_timer.stop()
-    for m in [m for m in sys.modules if m.startswith("krita_mcp_bridge")]:  # drop what we imported ...
+    for m in [m for m in sys.modules if m.startswith("kritapilot_plugin")]:  # drop what we imported ...
         del sys.modules[m]
     sys.modules.update(saved)  # ... and put back what was there
 
@@ -279,18 +279,13 @@ def test_starting_the_assistant_service_for_real(chat, monkeypatch):
     monkeypatch.setattr(c.subprocess, "Popen", FakeProc)
     monkeypatch.setattr(c.time, "sleep", lambda s: None)
     monkeypatch.setitem(c._SERVICE, "proc", None)
-    import shutil
-    monkeypatch.setattr(shutil, "which", lambda name: "/bin/" + name)  # both commands installed: the new one wins
     health = c._real_ensure_service()
     assert health["providers"]["gemini"]["signed_in"] is False
     assert launched["args"][0] == "kritapilot" and launched["args"][1:] == ["--agent", "--agent-port", "5680"]
-    assert launched["env"]["KRITA_MCP_PORT"] == "5676"  # the port the bridge really listens on
+    assert launched["env"]["KRITAPILOT_PORT"] == "5676"  # the port the bridge really listens on
     assert c.extension.bridge_port() == 5676
     monkeypatch.setattr(c.extension, "INSTANCE", None)
     assert c.extension.bridge_port() == 5679  # nothing running: the configured / default port
-    # a server from before the rename has only the old command: it is used instead of failing
-    monkeypatch.setattr(shutil, "which", lambda name: "/bin/krita-mcp" if name == "krita-mcp" else None)
-    assert c.extension.server_args() == ["krita-mcp"]
     c.extension.set_setting("client_command", "C:/Tools/my-server.exe --x")  # the user's own command stays
     assert c.extension.server_args()[0].strip('"') == "C:/Tools/my-server.exe"
 
@@ -361,10 +356,10 @@ def test_logs_window_follows_the_log_live(chat):
 
 def test_actions_settings_and_commands_are_logged_without_keys(chat):
     app, c, dock, sent = chat
-    log = Path(os.environ["KRITA_MCP_HOME"]) / "logs" / "krita.log"
+    log = Path(os.environ["KRITAPILOT_HOME"]) / "logs" / "krita.log"
     c.extension.set_setting("dialogs", "leave")
     c.extension.set_setting("dialogs", "leave")  # unchanged: no second line
-    h = sys.modules["krita_mcp_bridge.handlers"]
+    h = sys.modules["kritapilot_plugin.handlers"]
     h.HANDLERS["test.echo"] = lambda p: p
     h.dispatch("test.echo", {"x": 1, "api_key": "sk-or-v1-" + "a" * 40})
     c._send_request = lambda *a: {"session": "s1"}

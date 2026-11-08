@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_server_and_plugin_share_one_logger():
     assert (ROOT / "src/kritapilot/tracelog.py").read_bytes() == \
-        (ROOT / "plugin/pykrita/krita_mcp_bridge/tracelog.py").read_bytes()
+        (ROOT / "plugin/pykrita/kritapilot_plugin/tracelog.py").read_bytes()
 
 
 def test_keys_never_reach_a_log():
@@ -33,7 +33,7 @@ def test_lines_are_dated_single_and_the_file_stays_small(monkeypatch):
     lines = p.read_text(encoding="utf-8").splitlines()
     assert lines and all(" test " in ln and "with a break" in ln for ln in lines)
     assert p.stat().st_size < 600 and Path(str(p) + ".1").exists()
-    assert str(p).startswith(os.environ["KRITA_MCP_HOME"])  # tests never touch the real ~/.krita-mcp
+    assert str(p).startswith(os.environ["KRITAPILOT_HOME"])  # tests never touch the real ~/.kritapilot
 
 
 def test_the_assistant_logs_messages_and_tool_calls():

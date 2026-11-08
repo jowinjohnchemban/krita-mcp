@@ -100,9 +100,9 @@ def mock(monkeypatch):
     m = Mock()
     monkeypatch.setattr(http, "_public", lambda host: None)  # results come from 127.0.0.1 in tests
     for k in list(__import__("os").environ):
-        if k == "KRITA_MCP_HOME":  # keep the isolated key folder from conftest - never the user's real keys
+        if k == "KRITAPILOT_HOME":  # keep the isolated key folder from conftest - never the user's real keys
             continue
-        if k.startswith("KRITA_MCP_") or k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
+        if k.startswith("KRITAPILOT_") or k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
             monkeypatch.delenv(k, raising=False)
     yield m
     m.srv.shutdown()
@@ -114,14 +114,14 @@ def _body(call):
 
 # ---------------------------------------------------------------- helpers
 def test_secret_requires_opt_in_for_generic_keys(monkeypatch):
-    monkeypatch.delenv("KRITA_MCP_OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("KRITA_MCP_USE_ENV_KEYS", raising=False)
+    monkeypatch.delenv("KRITAPILOT_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("KRITAPILOT_USE_ENV_KEYS", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-generic")
-    assert http.secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY") is None
-    monkeypatch.setenv("KRITA_MCP_USE_ENV_KEYS", "1")
-    assert http.secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY") == "sk-generic"
-    monkeypatch.setenv("KRITA_MCP_OPENAI_API_KEY", "sk-own")
-    assert http.secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY") == "sk-own"
+    assert http.secret("KRITAPILOT_OPENAI_API_KEY", "OPENAI_API_KEY") is None
+    monkeypatch.setenv("KRITAPILOT_USE_ENV_KEYS", "1")
+    assert http.secret("KRITAPILOT_OPENAI_API_KEY", "OPENAI_API_KEY") == "sk-generic"
+    monkeypatch.setenv("KRITAPILOT_OPENAI_API_KEY", "sk-own")
+    assert http.secret("KRITAPILOT_OPENAI_API_KEY", "OPENAI_API_KEY") == "sk-own"
 
 
 def test_sizes_aspects_and_workflow_placeholders():
@@ -142,15 +142,15 @@ def test_download_refuses_private_hosts():
 
 
 def test_pick_reports_how_to_configure(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_COMFYUI_URL", mock.url + "/nothing")
-    monkeypatch.setenv("KRITA_MCP_A1111_URL", mock.url + "/nothing")
+    monkeypatch.setenv("KRITAPILOT_COMFYUI_URL", mock.url + "/nothing")
+    monkeypatch.setenv("KRITAPILOT_A1111_URL", mock.url + "/nothing")
     with pytest.raises(ProviderError, match="No image-generation backend"):
         images.pick()
 
 
 # ---------------------------------------------------------------- image backends
 def test_a1111_txt2img_inpaint_and_upscale(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_A1111_URL", mock.url)
+    monkeypatch.setenv("KRITAPILOT_A1111_URL", mock.url)
     mock.json("GET", "/sdapi/v1/sd-models", [{"title": "sdxl.safetensors"}])
     mock.json("GET", "/sdapi/v1/samplers", [{"name": "Euler a"}])
     mock.json("POST", "/sdapi/v1/txt2img", {"images": [B64, B64], "info": json.dumps({"all_seeds": [5, 6]})})
@@ -169,7 +169,7 @@ def test_a1111_txt2img_inpaint_and_upscale(mock, monkeypatch):
 
 
 def test_comfyui_builtin_graph_and_custom_workflow(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_COMFYUI_URL", mock.url)
+    monkeypatch.setenv("KRITAPILOT_COMFYUI_URL", mock.url)
     ckpt = {"CheckpointLoaderSimple": {"input": {"required": {"ckpt_name": [["model-a.safetensors"]]}}}}
     mock.json("GET", "/object_info/CheckpointLoaderSimple", ckpt)
     mock.json("POST", "/upload/image", lambda h, b: {"name": "up-%d.png" % len(mock.calls), "subfolder": ""})
@@ -196,7 +196,7 @@ def test_comfyui_builtin_graph_and_custom_workflow(mock, monkeypatch):
 
 
 def test_openai_generations_and_masked_edit(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_OPENAI_BASE_URL", mock.url + "/v1")  # loopback: no key needed
+    monkeypatch.setenv("KRITAPILOT_OPENAI_BASE_URL", mock.url + "/v1")  # loopback: no key needed
     mock.json("POST", "/v1/images/generations", {"data": [{"b64_json": B64}]})
     mock.json("POST", "/v1/images/edits", {"data": [{"b64_json": B64}]})
     b = images.get("openai")
@@ -210,8 +210,8 @@ def test_openai_generations_and_masked_edit(mock, monkeypatch):
 
 
 def test_gemini_image(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_GEMINI_API_KEY", "g-key")
-    monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", mock.url)
+    monkeypatch.setenv("KRITAPILOT_GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("KRITAPILOT_GEMINI_BASE_URL", mock.url)
     mock.json("POST", "/models/gemini-3.1-flash-image:generateContent",  # the newest image model listed
               {"candidates": [{"content": {"parts": [{"text": "here"}, {"inlineData": {"data": B64}}]}}]})
     imgs, meta = images.get("google").generate(images.ImageJob(mode="inpaint", prompt="add a bird", image=PNG,
@@ -223,8 +223,8 @@ def test_gemini_image(mock, monkeypatch):
 
 
 def test_stability_routes(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_STABILITY_API_KEY", "s-key")
-    monkeypatch.setenv("KRITA_MCP_STABILITY_BASE_URL", mock.url)
+    monkeypatch.setenv("KRITAPILOT_STABILITY_API_KEY", "s-key")
+    monkeypatch.setenv("KRITAPILOT_STABILITY_BASE_URL", mock.url)
     for path in ("/v2beta/stable-image/generate/core", "/v2beta/stable-image/edit/inpaint",
                  "/v2beta/stable-image/upscale/fast", "/v2beta/stable-image/edit/remove-background"):
         mock.raw("POST", path, PNG, "image/png")
@@ -238,8 +238,8 @@ def test_stability_routes(mock, monkeypatch):
 
 
 def test_replicate_maps_inputs_from_the_model_schema(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_REPLICATE_API_TOKEN", "r-key")
-    monkeypatch.setenv("KRITA_MCP_REPLICATE_BASE_URL", mock.url + "/v1")
+    monkeypatch.setenv("KRITAPILOT_REPLICATE_API_TOKEN", "r-key")
+    monkeypatch.setenv("KRITAPILOT_REPLICATE_BASE_URL", mock.url + "/v1")
     schema = {"latest_version": {"id": "v1", "openapi_schema": {"components": {"schemas": {"Input": {"properties": {
         "prompt": {}, "num_outputs": {}, "aspect_ratio": {"enum": ["1:1", "16:9"]}, "seed": {},
         "output_format": {}}}}}}}}
@@ -256,8 +256,8 @@ def test_replicate_maps_inputs_from_the_model_schema(mock, monkeypatch):
 
 
 def test_fal_queue(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_FAL_KEY", "f-key")
-    monkeypatch.setenv("KRITA_MCP_FAL_BASE_URL", mock.url + "/q")
+    monkeypatch.setenv("KRITAPILOT_FAL_KEY", "f-key")
+    monkeypatch.setenv("KRITAPILOT_FAL_BASE_URL", mock.url + "/q")
     mock.json("POST", "/q/fal-ai/flux/dev", {"request_id": "r", "status_url": mock.url + "/q/s",
                                              "response_url": mock.url + "/q/r"})
     mock.json("GET", "/q/s", {"status": "COMPLETED"})
@@ -271,8 +271,8 @@ def test_fal_queue(mock, monkeypatch):
 
 # ---------------------------------------------------------------- video
 def test_sora_video(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_OPENAI_API_KEY", "o-key")
-    monkeypatch.setenv("KRITA_MCP_OPENAI_BASE_URL", mock.url + "/v1")
+    monkeypatch.setenv("KRITAPILOT_OPENAI_API_KEY", "o-key")
+    monkeypatch.setenv("KRITAPILOT_OPENAI_BASE_URL", mock.url + "/v1")
     mock.json("POST", "/v1/videos", {"id": "vid", "status": "queued"})
     mock.json("GET", "/v1/videos/vid", {"id": "vid", "status": "completed"})
     mock.raw("GET", "/v1/videos/vid/content", MP4, "video/mp4")
@@ -282,9 +282,9 @@ def test_sora_video(mock, monkeypatch):
 
 
 def test_heygen_talking_avatar(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_HEYGEN_API_KEY", "h-key")
-    monkeypatch.setenv("KRITA_MCP_HEYGEN_BASE_URL", mock.url)
-    monkeypatch.setenv("KRITA_MCP_HEYGEN_UPLOAD_URL", mock.url + "/up")
+    monkeypatch.setenv("KRITAPILOT_HEYGEN_API_KEY", "h-key")
+    monkeypatch.setenv("KRITAPILOT_HEYGEN_BASE_URL", mock.url)
+    monkeypatch.setenv("KRITAPILOT_HEYGEN_UPLOAD_URL", mock.url + "/up")
     mock.json("POST", "/up/v1/asset", {"data": {"id": "asset1"}})
     mock.json("POST", "/v2/video/generate", {"error": None, "data": {"video_id": "v9"}})
     mock.json("GET", "/v1/video_status.get", {"data": {"status": "completed", "video_url": mock.url + "/out.mp4"}})
@@ -302,8 +302,8 @@ def test_heygen_talking_avatar(mock, monkeypatch):
 
 
 def test_veo_video(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_GEMINI_API_KEY", "g")
-    monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", mock.url)
+    monkeypatch.setenv("KRITAPILOT_GEMINI_API_KEY", "g")
+    monkeypatch.setenv("KRITAPILOT_GEMINI_BASE_URL", mock.url)
     mock.json("POST", "/models/veo-4.1-generate-preview:predictLongRunning", {"name": "operations/op1"})
     mock.json("GET", "/operations/op1", {"done": True, "response": {"generateVideoResponse": {
         "generatedSamples": [{"video": {"uri": mock.url + "/v.mp4"}}]}}})
@@ -314,30 +314,30 @@ def test_veo_video(mock, monkeypatch):
 
 # ---------------------------------------------------------------- vision
 def test_vision_openai_compatible_and_gemini(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_OPENAI_BASE_URL", mock.url + "/v1")  # e.g. a local Ollama
+    monkeypatch.setenv("KRITAPILOT_OPENAI_BASE_URL", mock.url + "/v1")  # e.g. a local Ollama
     mock.json("POST", "/v1/chat/completions", {"model": "llava", "choices": [{"message": {"content": "nice"}}]})
     text, meta = vision.ask(PNG, "critique", provider="ollama", model="llava")
     body = _body(mock.calls[-1])
     assert text == "nice" and meta["provider"] == "openai"
     assert body["messages"][1]["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
-    monkeypatch.setenv("KRITA_MCP_GEMINI_API_KEY", "g")
-    monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", mock.url)
+    monkeypatch.setenv("KRITAPILOT_GEMINI_API_KEY", "g")
+    monkeypatch.setenv("KRITAPILOT_GEMINI_BASE_URL", mock.url)
     mock.json("POST", "/models/gemini-3.8-flash:generateContent",
               {"candidates": [{"content": {"parts": [{"text": "warm "}, {"text": "palette"}]}}]})
     assert vision.ask(PNG, "q", provider="gemini")[0] == "warm palette"
 
 
 def test_vision_claude_needs_explicit_key(monkeypatch):
-    monkeypatch.delenv("KRITA_MCP_ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("KRITA_MCP_USE_ENV_KEYS", raising=False)
+    monkeypatch.delenv("KRITAPILOT_ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("KRITAPILOT_USE_ENV_KEYS", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-generic")
-    with pytest.raises(ProviderError, match="KRITA_MCP_ANTHROPIC_API_KEY"):
+    with pytest.raises(ProviderError, match="KRITAPILOT_ANTHROPIC_API_KEY"):
         vision.ask(PNG, "q", provider="claude")
 
 
 def test_vision_claude_through_the_sdk(mock, monkeypatch):
     pytest.importorskip("anthropic")
-    monkeypatch.setenv("KRITA_MCP_ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("KRITAPILOT_ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setenv("ANTHROPIC_BASE_URL", mock.url)
     reply = {"id": "msg_1", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
              "content": [{"type": "text", "text": "Strong focal point; "}, {"type": "text", "text": "lift the shadows."}],
@@ -370,7 +370,7 @@ def test_control_model_picking():
 
 
 def test_a1111_controlnet_units(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_A1111_URL", mock.url)
+    monkeypatch.setenv("KRITAPILOT_A1111_URL", mock.url)
     mock.json("GET", "/controlnet/model_list", {"model_list": ["control_v11p_sd15_lineart [43d4be0d]"]})
     mock.json("POST", "/sdapi/v1/txt2img", {"images": [B64], "info": "{}"})
     images.get("a1111").generate(images.ImageJob(prompt="cat", controls=[
@@ -381,7 +381,7 @@ def test_a1111_controlnet_units(mock, monkeypatch):
 
 
 def test_comfyui_controlnet_chain(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_COMFYUI_URL", mock.url)
+    monkeypatch.setenv("KRITAPILOT_COMFYUI_URL", mock.url)
     mock.json("GET", "/object_info/ControlNetLoader", {"ControlNetLoader": {"input": {"required": {
         "control_net_name": [["sdxl-canny.safetensors", "sdxl-depth.safetensors"]]}}}})
     mock.json("POST", "/upload/image", lambda h, b: {"name": "c%d.png" % len(mock.calls), "subfolder": ""})
@@ -399,19 +399,19 @@ def test_comfyui_controlnet_chain(mock, monkeypatch):
 
 
 def test_cloud_backends_use_the_guide_image(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_STABILITY_API_KEY", "s")
-    monkeypatch.setenv("KRITA_MCP_STABILITY_BASE_URL", mock.url)
+    monkeypatch.setenv("KRITAPILOT_STABILITY_API_KEY", "s")
+    monkeypatch.setenv("KRITAPILOT_STABILITY_BASE_URL", mock.url)
     mock.raw("POST", "/v2beta/stable-image/control/sketch", PNG, "image/png")
     images.get("stability").generate(images.ImageJob(prompt="x", controls=[{"image": PNG, "type": "scribble",
                                                                              "strength": 0.6}]))
     assert mock.calls[-1][1] == "/v2beta/stable-image/control/sketch" and b"control_strength" in mock.calls[-1][3]
-    monkeypatch.setenv("KRITA_MCP_OPENAI_BASE_URL", mock.url + "/v1")
+    monkeypatch.setenv("KRITAPILOT_OPENAI_BASE_URL", mock.url + "/v1")
     mock.json("POST", "/v1/images/edits", {"data": [{"b64_json": B64}]})
     images.get("openai").generate(images.ImageJob(prompt="castle", controls=[{"image": PNG}]))
     raw = mock.calls[-1][3]
     assert mock.calls[-1][1] == "/v1/images/edits" and b"layout and line guide" in raw and b'name="mask"' not in raw
-    monkeypatch.setenv("KRITA_MCP_REPLICATE_API_TOKEN", "r")
-    monkeypatch.setenv("KRITA_MCP_REPLICATE_BASE_URL", mock.url + "/v1")
+    monkeypatch.setenv("KRITAPILOT_REPLICATE_API_TOKEN", "r")
+    monkeypatch.setenv("KRITAPILOT_REPLICATE_BASE_URL", mock.url + "/v1")
     rep = images.get("replicate")
     inp = rep.inputs_for(images.ImageJob(prompt="p", controls=[{"image": PNG, "strength": 0.4}]),
                          {"prompt": {}, "control_image": {}, "control_strength": {}})
@@ -424,7 +424,7 @@ def test_cloud_backends_use_the_guide_image(mock, monkeypatch):
 # ---------------------------------------------------------------- asset libraries
 def test_polyhaven_search_and_fetch(mock, monkeypatch):
     from kritapilot.providers import assets
-    monkeypatch.setenv("KRITA_MCP_POLYHAVEN_URL", mock.url)
+    monkeypatch.setenv("KRITAPILOT_POLYHAVEN_URL", mock.url)
     mock.json("GET", "/assets", {
         "rock_wall": {"name": "Rock Wall", "tags": ["stone", "cliff"], "categories": ["rock"], "authors": {"A": "All"}},
         "oak_bark": {"name": "Oak Bark", "tags": ["tree", "wood"], "categories": ["wood"]},
@@ -444,7 +444,7 @@ def test_polyhaven_search_and_fetch(mock, monkeypatch):
 
 def test_openverse_photos_carry_attribution(mock, monkeypatch):
     from kritapilot.providers import assets
-    monkeypatch.setenv("KRITA_MCP_OPENVERSE_URL", mock.url + "/v1")
+    monkeypatch.setenv("KRITAPILOT_OPENVERSE_URL", mock.url + "/v1")
     mock.json("GET", "/v1/images/", {"results": [{"id": "abc", "title": "Granite", "creator": "Ana",
                                                   "license": "by", "license_version": "2.0", "width": 800,
                                                   "height": 600, "attribution": "Granite by Ana is CC BY 2.0"}]})
@@ -460,8 +460,8 @@ def test_openverse_photos_carry_attribution(mock, monkeypatch):
 # ---------------------------------------------------------------- OpenAI-compatible services
 def test_compatible_services_list_models_live(mock, monkeypatch):
     from kritapilot.providers import compat
-    monkeypatch.setenv("KRITA_MCP_TOGETHER_API_KEY", "t-key")
-    monkeypatch.setenv("KRITA_MCP_TOGETHER_BASE_URL", mock.url + "/tg")
+    monkeypatch.setenv("KRITAPILOT_TOGETHER_API_KEY", "t-key")
+    monkeypatch.setenv("KRITAPILOT_TOGETHER_BASE_URL", mock.url + "/tg")
     mock.json("GET", "/tg/models", [  # Together answers with a bare list and labels each model's type
         {"id": "meta-llama/Llama-5-70B", "type": "chat", "created": 300},
         {"id": "black-forest-labs/FLUX.3-pro", "type": "image", "created": 310},
@@ -479,8 +479,8 @@ def test_compatible_services_list_models_live(mock, monkeypatch):
 
 
 def test_vision_through_a_compatible_service(mock, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_GROQ_API_KEY", "g-key")
-    monkeypatch.setenv("KRITA_MCP_GROQ_BASE_URL", mock.url + "/groq")
+    monkeypatch.setenv("KRITAPILOT_GROQ_API_KEY", "g-key")
+    monkeypatch.setenv("KRITAPILOT_GROQ_BASE_URL", mock.url + "/groq")
     mock.json("GET", "/groq/models", {"data": [{"id": "whisper-large-v4", "created": 9},
                                                {"id": "llama-5-vision", "created": 8}]})
     mock.json("POST", "/groq/chat/completions", {"choices": [{"message": {"content": "balanced"}}]})

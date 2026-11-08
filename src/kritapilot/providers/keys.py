@@ -1,37 +1,36 @@
 """Service sign-in: API keys and server URLs entered in Krita's AI Chat > Services dialog.
 
-Stored in KRITA_MCP_HOME/agent_keys.json (a user-only file). Both the in-Krita assistant and the MCP server
+Stored in KRITAPILOT_HOME/agent_keys.json (a user-only file). Both the in-Krita assistant and the MCP server
 read them, so signing in once inside Krita also serves Claude Desktop, Gemini CLI, Cursor, ... Saving a key
-there is an explicit opt-in, like setting KRITA_MCP_<SERVICE>_API_KEY; an explicit environment variable wins.
+there is an explicit opt-in, like setting KRITAPILOT_<SERVICE>_API_KEY; an explicit environment variable wins.
 """
 import json
 import os
-from pathlib import Path
 
 # name: label, what it is for, the environment variable it stands for, where to get a key, URL field?
 SERVICES = {
-    "gemini": ("Google Gemini", "chat, images, video (Veo), vision", "KRITA_MCP_GEMINI_API_KEY",
+    "gemini": ("Google Gemini", "chat, images, video (Veo), vision", "KRITAPILOT_GEMINI_API_KEY",
                "https://aistudio.google.com/apikey", False),
-    "anthropic": ("Anthropic Claude", "chat, vision", "KRITA_MCP_ANTHROPIC_API_KEY",
+    "anthropic": ("Anthropic Claude", "chat, vision", "KRITAPILOT_ANTHROPIC_API_KEY",
                   "https://console.anthropic.com/settings/keys", False),
-    "openai": ("OpenAI / compatible", "chat, images, video (Sora), vision", "KRITA_MCP_OPENAI_API_KEY",
+    "openai": ("OpenAI / compatible", "chat, images, video (Sora), vision", "KRITAPILOT_OPENAI_API_KEY",
                "https://platform.openai.com/api-keys", True),
     "openrouter": ("OpenRouter (sign in with browser)", "chat with Gemini, Claude, GPT and 300+ models",
-                   "KRITA_MCP_OPENROUTER_API_KEY", "https://openrouter.ai/settings/keys", False),
+                   "KRITAPILOT_OPENROUTER_API_KEY", "https://openrouter.ai/settings/keys", False),
     "ollama": ("Local model (Ollama, LM Studio)", "chat with a model on your computer", None, "https://ollama.com/download", True),
-    "stability": ("Stability AI", "images, upscale, background removal", "KRITA_MCP_STABILITY_API_KEY",
+    "stability": ("Stability AI", "images, upscale, background removal", "KRITAPILOT_STABILITY_API_KEY",
                   "https://platform.stability.ai/account/keys", False),
-    "replicate": ("Replicate", "any image / video model", "KRITA_MCP_REPLICATE_API_TOKEN",
+    "replicate": ("Replicate", "any image / video model", "KRITAPILOT_REPLICATE_API_TOKEN",
                   "https://replicate.com/account/api-tokens", False),
-    "fal": ("fal.ai", "any image / video model", "KRITA_MCP_FAL_KEY", "https://fal.ai/dashboard/keys", False),
-    "heygen": ("HeyGen", "talking avatars", "KRITA_MCP_HEYGEN_API_KEY", "https://app.heygen.com/settings", False),
+    "fal": ("fal.ai", "any image / video model", "KRITAPILOT_FAL_KEY", "https://fal.ai/dashboard/keys", False),
+    "heygen": ("HeyGen", "talking avatars", "KRITAPILOT_HEYGEN_API_KEY", "https://app.heygen.com/settings", False),
     "comfyui": ("ComfyUI (local)", "images on your GPU", None, "https://www.comfy.org/", True),
     "a1111": ("AUTOMATIC1111 / Forge (local)", "images on your GPU", None,
               "https://github.com/lllyasviel/stable-diffusion-webui-forge", True),
     "pollinations": ("Pollinations (free, no sign-in)", "free chat and images; a free key raises the limits",
-                     "KRITA_MCP_POLLINATIONS_API_KEY", "https://enter.pollinations.ai/keys", False),
+                     "KRITAPILOT_POLLINATIONS_API_KEY", "https://enter.pollinations.ai/keys", False),
     "horde": ("AI Horde (free, crowdsourced)", "free images on volunteers' GPUs; a free key gets you ahead in "
-              "the queue", "KRITA_MCP_HORDE_API_KEY", "https://aihorde.net/register", False),
+              "the queue", "KRITAPILOT_HORDE_API_KEY", "https://aihorde.net/register", False),
 }
 from .compat import COMPAT  # noqa: E402
 
@@ -67,7 +66,8 @@ def setup_kind(name):
 
 
 def home():
-    return Path(os.environ.get("KRITA_MCP_HOME") or (Path.home() / ".krita-mcp")).expanduser()
+    from .. import config
+    return config.home()
 
 
 def path():
@@ -88,8 +88,8 @@ def saved(service, field="key"):
 
 
 def enabled(service):
-    """A free service the user turned on (Services dialog, a saved key, or KRITA_MCP_FREE_SERVICES)."""
-    listed = {n.strip().lower() for n in (os.environ.get("KRITA_MCP_FREE_SERVICES") or "").split(",")}
+    """A free service the user turned on (Services dialog, a saved key, or KRITAPILOT_FREE_SERVICES)."""
+    listed = {n.strip().lower() for n in (os.environ.get("KRITAPILOT_FREE_SERVICES") or "").split(",")}
     env_name = SERVICES.get(service, (None,) * 3)[2]
     return bool(service in listed or saved(service) or saved(service, "enabled")
                 or (env_name and os.environ.get(env_name, "").strip()))

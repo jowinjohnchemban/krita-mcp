@@ -11,7 +11,7 @@ import pytest
 from test_providers import Mock
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("plugin_updater", ROOT / "plugin/pykrita/krita_mcp_bridge/updater.py")
+spec = importlib.util.spec_from_file_location("plugin_updater", ROOT / "plugin/pykrita/kritapilot_plugin/updater.py")
 plugin_updater = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(plugin_updater)  # standalone: no Krita needed
 
@@ -19,9 +19,9 @@ spec.loader.exec_module(plugin_updater)  # standalone: no Krita needed
 def plugin_zip(version="2099.1.1", extra=None):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
-        z.writestr("krita_mcp_bridge.desktop", "[Desktop Entry]\nName=Krita MCP Bridge\n")
-        z.writestr("krita_mcp_bridge/__init__.py", "")
-        z.writestr("krita_mcp_bridge/handlers.py", 'BRIDGE_VERSION = "%s"\n' % version)
+        z.writestr("kritapilot_plugin.desktop", "[Desktop Entry]\nName=Krita MCP Bridge\n")
+        z.writestr("kritapilot_plugin/__init__.py", "")
+        z.writestr("kritapilot_plugin/handlers.py", 'BRIDGE_VERSION = "%s"\n' % version)
         for name, data in (extra or {}).items():
             z.writestr(name, data)
     return buf.getvalue()
@@ -31,18 +31,18 @@ def plugin_zip(version="2099.1.1", extra=None):
 def github(monkeypatch):
     m = Mock()
     zdata, wheel = plugin_zip(), b"PK-fake-wheel"
-    m.raw("GET", "/dl/krita-mcp-bridge-2099.1.1.zip", zdata, "application/zip")
+    m.raw("GET", "/dl/kritapilot-plugin-2099.1.1.zip", zdata, "application/zip")
     m.raw("GET", "/dl/kritapilot-2099.1.1-py3-none-any.whl", wheel, "application/octet-stream")
     m.json("GET", "/releases/latest", {
         "tag_name": "2099.01.01", "html_url": "https://github.com/x/releases/2099.01.01", "body": "notes",
         "assets": [
-            {"name": "krita-mcp-bridge-2099.1.1.zip", "size": len(zdata),
+            {"name": "kritapilot-plugin-2099.1.1.zip", "size": len(zdata),
              "digest": "sha256:" + hashlib.sha256(zdata).hexdigest(),
-             "browser_download_url": m.url + "/dl/krita-mcp-bridge-2099.1.1.zip"},
+             "browser_download_url": m.url + "/dl/kritapilot-plugin-2099.1.1.zip"},
             {"name": "kritapilot-2099.1.1-py3-none-any.whl", "size": len(wheel),
              "digest": "sha256:" + hashlib.sha256(wheel).hexdigest(),
              "browser_download_url": m.url + "/dl/kritapilot-2099.1.1-py3-none-any.whl"}]})
-    monkeypatch.setenv("KRITA_MCP_UPDATE_API", m.url + "/releases/latest")
+    monkeypatch.setenv("KRITAPILOT_UPDATE_API", m.url + "/releases/latest")
     yield m, zdata
     m.srv.shutdown()
 
@@ -70,15 +70,15 @@ def test_latest_release_and_verified_download(github):
 
 def test_plugin_swap_is_atomic_and_rejects_unsafe_zips(tmp_path):
     pykrita = tmp_path / "pykrita"
-    old = pykrita / "krita_mcp_bridge"
+    old = pykrita / "kritapilot_plugin"
     old.mkdir(parents=True)
     (old / "handlers.py").write_text('BRIDGE_VERSION = "1.0.0"\n')
     (old / "stale.py").write_text("old file")
     plugin_updater.install_plugin(plugin_zip("2099.1.1"), pykrita)
     assert '2099.1.1' in (old / "handlers.py").read_text() and not (old / "stale.py").exists()
-    assert (pykrita / "krita_mcp_bridge.desktop").exists()
-    assert sorted(p.name for p in pykrita.iterdir()) == ["krita_mcp_bridge", "krita_mcp_bridge.desktop"]
-    for evil in ({"../outside.py": "x"}, {"krita_mcp_bridge/../../outside.py": "x"}, {"other_plugin/x.py": "x"}):
+    assert (pykrita / "kritapilot_plugin.desktop").exists()
+    assert sorted(p.name for p in pykrita.iterdir()) == ["kritapilot_plugin", "kritapilot_plugin.desktop"]
+    for evil in ({"../outside.py": "x"}, {"kritapilot_plugin/../../outside.py": "x"}, {"other_plugin/x.py": "x"}):
         with pytest.raises(plugin_updater.UpdateError):
             plugin_updater.install_plugin(plugin_zip(extra=evil), pykrita)
     assert '2099.1.1' in (old / "handlers.py").read_text()  # a refused update changes nothing
@@ -88,7 +88,7 @@ def test_plugin_swap_is_atomic_and_rejects_unsafe_zips(tmp_path):
 
 def test_server_update_runs_pip_in_a_helper(github, monkeypatch, tmp_path):
     from kritapilot import updater
-    monkeypatch.setenv("KRITA_MCP_HOME", str(tmp_path))
+    monkeypatch.setenv("KRITAPILOT_HOME", str(tmp_path))
     launched = {}
 
     class FakePopen:
@@ -99,7 +99,7 @@ def test_server_update_runs_pip_in_a_helper(github, monkeypatch, tmp_path):
     assert info["latest"] == "2099.1.1" and info["newer"] is True
     out = updater.update()
     cmds = json.loads(launched["args"][-1])  # the helper gets its commands as JSON
-    assert len(cmds) == 1  # no old-name package here: nothing to remove first
+    assert len(cmds) == 1
     pip = cmds[0][cmds[0].index("-m"):]
     assert out["started"] and pip[:3] == ["-m", "pip", "install"] and "--upgrade" in pip
     wheel = Path(pip[-1].split("[")[0])
@@ -139,24 +139,12 @@ def test_update_helper_never_breaks_a_locked_installation(tmp_path, monkeypatch)
     assert code == 0 and "result: updated" in log.read_text() and (tmp_path / "pip_ran").exists()
 
 
-def test_the_old_package_name_is_removed_before_installing(github, monkeypatch, tmp_path):
-    """Renamed from krita-mcp to kritapilot: an old-name install of this project is removed first (both would
-    own the same command), but a different project that happens to be called krita-mcp is never touched."""
-    from importlib import metadata
-    from kritapilot import updater
-    monkeypatch.setenv("KRITA_MCP_HOME", str(tmp_path))
-    launched = {}
-    monkeypatch.setattr(updater.subprocess, "Popen", lambda args, **kw: launched.update(args=args))
-
-    def meta_for(home):
-        class Meta(dict):
-            def get_all(self, key):
-                return ["Homepage, " + home] if key == "Project-URL" else None
-        return lambda name: Meta() if name == "krita-mcp" else (_ for _ in ()).throw(metadata.PackageNotFoundError())
-    monkeypatch.setattr(metadata, "metadata", meta_for("https://github.com/jowinjohnchemban/krita-mcp"))
-    updater.update()
-    cmds = json.loads(launched["args"][-1])
-    assert cmds[0][-1] == "krita-mcp" and "uninstall" in cmds[0] and "install" in cmds[1]
-    monkeypatch.setattr(metadata, "metadata", meta_for("https://github.com/someone-else/krita-mcp"))
-    updater.update()
-    assert len(json.loads(launched["args"][-1])) == 1  # someone else's krita-mcp: left alone
+def test_an_update_is_a_newer_version_or_the_same_version_from_another_commit():
+    from kritapilot import updater as server
+    for upd in (plugin_updater, server):
+        assert upd.update_available("1.0.5", "1.0.4")
+        assert not upd.update_available("1.0.4", "1.0.5")
+        assert upd.update_available("1.0.4", "1.0.4", "abc1234def", "0123456")  # rebuilt from another commit
+        assert not upd.update_available("1.0.4", "1.0.4", "abc1234def", "abc1234")  # the same build
+        assert upd.update_available("1.0.4", "1.0.4", "abc1234def", "")  # a copy run from source
+        assert not upd.update_available("1.0.4", "1.0.4", "", "abc1234")  # nothing to compare

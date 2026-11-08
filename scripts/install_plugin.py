@@ -32,11 +32,11 @@ def main():
         sys.exit("Could not find Krita's data folder. In Krita: Settings > Manage Resources > Open Resource "
                  "Folder, then re-run with --dest <that folder>/pykrita")
     dest.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(SRC / "krita_mcp_bridge.desktop", dest / "krita_mcp_bridge.desktop")
-    target = dest / "krita_mcp_bridge"
+    shutil.copy2(SRC / "kritapilot_plugin.desktop", dest / "kritapilot_plugin.desktop")
+    target = dest / "kritapilot_plugin"
     if target.exists():
         shutil.rmtree(target)
-    shutil.copytree(SRC / "krita_mcp_bridge", target, ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(SRC / "kritapilot_plugin", target, ignore=shutil.ignore_patterns("__pycache__"))
     print("Installed to", dest)
     print("Next: restart Krita, then Settings > Configure Krita > Python Plugin Manager > enable "
           "'KritaPilot', and restart Krita once more.")

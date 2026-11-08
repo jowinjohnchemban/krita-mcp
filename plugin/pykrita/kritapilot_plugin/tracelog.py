@@ -1,13 +1,13 @@
 """A plain-text trace of what happened, one line per action, for the Logs window in Krita.
 
-Files live in KRITA_MCP_HOME/logs (default ~/.krita-mcp/logs):
+Files live in KRITAPILOT_HOME/logs (default ~/.kritapilot/logs):
   krita.log      - the Krita plugin: every bridge command the AI ran, panel actions, sign-ins, errors
   assistant.log  - the AI Chat assistant service: messages, models, tool calls and results, errors
 Each file is kept under MAX_BYTES (the older half moves to NAME.1). Keys never reach a log: anything that
 looks like a key, token or password is masked before writing, and long data (images) is cut.
 
 The same file is shipped in the server package (kritapilot/tracelog.py) and the plugin
-(krita_mcp_bridge/tracelog.py); a test keeps them identical.
+(kritapilot_plugin/tracelog.py); a test keeps them identical.
 """
 import datetime
 import os
@@ -30,7 +30,8 @@ _SECRETS = [
 
 
 def home():
-    return os.environ.get("KRITA_MCP_HOME") or os.path.join(os.path.expanduser("~"), ".krita-mcp")
+    from .config import home as data_folder  # each package has its own config.py with home()
+    return str(data_folder())
 
 
 def path(name):

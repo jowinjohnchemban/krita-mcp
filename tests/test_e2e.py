@@ -13,8 +13,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "plugin" / "pykrita"))
 
-from krita_mcp_bridge.protocol import BridgeServer  # noqa: E402
-from krita_mcp_bridge.util import BridgeError, parse_color, safe_path  # noqa: E402
+from kritapilot_plugin.protocol import BridgeServer  # noqa: E402
+from kritapilot_plugin.util import BridgeError, parse_color, safe_path  # noqa: E402
 
 PNG_1X1 = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 CALLS = []
@@ -35,7 +35,7 @@ def fake_dispatch(method, params):
 
 @pytest.fixture()
 def bridge(tmp_path, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("KRITAPILOT_HOME", str(tmp_path / "home"))
     srv = BridgeServer(fake_dispatch, port=0, request_timeout=5)
     port = srv.start()
     stop = threading.Event()
@@ -146,7 +146,7 @@ def run_mcp(env, coro_fn):
 
 def test_mcp_tools_roundtrip(bridge):
     srv, port, home = bridge
-    env = {"KRITA_MCP_HOME": str(home), "KRITA_MCP_PORT": str(port)}
+    env = {"KRITAPILOT_HOME": str(home), "KRITAPILOT_PORT": str(port)}
 
     async def go(session):
         tools = {t.name for t in (await session.list_tools()).tools}
@@ -171,7 +171,7 @@ def test_mcp_wrong_token_gives_clear_error(bridge, tmp_path):
     other = tmp_path / "other"
     other.mkdir()
     (other / "token").write_text("z" * 40)
-    env = {"KRITA_MCP_HOME": str(other), "KRITA_MCP_PORT": str(port)}
+    env = {"KRITAPILOT_HOME": str(other), "KRITAPILOT_PORT": str(port)}
 
     async def go(session):
         return await session.call_tool("krita_status", {})
@@ -183,7 +183,7 @@ def test_mcp_wrong_token_gives_clear_error(bridge, tmp_path):
 def test_mcp_krita_not_running_gives_clear_error(tmp_path):
     (tmp_path / "token").write_text("z" * 40)
     s = socket.socket(); s.bind(("127.0.0.1", 0)); free = s.getsockname()[1]; s.close()
-    env = {"KRITA_MCP_HOME": str(tmp_path), "KRITA_MCP_PORT": str(free)}
+    env = {"KRITAPILOT_HOME": str(tmp_path), "KRITAPILOT_PORT": str(free)}
 
     async def go(session):
         return await session.call_tool("krita_status", {})
@@ -194,7 +194,7 @@ def test_mcp_krita_not_running_gives_clear_error(tmp_path):
 
 def test_mcp_batch(bridge):
     _, port, home = bridge
-    env = {"KRITA_MCP_HOME": str(home), "KRITA_MCP_PORT": str(port)}
+    env = {"KRITAPILOT_HOME": str(home), "KRITAPILOT_PORT": str(port)}
     line = {"type": "line", "x1": 0, "y1": 0, "x2": 5, "y2": 5}
 
     async def go(session):

@@ -15,11 +15,20 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-REPO = "jowinjohnchemban/kritapilot"
+try:
+    from . import config
+except ImportError:  # loaded as a single file (tests, install scripts): read config.py beside it
+    import importlib.util as _iu
+    import os as _os
+    _spec = _iu.spec_from_file_location("kritapilot_plugin_config",
+                                        _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "config.py"))
+    config = _iu.module_from_spec(_spec)
+    _spec.loader.exec_module(config)
+
+REPO = config.REPO
 MAX_ZIP = 50 * 1024 * 1024
-TRUSTED_HOSTS = ("github.com", "api.github.com", "objects.githubusercontent.com",
-                 "release-assets.githubusercontent.com", "github-releases.githubusercontent.com")
-PACKAGE = "krita_mcp_bridge"
+TRUSTED_HOSTS = config.UPDATE_HOSTS
+PACKAGE = config.PACKAGE_DIR
 UA = {"User-Agent": "kritapilot-updater", "Accept": "application/vnd.github+json"}
 
 
@@ -28,7 +37,7 @@ class UpdateError(RuntimeError):
 
 
 def api_url():
-    return os.environ.get("KRITA_MCP_UPDATE_API") or "https://api.github.com/repos/%s/releases/latest" % REPO
+    return os.environ.get("KRITAPILOT_UPDATE_API") or "https://api.github.com/repos/%s/releases/latest" % REPO
 
 
 def parse_version(v):
@@ -41,9 +50,20 @@ def is_newer(candidate, current):
     return parse_version(candidate) > parse_version(current)
 
 
+def update_available(latest, current, latest_commit="", current_commit=""):
+    """A newer version - or the same version built from another commit (a release built again, or a copy run
+    from source), so an update never depends on the version number alone."""
+    if parse_version(latest) != parse_version(current):
+        return parse_version(latest) > parse_version(current)
+    latest_commit, current_commit = (latest_commit or "").lower(), (current_commit or "").lower()
+    if not latest_commit:
+        return False  # nothing to compare: the same version is the same release
+    return not current_commit or not latest_commit.startswith(current_commit)
+
+
 def _trusted(url):
     host = urllib.parse.urlsplit(url).hostname or ""
-    override = os.environ.get("KRITA_MCP_UPDATE_API")
+    override = os.environ.get("KRITAPILOT_UPDATE_API")
     if override and host == urllib.parse.urlsplit(override).hostname:
         return True  # tests / a mirror explicitly configured by the user
     return urllib.parse.urlsplit(url).scheme == "https" and host in TRUSTED_HOSTS
@@ -77,16 +97,17 @@ def latest():
     version = None
     for a in rel.get("assets") or []:
         name = a.get("name") or ""
-        m = re.fullmatch(r"krita-mcp-bridge-(.+)\.zip", name)
+        m = re.fullmatch(r"kritapilot-plugin-(.+)\.zip", name)
         if m:
             version = m.group(1)
             assets["plugin"] = a
-        elif name.endswith(".whl") and name.startswith(("kritapilot-", "krita_mcp-")):  # new and old name
+        elif name.endswith(".whl") and name.startswith("kritapilot-"):
             assets["server"] = a
     if "plugin" not in assets:
         raise UpdateError("the latest release has no plugin zip")
-    return {"version": version or rel.get("tag_name"), "tag": rel.get("tag_name"), "url": rel.get("html_url"),
-            "notes": (rel.get("body") or "")[:4000], "assets": assets}
+    return {"version": version or (rel.get("tag_name") or "").lstrip("v"), "tag": rel.get("tag_name"),
+            "commit": rel.get("target_commitish") or "",
+            "url": rel.get("html_url"), "notes": (rel.get("body") or "")[:4000], "assets": assets}
 
 
 def download(asset):

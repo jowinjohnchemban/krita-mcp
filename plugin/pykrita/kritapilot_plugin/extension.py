@@ -10,12 +10,12 @@ try:
 except ImportError:  # Krita 5
     from PyQt5.QtCore import QTimer
 
-from . import handlers, tracelog, util
+from . import config, handlers, tracelog, util
 from .util import i18n
 from .handlers import dispatch
 from .protocol import DEFAULT_PORT, BridgeServer
 
-SETTINGS = "krita_mcp"  # Krita settings group: never rename (users would lose their settings)
+SETTINGS = config.SETTINGS  # the Krita settings group (never renamed)
 # A copy bundled with Krita itself sets both to False (scripts/krita_upstream.py): nothing listens and no
 # panel pops up until the user presses Start in Settings > Dockers > AI Bridge (MCP).
 AUTOSTART_DEFAULT = True
@@ -31,7 +31,7 @@ def _log(msg):
 
 
 def trace(source, message):
-    """One line in ~/.krita-mcp/logs/krita.log (the Logs window shows it live; keys are masked)."""
+    """One line in ~/.kritapilot/logs/krita.log (the Logs window shows it live; keys are masked)."""
     tracelog.write("krita.log", source, message)
 
 
@@ -43,22 +43,17 @@ def bridge_port():
         return int(server.port)
     if ext is not None:
         return ext.port()
-    env = os.environ.get("KRITA_MCP_PORT")
+    env = os.environ.get("KRITAPILOT_PORT")
     return int(env) if env else int(setting("port", DEFAULT_PORT))
 
 
-COMMAND = "kritapilot"
-OLD_COMMAND = "krita-mcp"  # what the server command was called before; servers still install it as an alias
+COMMAND = config.COMMAND  # the server command
 
 
 def server_args():
-    """The server command as a list: the one set in the AI Bridge panel, else `kritapilot` - or `krita-mcp` when
-    only a server from before the rename is installed (it has no `kritapilot` command yet)."""
+    """The server command as a list: the one set in the AI Bridge panel, else `kritapilot`."""
     import shlex
-    import shutil
-    cmd = (setting("client_command", "") or "").strip()
-    if not cmd or cmd in (COMMAND, OLD_COMMAND):
-        cmd = COMMAND if shutil.which(COMMAND) or not shutil.which(OLD_COMMAND) else OLD_COMMAND
+    cmd = (setting("client_command", "") or "").strip() or COMMAND
     return shlex.split(cmd, posix=os.name != "nt")
 
 
@@ -83,11 +78,11 @@ def startup_report():
         from PyQt5.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
     trace("session", "=" * 20 + " Krita started " + "=" * 20)
     trace("session", "Krita %s, plugin %s, Python %s, Qt %s / PyQt %s, %s (%s)" % (
-        Krita.instance().version(), handlers.BRIDGE_VERSION, platform.python_version(), QT_VERSION_STR,
+        Krita.instance().version(), handlers.version_text(), platform.python_version(), QT_VERSION_STR,
         PYQT_VERSION_STR, platform.platform(), platform.machine()))
     names = ("port", "autostart", "access", "dialogs", "workspace", "client_command", "update_mode", "chat_provider")
     trace("session", "settings: " + ", ".join("%s=%s" % (n, setting(n, "")) for n in names))
-    env = {k: v for k, v in os.environ.items() if k.startswith("KRITA_MCP_")}
+    env = {k: v for k, v in os.environ.items() if k.startswith("KRITAPILOT_")}
     if env:
         trace("session", "environment: " + ", ".join("%s=%s" % (k, "***" if any(
             w in k for w in ("KEY", "TOKEN", "SECRET", "AUTH")) else v) for k, v in sorted(env.items())))
@@ -103,7 +98,7 @@ class KritaMcpBridge(Extension):
         self.last_error = None
 
     def setup(self):
-        try:  # a frozen Krita (from anything) leaves its stacks in ~/.krita-mcp/hang.log
+        try:  # a frozen Krita (from anything) leaves its stacks in ~/.kritapilot/hang.log
             from . import watchdog
             watchdog.start()
         except Exception:  # noqa: BLE001 - diagnostics only
@@ -118,7 +113,7 @@ class KritaMcpBridge(Extension):
         handlers.ACCESS["mode"] = mode if mode in ("full", "read_only", "paused") else "full"
         from . import dialogs
         dialogs.POLICY["mode"] = setting("dialogs", "cancel")
-        env = os.environ.get("KRITA_MCP_AUTOSTART")
+        env = os.environ.get("KRITAPILOT_AUTOSTART")
         default = "true" if AUTOSTART_DEFAULT else "false"
         autostart = env != "0" if env is not None else setting("autostart", default) == "true"
         if autostart:
@@ -130,14 +125,20 @@ class KritaMcpBridge(Extension):
             _log("updater unavailable:\n" + traceback.format_exc())
 
     def createActions(self, window):
-        toggle = window.createAction("krita_mcp_toggle", i18n("KritaPilot: start / stop the AI bridge"), "tools/scripts")
+        toggle = window.createAction("kritapilot_toggle", i18n("KritaPilot: start / stop the AI bridge"), "tools/scripts")
         toggle.triggered.connect(self.toggle)
-        info = window.createAction("krita_mcp_info", i18n("KritaPilot: show status"), "tools/scripts")
+        about = window.createAction("kritapilot_about", i18n("KritaPilot: About"), "tools/scripts")
+        about.triggered.connect(self.show_about)
+        info = window.createAction("kritapilot_info", i18n("KritaPilot: show status"), "tools/scripts")
         info.triggered.connect(self.show_info)
-        panel = window.createAction("krita_mcp_panel", i18n("KritaPilot: show panel"), "tools/scripts")
+        panel = window.createAction("kritapilot_panel", i18n("KritaPilot: show panel"), "tools/scripts")
         panel.triggered.connect(lambda: self.show_panel())
         if INTRODUCE_PANEL and setting("panel_introduced", "false") != "true":  # open it once for new users
             QTimer.singleShot(3000, lambda: self.show_panel(first_time=True))
+
+    def show_about(self):
+        from . import about
+        about.show(Krita.instance().activeWindow().qwindow() if Krita.instance().activeWindow() else None)
 
     def show_panel(self, first_time=False):
         # Look the window up now: the Window wrapper given to createActions does not outlive that call,
@@ -149,7 +150,7 @@ class KritaMcpBridge(Extension):
         try:
             win = Krita.instance().activeWindow()
             qwin = win.qwindow() if win is not None else None
-            dock = qwin.findChild(QDockWidget, "krita_mcp_docker") if qwin is not None else None
+            dock = qwin.findChild(QDockWidget, "kritapilot_docker") if qwin is not None else None
             if dock is None:
                 return
             dock.show()
@@ -160,7 +161,7 @@ class KritaMcpBridge(Extension):
             _log("could not show the MCP panel:\n" + traceback.format_exc())
 
     def port(self):
-        env = os.environ.get("KRITA_MCP_PORT")
+        env = os.environ.get("KRITAPILOT_PORT")
         return int(env) if env else int(setting("port", DEFAULT_PORT))
 
     @property
@@ -209,7 +210,7 @@ class KritaMcpBridge(Extension):
 
     def show_info(self):
         if self.running:
-            self._status(i18n("Krita MCP bridge listening on %s:%d (token in ~/.krita-mcp/token)")
+            self._status(i18n("Krita MCP bridge listening on %s:%d (token in ~/.kritapilot/token)")
                          % (self.server.host, self.server.port))
         else:
             self._status(i18n("Krita MCP bridge is NOT running"))

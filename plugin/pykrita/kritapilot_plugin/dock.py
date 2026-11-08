@@ -41,7 +41,7 @@ def _split(cmd):
 
 def client_snippet(client, cmd, port):
     exe, args = _split(cmd)
-    env = {} if port == protocol.DEFAULT_PORT else {"KRITA_MCP_PORT": str(port)}
+    env = {} if port == protocol.DEFAULT_PORT else {"KRITAPILOT_PORT": str(port)}
     server = {"command": exe, "args": args}
     if env:
         server["env"] = env
@@ -58,7 +58,7 @@ def client_snippet(client, cmd, port):
         return "\n".join(lines)
     if client.startswith("HTTP"):
         return ("# run in a terminal, then give the client the URL and the bearer token\n"
-                "KRITA_MCP_HTTP_TOKEN=<long-random-secret> %s --transport http --port 8765\n"
+                "KRITAPILOT_HTTP_TOKEN=<long-random-secret> %s --transport http --port 8765\n"
                 "# URL: http://127.0.0.1:8765/mcp   header: Authorization: Bearer <secret>\n"
                 "# remote clients need an HTTPS tunnel in front; anyone with the URL+token can edit your art"
                 % (cmd.strip() or "kritapilot"))
@@ -192,14 +192,18 @@ class McpDocker(DockWidget):
             self.update_mode.setCurrentIndex([k for k, _ in autoupdate.MODES].index(autoupdate.mode()))
             self.update_mode.currentIndexChanged.connect(
                 lambda _i: extension.set_setting("update_mode", self.update_mode.currentData()))
-            self.update_status = QLabel(i18n("Version %s") % handlers.BRIDGE_VERSION)
+            self.update_status = QLabel(i18n("Version %s") % handlers.version_text())
             self.update_status.setWordWrap(True)
             row = QHBoxLayout()
+            about_btn = QPushButton(i18n("About…"))
+            about_btn.setToolTip(i18n("Version, build, system details and links"))
+            about_btn.clicked.connect(self._about)
             check = QPushButton(i18n("Check now"))
             check.clicked.connect(lambda: autoupdate.check())
             self.update_btn = QPushButton(i18n("Update now"))
             self.update_btn.clicked.connect(lambda: autoupdate.install())
             self.update_btn.setVisible(False)
+            row.addWidget(about_btn)
             row.addWidget(check)
             row.addWidget(self.update_btn)
             v.addWidget(self.update_mode)
@@ -312,6 +316,10 @@ class McpDocker(DockWidget):
     def _say(self, text):
         self.message.setText(text)
 
+    def _about(self):
+        from . import about
+        about.show(self)
+
     def _toggle(self):
         ext = self._ext()
         if ext is None:
@@ -353,7 +361,7 @@ class McpDocker(DockWidget):
             util.WORKSPACE_OVERRIDE = d
             extension.set_setting("workspace", d)
             self.refresh()
-            self._say(i18n("Workspace set. (KRITA_MCP_WORKSPACE, if set, still takes priority.)"))
+            self._say(i18n("Workspace set. (KRITAPILOT_WORKSPACE, if set, still takes priority.)"))
 
     def _regenerate(self):
         tok = protocol.write_new_token()
@@ -362,7 +370,7 @@ class McpDocker(DockWidget):
         if ext and ext.server:
             ext.server.token = tok
         self.refresh()
-        self._say(i18n("New token written to ~/.krita-mcp/token. Restart connected AI clients."))
+        self._say(i18n("New token written to ~/.kritapilot/token. Restart connected AI clients."))
 
     def _command_changed(self):
         extension.set_setting("client_command", self.command.text().strip() or "kritapilot")
@@ -387,4 +395,4 @@ class McpDocker(DockWidget):
 
 def register_docker():
     Krita.instance().addDockWidgetFactory(
-        DockWidgetFactory("krita_mcp_docker", DockWidgetFactoryBase.DockRight, McpDocker))
+        DockWidgetFactory("kritapilot_docker", DockWidgetFactoryBase.DockRight, McpDocker))

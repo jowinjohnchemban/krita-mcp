@@ -22,7 +22,7 @@ The mode is remembered between sessions.
 
 ## Settings
 
-- **Port**: changing it restarts the bridge. Clients need the same port (`KRITA_MCP_PORT`).
+- **Port**: changing it restarts the bridge. Clients need the same port (`KRITAPILOT_PORT`).
 - **Start with Krita**: start the bridge automatically.
 - **Dialogs**: what happens to popups Krita opens while the AI works, such as "Missing Colour Profile", an
   "are you sure?" or "Waiting for image operation to complete…". A modal dialog would otherwise block
@@ -32,10 +32,10 @@ The mode is remembered between sessions.
     shows it. Progress windows get up to 30 seconds to finish on their own first.
   - **Leave them for me to answer**: the dialog stays open for you; the AI is still told it appeared.
 
-  Dialogs that were already open, or that you open yourself, are never touched. `KRITA_MCP_DIALOGS`
+  Dialogs that were already open, or that you open yourself, are never touched. `KRITAPILOT_DIALOGS`
   (`cancel` or `leave`) sets the same.
 - **Workspace**: the only folder the AI may read or write (imports, exports, videos, frames).
-  **…** picks a folder; **Open** shows it in your file manager. `KRITA_MCP_WORKSPACE`, if set, wins.
+  **…** picks a folder; **Open** shows it in your file manager. `KRITAPILOT_WORKSPACE`, if set, wins.
 - **Token**: the shared secret clients use. **Show** and **Copy** reveal and copy it; **New**
   generates a new one, and connected clients must then be restarted.
 
@@ -72,7 +72,7 @@ The plugin updates itself over the air from this project's GitHub releases.
    files of a running program are locked). If an AI app connected to Krita (Claude Desktop, for example)
    still runs `kritapilot`, the update waits up to 3 minutes for it to close; if it stays open, the update is
    skipped and the installed version is left as it was, so close the app and update again. Progress is
-   written to `~/.krita-mcp/update.log`.
+   written to `~/.kritapilot/update.log`.
 
 From a terminal: `kritapilot --check-update` and `kritapilot --update`.
 
@@ -88,7 +88,7 @@ refused by the access mode.
 **Logs…** (under Activity, and in the AI Chat panel) opens a window that follows KritaPilot's logs live,
 like `tail -f`. It stays open beside Krita while you work. Pick a log at the top:
 
-| Log | File in `~/.krita-mcp` | What it records |
+| Log | File in `~/.kritapilot` | What it records |
 |---|---|---|
 | Krita | `logs/krita.log` | Every command the AI ran, with its settings, time taken, result and any dialog it hit; panel actions; every settings change (old → new value); bridge start and stop; and at each Krita start the Krita, plugin, Python and Qt versions, the operating system and the current settings. |
 | AI Chat assistant | `logs/assistant.log` | Each message, the model used, how long each model step took, every tool call with its result and time, sign-ins and models listings, errors with their trace; at each start the version, system, which services are signed in and the settings. |
@@ -101,7 +101,7 @@ Every line starts with the date and time to the millisecond. **Show only lines c
 passwords are masked before anything is written, so a log is safe to share. Each log keeps about 2 MB;
 older lines move to `NAME.1`.
 
-If Krita freezes for more than a minute (`KRITA_MCP_HANG_SECONDS`, `0` turns it off) - because of an AI
-command, the panels, or Krita itself - the plugin writes every thread's stack to `~/.krita-mcp/hang.log`,
+If Krita freezes for more than a minute (`KRITAPILOT_HANG_SECONDS`, `0` turns it off) - because of an AI
+command, the panels, or Krita itself - the plugin writes every thread's stack to `~/.kritapilot/hang.log`,
 even while Krita's window is frozen, with the AI command that was running, if any. If Krita's main thread
 shows no Python lines there, Krita was stuck in its own code. Include that file when you report a freeze.

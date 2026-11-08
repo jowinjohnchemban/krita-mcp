@@ -218,7 +218,7 @@ class FakeKrita:
 
 @pytest.fixture(scope="module")
 def H(tmp_path_factory):
-    os.environ["KRITA_MCP_WORKSPACE"] = str(tmp_path_factory.mktemp("ws"))
+    os.environ["KRITAPILOT_WORKSPACE"] = str(tmp_path_factory.mktemp("ws"))
     mod = types.ModuleType("krita")
     mod.Krita, mod.InfoObject, mod.Selection, mod.ManagedColor = FakeKrita, object, FakeSelection, object
     mod.Extension = type('Extension', (), {'__init__': lambda self, parent=None: None})
@@ -227,10 +227,10 @@ def H(tmp_path_factory):
     sys.modules["krita"] = mod
     global _QAPP
     _QAPP = QGuiApplication.instance() or QGuiApplication([])  # must stay referenced; text needs it
-    for name in [m for m in sys.modules if m.startswith("krita_mcp_bridge")]:  # import fresh, with this fake
+    for name in [m for m in sys.modules if m.startswith("kritapilot_plugin")]:  # import fresh, with this fake
         sys.modules.pop(name)
     import importlib
-    return importlib.import_module("krita_mcp_bridge.handlers")
+    return importlib.import_module("kritapilot_plugin.handlers")
 
 
 def px(doc, x, y):
@@ -545,9 +545,9 @@ def test_access_modes_and_activity(H):
 
 def test_docker_client_snippets(H):
     import importlib
-    dock = importlib.import_module("krita_mcp_bridge.dock")
+    dock = importlib.import_module("kritapilot_plugin.dock")
     assert dock.client_snippet("Claude Code", "kritapilot", 5679) == "claude mcp add krita -- kritapilot"
-    assert "-e KRITA_MCP_PORT=6000" in dock.client_snippet("Claude Code", "kritapilot", 6000)
+    assert "-e KRITAPILOT_PORT=6000" in dock.client_snippet("Claude Code", "kritapilot", 6000)
     js = dock.client_snippet("Claude Desktop", '"C:/My Tools/kritapilot.exe" --x', 5679)
     assert '"command": "C:/My Tools/kritapilot.exe"' in js and '"--x"' in js
     assert "[mcp_servers.krita]" in dock.client_snippet("Codex CLI", "uvx kritapilot", 5679)
@@ -650,7 +650,7 @@ def test_gen_context_renders_control_guides(H):
 
 
 def test_camera_moves_cover_the_frame(H):
-    from krita_mcp_bridge import genai
+    from kritapilot_plugin import genai
     for move in genai.CAMERA_MOVES:
         for t in (0.0, 0.25, 0.5, 0.75, 1.0):
             s, dx, dy, ang = genai.camera_at(move, t)
@@ -677,7 +677,7 @@ def test_waiting_for_krita_never_blocks_its_event_loop(H):
         from PyQt6.QtCore import QTimer
     except ImportError:
         from PyQt5.QtCore import QTimer
-    from krita_mcp_bridge import history
+    from kritapilot_plugin import history
 
     class Busy:
         def __init__(self):

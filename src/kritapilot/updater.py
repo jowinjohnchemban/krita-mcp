@@ -4,8 +4,7 @@
     kritapilot --update           # download + verify the newest wheel, then upgrade this installation
 
 On Windows a running program's files are locked, so the upgrade itself is done by a short-lived helper
-process that starts after `kritapilot` (or its old name, `krita-mcp`) has exited; its output goes to
-~/.krita-mcp/update.log.
+process that starts after `kritapilot` has exited; its output goes to ~/.kritapilot/update.log.
 """
 import hashlib
 import importlib.util
@@ -19,12 +18,11 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from . import __version__
+from . import __commit__, __version__, config
 
-REPO = "jowinjohnchemban/kritapilot"
+REPO = config.REPO
 MAX_WHEEL = 50 * 1024 * 1024
-TRUSTED_HOSTS = ("github.com", "api.github.com", "objects.githubusercontent.com",
-                 "release-assets.githubusercontent.com", "github-releases.githubusercontent.com")
+TRUSTED_HOSTS = config.UPDATE_HOSTS
 UA = {"User-Agent": "kritapilot-updater", "Accept": "application/vnd.github+json"}
 
 
@@ -41,7 +39,7 @@ import json
 log, version, cmds = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
 
 
-NAMES = ("kritapilot.exe", "krita-mcp.exe")  # the command and its old name: both run the same server
+NAMES = ("kritapilot.exe",)
 
 
 def running():
@@ -79,24 +77,8 @@ with open(log, "w", encoding="utf-8") as f:
 '''
 
 
-OLD_NAME = "krita-mcp"  # this project's package name before it became kritapilot
-OLD_REPOS = ("jowinjohnchemban/krita-mcp", REPO)  # where its old package metadata points
-
-
-def old_name_installed():
-    """True when this project's package is also installed under its old name. A different project called
-    krita-mcp exists on PyPI: it is left alone (only ours points at this repository, old name or new)."""
-    from importlib import metadata
-    try:
-        meta = metadata.metadata(OLD_NAME)
-    except metadata.PackageNotFoundError:
-        return False
-    urls = " ".join(meta.get_all("Project-URL") or []) + " " + (meta.get("Home-page") or "")
-    return any(r.lower() in urls.lower() for r in OLD_REPOS)
-
-
 def api_url():
-    return os.environ.get("KRITA_MCP_UPDATE_API") or "https://api.github.com/repos/%s/releases/latest" % REPO
+    return os.environ.get("KRITAPILOT_UPDATE_API") or "https://api.github.com/repos/%s/releases/latest" % REPO
 
 
 def parse_version(v):
@@ -104,9 +86,20 @@ def parse_version(v):
     return tuple(int(n) for n in nums) + (0,) * (4 - len(nums))
 
 
+def update_available(latest, current, latest_commit="", current_commit=""):
+    """A newer version - or the same version built from another commit (a release built again, or a copy run
+    from source), so an update never depends on the version number alone."""
+    if parse_version(latest) != parse_version(current):
+        return parse_version(latest) > parse_version(current)
+    latest_commit, current_commit = (latest_commit or "").lower(), (current_commit or "").lower()
+    if not latest_commit:
+        return False  # nothing to compare: the same version is the same release
+    return not current_commit or not latest_commit.startswith(current_commit)
+
+
 def _trusted(url):
     u = urllib.parse.urlsplit(url)
-    override = os.environ.get("KRITA_MCP_UPDATE_API")
+    override = os.environ.get("KRITAPILOT_UPDATE_API")
     if override and u.hostname == urllib.parse.urlsplit(override).hostname:
         return True
     return u.scheme == "https" and (u.hostname or "") in TRUSTED_HOSTS
@@ -138,14 +131,16 @@ def check():
     wheel = next((a for a in rel.get("assets") or [] if (a.get("name") or "").endswith(".whl")), None)
     if wheel is None:
         raise UpdateError("the latest release has no server wheel")
-    m = re.match(r"(?:kritapilot|krita_mcp)-([^-]+)-", wheel["name"])  # the package was "krita-mcp" before
-    latest = m.group(1) if m else rel.get("tag_name")
-    return {"current": __version__, "latest": latest, "newer": parse_version(latest) > parse_version(__version__),
-            "url": rel.get("html_url"), "asset": wheel}
+    m = re.match(r"kritapilot-([^-]+)-", wheel["name"])
+    latest = m.group(1) if m else (rel.get("tag_name") or "").lstrip("v")
+    commit = rel.get("target_commitish") or ""
+    return {"current": __version__, "current_commit": __commit__, "latest": latest, "latest_commit": commit[:7],
+            "newer": update_available(latest, __version__, commit, __commit__), "url": rel.get("html_url"),
+            "asset": wheel}
 
 
 def _log_path():
-    home = Path(os.environ.get("KRITA_MCP_HOME") or (Path.home() / ".krita-mcp")).expanduser()
+    home = config.home()
     home.mkdir(parents=True, exist_ok=True)
     return home / "update.log"
 
@@ -167,8 +162,6 @@ def update(force=False):
     pip = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--upgrade",
            str(wheel) + extra]
     cmds = [pip]
-    if old_name_installed():  # renamed to kritapilot: remove the old package first, or both own the files
-        cmds.insert(0, [sys.executable, "-m", "pip", "uninstall", "--disable-pip-version-check", "-y", OLD_NAME])
     log = _log_path()
     helper = HELPER
     flags = 0

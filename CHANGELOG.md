@@ -1,16 +1,12 @@
 # Changelog
 
-Releases are published automatically from `main` and numbered `YEAR.MONTH.DAY.BUILD`
-(see [releases](https://github.com/jowinjohnchemban/kritapilot/releases)). The plugin and the server update
-themselves from there. This file lists what changed, newest first.
+Releases are published automatically from `main` with [SemVer](https://semver.org) versions that count up by one
+(see [releases](https://github.com/jowinjohnchemban/kritapilot/releases) and [PyPI](https://pypi.org/p/kritapilot)).
+The plugin and the server update themselves. This file lists what changed, newest first.
 
 ## 2026-11-08
 
-**New name: KritaPilot** (formerly *krita-mcp*). The project is more than an MCP server now, so it has a name
-of its own: the repository is `jowinjohnchemban/kritapilot` (old links redirect), the package is
-[`kritapilot` on PyPI](https://pypi.org/p/kritapilot) and the command is `kritapilot`. Nothing breaks: the
-`krita-mcp` command still works, settings, keys and logs stay in `~/.krita-mcp`, `KRITA_MCP_*` variables
-are unchanged, and the updater replaces the old package by itself.
+**New name: KritaPilot** (formerly *krita-mcp*). The project is more than an MCP server now, so it has a name of its own: the repository is `jowinjohnchemban/kritapilot`, the package is [`kritapilot` on PyPI](https://pypi.org/p/kritapilot) and the command is `kritapilot`. Versions are SemVer from 1.0.0 and count up by one with each release.
 
 **AI Chat**
 - **Auto - all my providers** is the default: it uses the providers you signed in to or set up, then the
@@ -29,7 +25,7 @@ are unchanged, and the updater replaces the old package by itself.
 
 **Reliability**
 - A freeze watchdog: if Krita is ever frozen for a minute, every thread's stack goes to
-  `~/.krita-mcp/hang.log`.
+  `~/.kritapilot/hang.log`.
 - Fixed: the Send button, a panel that could stop updating while a dialog was open, and skills meant for
   coding assistants being offered to the painting assistant.
 

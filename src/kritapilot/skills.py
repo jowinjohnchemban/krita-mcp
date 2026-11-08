@@ -1,11 +1,11 @@
 """Agent Skills for Krita work: folders with a SKILL.md (name + description, then instructions).
 
 Skills are found fresh on every call - nothing is cached - in, by priority:
-    KRITA_MCP_SKILLS_DIRS (os.pathsep-separated; replaces the list below when set)
-    ~/.krita-mcp/skills        your own, and what you add from the AI Chat > Skills panel
+    KRITAPILOT_SKILLS_DIRS (os.pathsep-separated; replaces the list below when set)
+    ~/.kritapilot/skills        your own, and what you add from the AI Chat > Skills panel
     the skills that ship with KritaPilot
 Skills installed for coding assistants (~/.claude/skills, ~/.agents/skills: code review, security audits, ...)
-are not used: they do not fit painting and would only add noise. Add such a folder to KRITA_MCP_SKILLS_DIRS to
+are not used: they do not fit painting and would only add noise. Add such a folder to KRITAPILOT_SKILLS_DIRS to
 use it anyway.
 
 Only names and one-line descriptions are offered to the model; a skill's full text is loaded when the model
@@ -31,7 +31,7 @@ def user_dir():
 
 
 def dirs():
-    custom = os.environ.get("KRITA_MCP_SKILLS_DIRS")
+    custom = os.environ.get("KRITAPILOT_SKILLS_DIRS")
     if custom:
         return [Path(d).expanduser() for d in custom.split(os.pathsep) if d.strip()]
     return [user_dir(), BUNDLED]

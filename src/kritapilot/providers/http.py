@@ -22,7 +22,7 @@ def env(name, default=None):
 
 
 def secret(own, *generic):
-    """API key from KRITA_MCP_<own>; generic names (OPENAI_API_KEY, ...) only with KRITA_MCP_USE_ENV_KEYS=1,
+    """API key from KRITAPILOT_<own>; generic names (OPENAI_API_KEY, ...) only with KRITAPILOT_USE_ENV_KEYS=1,
     so a key that happens to be in the environment never sends the user's art somewhere by surprise."""
     v = env(own)
     if v:
@@ -32,7 +32,7 @@ def secret(own, *generic):
     v = keys.saved(service) if service else None
     if v:
         return v
-    if env("KRITA_MCP_USE_ENV_KEYS") in ("1", "true", "yes"):
+    if env("KRITAPILOT_USE_ENV_KEYS") in ("1", "true", "yes"):
         for g in generic:
             v = env(g)
             if v:

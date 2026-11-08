@@ -3,14 +3,14 @@
 
     git clone https://invent.kde.org/<you>/krita.git        # your fork on KDE Invent
     python scripts/krita_upstream.py --krita path/to/krita    # this script: copies + wires the plugin
-    cd path/to/krita && git push -u origin krita-mcp-bridge   # then open the MR against graphics/krita master
+    cd path/to/krita && git push -u origin kritapilot   # then open the MR against graphics/krita master
 
 What it does in the Krita tree:
-  * copies the plugin to plugins/python/krita_mcp_bridge/ (Python files + Manual.html, no caches/tests)
+  * copies the plugin to plugins/python/kritapilot_plugin/ (Python files + Manual.html, no caches/tests)
   * adds SPDX headers (MIT, which Krita's LICENSES/ already contains) to every Python file
-  * writes kritapykrita_krita_mcp_bridge.desktop (the name Krita's CMake expects)
+  * writes kritapykrita_kritapilot_plugin.desktop (the name Krita's CMake expects)
   * makes the bundled copy opt-in: no port is opened and no panel pops up until the user presses Start
-  * adds install_pykrita_plugin(krita_mcp_bridge) to plugins/python/CMakeLists.txt
+  * adds install_pykrita_plugin(kritapilot_plugin) to plugins/python/CMakeLists.txt
   * creates a branch and (with --commit) commits, using your git identity. It never pushes.
 """
 import argparse
@@ -23,7 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "plugin" / "pykrita"
-NAME = "krita_mcp_bridge"
+NAME = "kritapilot_plugin"
 
 
 def git(cwd, *args, check=True):
@@ -44,7 +44,7 @@ def spdx(text, holder, year):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--krita", required=True, type=Path, help="path to a Krita git checkout (your fork)")
-    ap.add_argument("--branch", default="krita-mcp-bridge")
+    ap.add_argument("--branch", default="kritapilot")
     ap.add_argument("--author", help='"Name <email>" for the SPDX headers (default: your git identity)')
     ap.add_argument("--commit", action="store_true", help="commit on the branch (never pushes)")
     args = ap.parse_args()

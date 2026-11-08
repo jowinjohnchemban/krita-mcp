@@ -4,12 +4,12 @@ and its tool calls are executed against Krita - and serves it to the docker over
 
     kritapilot --agent            # started automatically by the docker; 127.0.0.1:5680, bridge-token auth
 
-Sign-in: API keys entered in the docker are stored in KRITA_MCP_HOME/agent_keys.json (user-only file);
-KRITA_MCP_<PROVIDER>_API_KEY environment variables work too.
+Sign-in: API keys entered in the docker are stored in KRITAPILOT_HOME/agent_keys.json (user-only file);
+KRITAPILOT_<PROVIDER>_API_KEY environment variables work too.
 
 Spending: every step resends the conversation, so it is kept lean - only the newest pictures stay in it
-(KRITA_MCP_CHAT_KEEP_IMAGES, default 2), earlier messages' long tool results are shortened, snapshots are
-sent at KRITA_MCP_CHAT_IMAGE_SIZE (768 px) unless the model asks for more, Claude's prompt cache is used,
+(KRITAPILOT_CHAT_KEEP_IMAGES, default 2), earlier messages' long tool results are shortened, snapshots are
+sent at KRITAPILOT_CHAT_IMAGE_SIZE (768 px) unless the model asks for more, Claude's prompt cache is used,
 and a turn stops when the same error keeps repeating. Each answer reports the tokens it used.
 """
 import asyncio
@@ -23,51 +23,51 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import oauth, skills, tracelog
+from . import config, oauth, skills, tracelog
 from .providers import catalog, compat, free, gemini, http, keys
 from .providers.http import ProviderError, env, secret
 
-DEFAULT_PORT = 5680
+DEFAULT_PORT = config.AGENT_PORT
 MAX_RESULT_CHARS = 12000
 OLD_RESULT_CHARS = 600  # tool results of earlier messages are cut to this when resent
 DROPPED = "[earlier picture removed to save tokens - take a new canvas_snapshot if you need to see it]"
 
 
 def chat_timeout():
-    """Seconds to wait for one model answer (KRITA_MCP_CHAT_TIMEOUT, default 180). Longer counts as the service
+    """Seconds to wait for one model answer (KRITAPILOT_CHAT_TIMEOUT, default 180). Longer counts as the service
     being unavailable: it is tried again, and Auto moves on to the next provider - a slow free service must not
     hold a chat for ten minutes."""
     try:
-        return max(15.0, float(env("KRITA_MCP_CHAT_TIMEOUT", "180")))
+        return max(15.0, float(env("KRITAPILOT_CHAT_TIMEOUT", "180")))
     except ValueError:
         return 180.0
 
 
 def max_steps():
-    return int(env("KRITA_MCP_CHAT_MAX_STEPS", "40"))
+    return int(env("KRITAPILOT_CHAT_MAX_STEPS", "40"))
 
 
 def keep_images():
-    return max(0, int(env("KRITA_MCP_CHAT_KEEP_IMAGES", "2")))
+    return max(0, int(env("KRITAPILOT_CHAT_KEEP_IMAGES", "2")))
 
 
 def chat_image_size():
-    return int(env("KRITA_MCP_CHAT_IMAGE_SIZE", "768"))
+    return int(env("KRITAPILOT_CHAT_IMAGE_SIZE", "768"))
 
 PROVIDERS = {
     "gemini": {"label": "Google Gemini", "model": "", "key_url": "https://aistudio.google.com/apikey",
-               "env": ("KRITA_MCP_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")},
+               "env": ("KRITAPILOT_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")},
     "anthropic": {"label": "Anthropic Claude", "model": "",
                   "key_url": "https://console.anthropic.com/settings/keys",
-                  "env": ("KRITA_MCP_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")},
+                  "env": ("KRITAPILOT_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")},
     "openai": {"label": "OpenAI (or compatible)", "model": "", "key_url": "https://platform.openai.com/api-keys",
-               "env": ("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY")},
+               "env": ("KRITAPILOT_OPENAI_API_KEY", "OPENAI_API_KEY")},
     "openrouter": {"label": "OpenRouter", "model": "", "key_url": "https://openrouter.ai/settings/keys",
-                   "env": ("KRITA_MCP_OPENROUTER_API_KEY",)},
+                   "env": ("KRITAPILOT_OPENROUTER_API_KEY",)},
     "ollama": {"label": "Local model (Ollama / LM Studio)", "model": "", "key_url": "",
                "env": ()},
     "pollinations": {"label": "Pollinations (free, no sign-in)", "model": "",
-                     "key_url": "https://enter.pollinations.ai/keys", "env": ("KRITA_MCP_POLLINATIONS_API_KEY",)},
+                     "key_url": "https://enter.pollinations.ai/keys", "env": ("KRITAPILOT_POLLINATIONS_API_KEY",)},
 }
 
 for _name, (_label, _base, _env, _url, _use, _images) in compat.COMPAT.items():
@@ -100,13 +100,13 @@ def key_for(provider):
 
 def base_url_for(provider):
     if provider == "ollama":
-        return http.service_url("KRITA_MCP_OLLAMA_BASE_URL", "ollama", "http://127.0.0.1:11434/v1")
+        return http.service_url("KRITAPILOT_OLLAMA_BASE_URL", "ollama", "http://127.0.0.1:11434/v1")
     if provider == "openai":
-        return http.service_url("KRITA_MCP_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
+        return http.service_url("KRITAPILOT_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
     if provider == "openrouter":
-        return http.service_url("KRITA_MCP_OPENROUTER_BASE_URL", "openrouter", "https://openrouter.ai/api/v1")
+        return http.service_url("KRITAPILOT_OPENROUTER_BASE_URL", "openrouter", "https://openrouter.ai/api/v1")
     if provider == "gemini":
-        return env("KRITA_MCP_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+        return env("KRITAPILOT_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
     if provider in compat.COMPAT:
         return compat.base_url(provider)
     return None
@@ -136,9 +136,9 @@ RECENT_SECONDS = 1800
 def auto_order(st=None):
     """The providers Auto uses, in turn: the ones you signed in to or set up, then the free ones; a provider that
     failed in the last 30 minutes goes last (a new chat should not wait on it again).
-    KRITA_MCP_AUTO_ORDER (comma-separated names) sets your own order."""
+    KRITAPILOT_AUTO_ORDER (comma-separated names) sets your own order."""
     st = st or keys.status()
-    custom = [n.strip().lower() for n in env("KRITA_MCP_AUTO_ORDER", "").split(",") if n.strip()]
+    custom = [n.strip().lower() for n in env("KRITAPILOT_AUTO_ORDER", "").split(",") if n.strip()]
     if custom:
         return [n for n in custom if n in PROVIDERS]
     yours = [n for n in PROVIDERS if n in st and st[n].get("setup") in ("key", "browser", "local")
@@ -197,7 +197,7 @@ async def tool_specs():
 
 
 def trace(source, message):
-    """One line in ~/.krita-mcp/logs/assistant.log (shown by the Logs window in Krita; keys are masked)."""
+    """One line in ~/.kritapilot/logs/assistant.log (shown by the Logs window in Krita; keys are masked)."""
     tracelog.write("assistant.log", source, message)
 
 
@@ -312,8 +312,8 @@ class Gemini(_Adapter):
 
     def thinking_config(self):
         """Gemini 3 thinks at length by default (a minute per step is common); a painting assistant mostly
-        needs quick tool calls. KRITA_MCP_GEMINI_THINKING: low (default), medium, high, or off (Google's default)."""
-        level = env("KRITA_MCP_GEMINI_THINKING", "low").strip().lower()
+        needs quick tool calls. KRITAPILOT_GEMINI_THINKING: low (default), medium, high, or off (Google's default)."""
+        level = env("KRITAPILOT_GEMINI_THINKING", "low").strip().lower()
         m = re.match(r"gemini-(\d+)", self.model or "")
         if not self.thinking or level in ("off", "default", "") or not m or int(m.group(1)) < 3:
             return None
@@ -455,7 +455,7 @@ class OpenAICompat(_Adapter):
         if self.provider == "openrouter":
             body["usage"] = {"include": True}  # report the cost of each request
         limit_key = "max_completion_tokens" if self.provider == "openai" else "max_tokens"
-        body[limit_key] = int(env("KRITA_MCP_CHAT_MAX_TOKENS", "4096"))
+        body[limit_key] = int(env("KRITAPILOT_CHAT_MAX_TOKENS", "4096"))
         try:
             r = http.post_json(self.url, body, self.headers, timeout=chat_timeout())
         except ProviderError as e:
@@ -564,7 +564,7 @@ class Claude(_Adapter):
 
     def step(self, history):
         system = [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]
-        kw = dict(model=self.model, max_tokens=int(env("KRITA_MCP_CHAT_MAX_TOKENS", "16000")), system=system,
+        kw = dict(model=self.model, max_tokens=int(env("KRITAPILOT_CHAT_MAX_TOKENS", "16000")), system=system,
                   tools=self.tools, messages=self._cached(history))
         a = self.anthropic
         try:
@@ -658,7 +658,7 @@ def make_model(provider, model=None):
         return Auto()
     if provider not in PROVIDERS:
         raise ProviderError("unknown provider %r; choose from %s" % (provider, ", ".join(PROVIDERS)))
-    model = model or env("KRITA_MCP_%s_CHAT_MODEL" % provider.upper()) or None
+    model = model or env("KRITAPILOT_%s_CHAT_MODEL" % provider.upper()) or None
     if provider == "gemini":
         return Gemini(model)
     if provider == "anthropic":
@@ -1209,27 +1209,27 @@ class _ExclusiveServer(ThreadingHTTPServer):
 
 def serve(port=None, host="127.0.0.1", ready=None):
     if port is None:  # 0 is valid: a free port chosen by the OS (tests)
-        port = int(env("KRITA_MCP_AGENT_PORT", str(DEFAULT_PORT)))
+        port = int(env("KRITAPILOT_AGENT_PORT", str(DEFAULT_PORT)))
     try:
         srv = _ExclusiveServer((host, int(port)), Handler)
     except OSError as e:
         raise SystemExit("the assistant service cannot use %s:%s (%s); is it already running?" % (host, port, e))
     if ready:
         ready(srv)
-    from . import __version__
+    from . import version_text
     import os
     import platform
     import sys
     trace("service", "=" * 20 + " assistant service started " + "=" * 20)
     trace("service", "KritaPilot %s on %s:%s, Python %s, %s, %s" % (
-        __version__, host, srv.server_address[1], platform.python_version(), platform.platform(), sys.executable))
+        version_text(), host, srv.server_address[1], platform.python_version(), platform.platform(), sys.executable))
     try:
         st = status()
         trace("service", "signed in / turned on: %s" % (", ".join(n for n, i in sorted(st.items())
                                                                      if i.get("signed_in")) or "nothing"))
     except Exception as e:  # noqa: BLE001 - the report is a help only
         trace("service", "could not read sign-ins: %s" % e)
-    env_vars = {k: v for k, v in os.environ.items() if k.startswith("KRITA_MCP_")}
+    env_vars = {k: v for k, v in os.environ.items() if k.startswith("KRITAPILOT_")}
     trace("service", "settings: max_steps=%s keep_images=%s chat_image_size=%s %s" % (
         max_steps(), keep_images(), chat_image_size(), " ".join(
             "%s=%s" % (k, "***" if any(w in k for w in ("KEY", "TOKEN", "SECRET", "AUTH")) else v)

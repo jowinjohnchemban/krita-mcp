@@ -49,7 +49,7 @@ body:
       description: |
         Open **Logs…** (in the AI Chat or AI Bridge panel), type ✗ in the filter to see only failures, and paste
         the lines around the problem. Keys are masked in the logs, so they are safe to share.
-        If Krita froze, attach `~/.krita-mcp/hang.log` too.
+        If Krita froze, attach `~/.kritapilot/hang.log` too.
       render: text
   - type: textarea
     id: extra

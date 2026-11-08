@@ -15,11 +15,11 @@ OPENVERSE_URL = "https://api.openverse.org/v1"
 
 
 def _ph():
-    return http.env("KRITA_MCP_POLYHAVEN_URL", POLYHAVEN_URL).rstrip("/")
+    return http.env("KRITAPILOT_POLYHAVEN_URL", POLYHAVEN_URL).rstrip("/")
 
 
 def _ov():
-    return http.env("KRITA_MCP_OPENVERSE_URL", OPENVERSE_URL).rstrip("/")
+    return http.env("KRITAPILOT_OPENVERSE_URL", OPENVERSE_URL).rstrip("/")
 KINDS = {"textures": "textures", "texture": "textures", "hdris": "hdris", "hdri": "hdris", "skies": "hdris",
          "photos": "photos", "photo": "photos", "reference": "photos"}
 

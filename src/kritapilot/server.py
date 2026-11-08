@@ -15,7 +15,7 @@ except ImportError:  # MCP Python SDK v1
     from mcp.server.fastmcp import FastMCP as _Server, Image
     from mcp.server.fastmcp.exceptions import ToolError
 
-from . import __version__
+from . import version_text
 from .bridge_client import BridgeClient, KritaError
 from .netfetch import fetch_image
 
@@ -775,16 +775,16 @@ def main(argv=None):
     ap.add_argument("--transport", choices=["stdio", "http"], default="stdio",
                     help="stdio for local clients (default); http for clients that need a URL")
     ap.add_argument("--host", default="127.0.0.1",
-                    help="HTTP bind address (default 127.0.0.1; others need KRITA_MCP_HTTP_TOKEN)")
+                    help="HTTP bind address (default 127.0.0.1; others need KRITAPILOT_HTTP_TOKEN)")
     ap.add_argument("--port", type=int, default=8765, help="HTTP port (default 8765)")
     ap.add_argument("--agent", action="store_true",
                     help="run the in-Krita assistant service for the AI Chat docker instead of an MCP server")
     ap.add_argument("--agent-port", type=int, default=None,
-                    help="assistant service port (default 5680 or KRITA_MCP_AGENT_PORT)")
+                    help="assistant service port (default 5680 or KRITAPILOT_AGENT_PORT)")
     ap.add_argument("--check-update", action="store_true", help="check GitHub for a newer release (JSON)")
     ap.add_argument("--update", action="store_true",
                     help="download, verify and install the newest release of this server from GitHub")
-    ap.add_argument("--version", action="version", version="KritaPilot " + __version__)
+    ap.add_argument("--version", action="version", version="KritaPilot " + version_text())
     args = ap.parse_args(argv)
 
     if args.check_update or args.update:
@@ -803,9 +803,9 @@ def main(argv=None):
 
     import uvicorn
 
-    token = os.environ.get("KRITA_MCP_HTTP_TOKEN") or secrets.token_urlsafe(32)
-    if args.host not in ("127.0.0.1", "::1", "localhost") and not os.environ.get("KRITA_MCP_HTTP_TOKEN"):
-        sys.exit("Refusing to bind a non-loopback address without KRITA_MCP_HTTP_TOKEN set.")
+    token = os.environ.get("KRITAPILOT_HTTP_TOKEN") or secrets.token_urlsafe(32)
+    if args.host not in ("127.0.0.1", "::1", "localhost") and not os.environ.get("KRITAPILOT_HTTP_TOKEN"):
+        sys.exit("Refusing to bind a non-loopback address without KRITAPILOT_HTTP_TOKEN set.")
     print("KritaPilot HTTP endpoint: http://%s:%d/mcp\nAuthorization: Bearer %s" % (args.host, args.port, token),
           file=sys.stderr)
     uvicorn.run(_BearerAuth(mcp.streamable_http_app(), token), host=args.host, port=args.port, log_level="warning")

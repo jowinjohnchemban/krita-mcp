@@ -48,16 +48,16 @@ except ImportError:  # Krita 5
     _SHIFT = Qt.ShiftModifier
     _END = QTextCursor.End
 
-from . import extension, logview, protocol
+from . import config, extension, logview, protocol
 from .handlers import _enum
 from .util import i18n
 
-AGENT_PORT = int(os.environ.get("KRITA_MCP_AGENT_PORT") or 5680)
+AGENT_PORT = int(os.environ.get(config.AGENT_PORT_ENV) or config.AGENT_PORT)
 PROVIDERS = [("auto", "Auto - all my providers"), ("gemini", "Google Gemini"), ("anthropic", "Anthropic Claude"),
              ("openai", "OpenAI / compatible"),
              ("openrouter", "OpenRouter (browser sign-in)"), ("ollama", "Local model (Ollama, LM Studio)"),
              ("pollinations", "Pollinations (free, no sign-in)")]
-SKILLS_SITE = "https://skills.sh/"
+SKILLS_SITE = config.SKILLS_SITE
 POLL_MS = 250  # how often the panel asks the assistant what happened (a local request: cheap)
 STOP_WAIT_MS = 8000  # after Stop, how long the panel waits for the assistant to confirm
 OAUTH_WAIT = 600  # seconds the panel waits for a browser sign-in to be approved
@@ -223,7 +223,7 @@ def _ensure_service():
     if proc is None or proc.poll() is not None:
         args = extension.server_args() + ["--agent", "--agent-port", str(AGENT_PORT)]
         cmd = args[0]
-        env = dict(os.environ, KRITA_MCP_PORT=str(extension.bridge_port()), KRITA_MCP_HOME=str(protocol.config_dir()))
+        env = dict(os.environ, KRITAPILOT_PORT=str(extension.bridge_port()), KRITAPILOT_HOME=str(protocol.config_dir()))
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         trace("service", "starting the assistant service: %s" % " ".join(args))
         try:
@@ -338,7 +338,7 @@ class SignInDialog(QDialog):
     @staticmethod
     def _intro(kind, info):
         use = html.escape(info.get("use", "") or info.get("label", ""))
-        where = i18n("Stored only on this computer (~/.krita-mcp); AI apps connected through MCP use it too.")
+        where = i18n("Stored only on this computer (~/.kritapilot); AI apps connected through MCP use it too.")
         link = ('<a href="%s">%s</a>' % (html.escape(info["key_url"]), i18n("Download")) if info.get("key_url")
                 else "")
         return {
@@ -1288,4 +1288,4 @@ class ChatDocker(DockWidget):
 
 def register_docker():
     Krita.instance().addDockWidgetFactory(
-        DockWidgetFactory("krita_mcp_chat", DockWidgetFactoryBase.DockRight, ChatDocker))
+        DockWidgetFactory("kritapilot_chat", DockWidgetFactoryBase.DockRight, ChatDocker))

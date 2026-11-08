@@ -21,10 +21,11 @@ except ImportError:  # Krita 5
     from PyQt5.QtGui import (QBrush, QColor, QFont, QImage, QLinearGradient, QPainter,
                              QPainterPath, QPen, QPolygonF, QRadialGradient)
 
-from . import dialogs, history, pixels
+from . import config, dialogs, history, pixels
 from .util import DOC_EXTS, IMAGE_EXTS, OPEN_EXTS, BridgeError, parse_color, safe_path, workspace_root
 
-BRIDGE_VERSION = "0.3.0"
+BRIDGE_VERSION, BRIDGE_BUILD, BRIDGE_COMMIT = config.VERSION, config.BUILD, config.COMMIT  # see config.py
+version_text = config.version_text
 MAX_DIM = 16384
 MAX_PIXELS = 100_000_000
 MAX_SHAPES = 5000
@@ -118,7 +119,7 @@ def dispatch(method, params):
 
 
 def _trace(method, params, ok, ms, detail):
-    """Every command in ~/.krita-mcp/logs/krita.log, with what it was asked and how it went."""
+    """Every command in ~/.kritapilot/logs/krita.log, with what it was asked and how it went."""
     try:
         import json
         from . import tracelog
@@ -379,7 +380,7 @@ def app_info(p):
         info = doc_info(d)
         info.update(index=i, active=(active is not None and d == active))
         docs.append(info)
-    return {"krita_version": a.version(), "bridge_version": BRIDGE_VERSION,
+    return {"krita_version": a.version(), "bridge_version": BRIDGE_VERSION, "bridge_build": BRIDGE_BUILD,
             "workspace": str(workspace_root()), "documents": docs}
 
 

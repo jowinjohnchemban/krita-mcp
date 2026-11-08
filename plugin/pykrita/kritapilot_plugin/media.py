@@ -26,7 +26,7 @@ except ImportError:
 VIDEO_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".avi", ".gif", ".m4v", ".mpg", ".mpeg", ".wmv"}
 RENDER_EXTS = {".mp4", ".webm", ".gif", ".mov", ".mkv", ".apng", ".png"}
 MAX_VIDEO_FRAMES = 1000
-FRAMES_DIR = ".krita-mcp-frames"
+FRAMES_DIR = ".kritapilot-frames"
 
 
 # ================================================================ photo adjustments
@@ -290,14 +290,14 @@ def document_color_space(p):
 
 # ================================================================ external tools
 def _tool(name):
-    """ffmpeg / ffprobe: KRITA_MCP_FFMPEG dir, then the copy bundled with Krita, then PATH."""
+    """ffmpeg / ffprobe: KRITAPILOT_FFMPEG dir, then the copy bundled with Krita, then PATH."""
     exe = name + (".exe" if sys.platform.startswith("win") else "")
-    for d in (os.environ.get("KRITA_MCP_FFMPEG"), QCoreApplication.applicationDirPath()):
+    for d in (os.environ.get("KRITAPILOT_FFMPEG"), QCoreApplication.applicationDirPath()):
         if d and os.path.isfile(os.path.join(d, exe)):
             return os.path.join(d, exe)
     found = shutil.which(name)
     if not found:
-        raise BridgeError("%s not found (Krita normally bundles it; or set KRITA_MCP_FFMPEG)" % name)
+        raise BridgeError("%s not found (Krita normally bundles it; or set KRITAPILOT_FFMPEG)" % name)
     return found
 
 

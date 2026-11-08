@@ -3,12 +3,13 @@
 # release, and the wheel and sdist to PyPI (https://pypi.org/p/kritapilot).
 #
 # Jobs, as in PyPA's guide (https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/):
-#   build           version, test, build everything once and keep it as the "dist" artifact
+#   build           next version, test, build everything once and keep it as the "dist" artifact
 #   github-release  publish the artifact as a GitHub release (the plugin and the server update from there)
 #   pypi            upload the wheel and sdist with PyPI trusted publishing - no password or token is stored
 #
-# The version is the date plus the build number (YYYY.M.D.<run number>), so several releases a day each get their
-# own version, and nothing is ever committed to the repository.
+# Versions are SemVer and count up by one: MAJOR.MINOR from pyproject.toml, PATCH one more than the highest already
+# published (GitHub or PyPI). The tag is vX.Y.Z and official names use only the version. Each build also has a
+# build id, the build date and commit (YYYYMMDD-COMMIT), shown in the release notes and the app. Nothing is committed.
 #
 
 name: Release
@@ -30,7 +31,7 @@ jobs:
       contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
+      build: ${{ steps.version.outputs.build }}
       commit: ${{ steps.version.outputs.commit }}
     steps:
       - uses: actions/checkout@v4
@@ -39,22 +40,16 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Version from the date and the build number
-        id: version
-        env:
-          BUILD: ${{ github.run_number }}  # grows with every build, so later builds always compare as newer
-        run: |
-          echo "tag=$(date -u +'%Y.%m.%d').${BUILD}" >> "$GITHUB_OUTPUT"      # tag / release name
-          echo "version=$(date -u +'%Y.%-m.%-d').${BUILD}" >> "$GITHUB_OUTPUT" # the same as a Python version
-          echo "commit=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-
       - name: Install
         run: |
           sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
           python -m pip install -e ".[test]" PyQt6 build twine
 
-      - name: Stamp the version (this build only, never committed)
-        run: python scripts/bump_version.py "${{ steps.version.outputs.version }}"
+      - name: Next version, build id and commit (stamped in this build only)
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/release_version.py --repo "${{ github.repository }}" --sha "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Test
         env:
@@ -67,7 +62,7 @@ jobs:
           python -m build --outdir dist
           python -m twine check --strict dist/*.whl dist/*.tar.gz
           {
-            echo "## 📦 KritaPilot ${{ steps.version.outputs.version }} (build ${{ github.run_number }}, commit ${{ steps.version.outputs.commit }})"
+            echo "## 📦 KritaPilot ${{ steps.version.outputs.version }} (build ${{ steps.version.outputs.build }})"
             echo
             ls -lh dist | awk 'NR>1 {print "- **" $9 "**: " $5}'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -86,7 +81,7 @@ jobs:
       actions: write
     env:
       VERSION: ${{ needs.build.outputs.version }}
-      TAG_NAME: ${{ needs.build.outputs.tag }}
+      BUILD_ID: ${{ needs.build.outputs.build }}
       COMMIT: ${{ needs.build.outputs.commit }}
     steps:
       - uses: actions/download-artifact@v4
@@ -94,46 +89,35 @@ jobs:
           name: dist
           path: dist
 
-      - name: Delete an existing release of this build  # only when this same build is re-run
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release delete "${TAG_NAME}" --yes --cleanup-tag --repo "${{ github.repository }}" || true
-
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.TAG_NAME }}
+          tag_name: v${{ env.VERSION }}
           target_commitish: ${{ github.sha }}
-          name: KritaPilot ${{ env.VERSION }} (build ${{ github.run_number }}, ${{ env.COMMIT }})
+          name: KritaPilot ${{ env.VERSION }}
           make_latest: true
           generate_release_notes: true
           body: |
-            Build ${{ github.run_number }} from commit [`${{ env.COMMIT }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}).
+            Version **${{ env.VERSION }}** · build `${{ env.BUILD_ID }}` ([commit](https://github.com/${{ github.repository }}/commit/${{ github.sha }}))
 
             ## Install
 
-            **Krita plugin**: download `krita-mcp-bridge-${{ env.VERSION }}.zip`, then in Krita choose *Tools > Scripts >
-            Import Python Plugin from File...*, pick the zip, enable it and restart Krita. Open *Settings > Dockers >
-            AI Chat* or *AI Bridge (MCP)*.
+            **Server** (the Krita MCP server and the AI Chat assistant), from PyPI or from GitHub:
 
-            **Server** (the Krita MCP server and the AI Chat assistant): `pip install kritapilot==${{ env.VERSION }}`,
-            or `pip install` the `.whl` from this release. Then chat inside Krita with *AI Chat*, or connect your AI
-            app with the snippet shown in the Krita panel.
+            ```bash
+            pip install kritapilot==${{ env.VERSION }}
+            pip install "git+https://github.com/${{ github.repository }}@v${{ env.VERSION }}"
+            ```
+
+            **Krita plugin**: download `kritapilot-plugin-${{ env.VERSION }}.zip` below, then in Krita choose *Tools >
+            Scripts > Import Python Plugin from File...*, pick the zip, enable it and restart Krita. Open *Settings >
+            Dockers > AI Chat* or *AI Bridge (MCP)*.
 
             Already installed? The plugin and the server update themselves.
 
             Docs: https://github.com/${{ github.repository }}/tree/main/docs · Changes: [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
           files: dist/*
           fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Remove old releases
-        uses: dev-drprasad/delete-older-releases@v0.2.1
-        with:
-          keep_latest: 5
-          delete_tags: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

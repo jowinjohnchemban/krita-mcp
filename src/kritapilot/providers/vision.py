@@ -12,15 +12,15 @@ SYSTEM = ("You are an experienced art director and retoucher reviewing work in p
 
 
 def ask_anthropic(png, question, model=None, max_tokens=4000):
-    key = secret("KRITA_MCP_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
+    key = secret("KRITAPILOT_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
     if not key:
-        raise ProviderError("Claude is not configured: set KRITA_MCP_ANTHROPIC_API_KEY")
+        raise ProviderError("Claude is not configured: set KRITAPILOT_ANTHROPIC_API_KEY")
     try:
         import anthropic
     except ImportError:
         raise ProviderError("install the Anthropic SDK: pip install anthropic") from None
     client = anthropic.Anthropic(api_key=key)
-    model = model or env("KRITA_MCP_ANTHROPIC_MODEL") or catalog.first(catalog.anthropic_models(key), "Claude model")
+    model = model or env("KRITAPILOT_ANTHROPIC_MODEL") or catalog.first(catalog.anthropic_models(key), "Claude model")
     kwargs = dict(model=model, max_tokens=max_tokens, system=SYSTEM, messages=[{"role": "user", "content": [
         {"type": "image", "source": {"type": "base64", "media_type": "image/png",
                                      "data": base64.standard_b64encode(png).decode()}},
@@ -50,13 +50,13 @@ def ask_openai(png, question, model=None, max_tokens=4000, service="openai"):
         base, key = compat.base_url(service), compat.need_key(service)
         model = model or catalog.first(compat.chat_models(service), "%s model" % service)
     else:
-        base = http.service_url("KRITA_MCP_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
-        key = secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY") or ("local" if http.is_loopback_url(base)
+        base = http.service_url("KRITAPILOT_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
+        key = secret("KRITAPILOT_OPENAI_API_KEY", "OPENAI_API_KEY") or ("local" if http.is_loopback_url(base)
                                                                      else None)
     if not key:
-        raise ProviderError("OpenAI is not configured: set KRITA_MCP_OPENAI_API_KEY (or a local "
-                            "KRITA_MCP_OPENAI_BASE_URL such as Ollama's http://127.0.0.1:11434/v1)")
-    model = model or env("KRITA_MCP_OPENAI_VISION_MODEL") or catalog.first(
+        raise ProviderError("OpenAI is not configured: set KRITAPILOT_OPENAI_API_KEY (or a local "
+                            "KRITAPILOT_OPENAI_BASE_URL such as Ollama's http://127.0.0.1:11434/v1)")
+    model = model or env("KRITAPILOT_OPENAI_VISION_MODEL") or catalog.first(
         catalog.local_models(base) if http.is_loopback_url(base) else catalog.openai_models(base, key), "chat model")
     body = {"model": model, "max_completion_tokens": max_tokens, "messages": [
         {"role": "system", "content": SYSTEM},
@@ -70,11 +70,11 @@ def ask_openai(png, question, model=None, max_tokens=4000, service="openai"):
 
 
 def ask_gemini(png, question, model=None, max_tokens=4000):
-    key = secret("KRITA_MCP_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
+    key = secret("KRITAPILOT_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
     if not key:
-        raise ProviderError("Gemini is not configured: set KRITA_MCP_GEMINI_API_KEY")
-    base = env("KRITA_MCP_GEMINI_BASE_URL", GEMINI_BASE).rstrip("/")
-    model = model or env("KRITA_MCP_GEMINI_VISION_MODEL") or gemini.pick(base, key, "chat")
+        raise ProviderError("Gemini is not configured: set KRITAPILOT_GEMINI_API_KEY")
+    base = env("KRITAPILOT_GEMINI_BASE_URL", GEMINI_BASE).rstrip("/")
+    model = model or env("KRITAPILOT_GEMINI_VISION_MODEL") or gemini.pick(base, key, "chat")
     body = {"systemInstruction": {"parts": [{"text": SYSTEM}]},
             "contents": [{"parts": [{"inline_data": {"mime_type": "image/png", "data": base64.b64encode(png).decode()}},
                                     {"text": question}]}],
@@ -91,20 +91,20 @@ ALIASES = {"claude": "anthropic", "gpt": "openai", "chatgpt": "openai", "google"
 
 
 def configured():
-    base = env("KRITA_MCP_OPENAI_BASE_URL", "")
-    return {"anthropic": bool(secret("KRITA_MCP_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")),
-            "openai": bool(secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY")) or http.is_loopback_url(base or "x:"),
-            "gemini": bool(secret("KRITA_MCP_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")),
+    base = env("KRITAPILOT_OPENAI_BASE_URL", "")
+    return {"anthropic": bool(secret("KRITAPILOT_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")),
+            "openai": bool(secret("KRITAPILOT_OPENAI_API_KEY", "OPENAI_API_KEY")) or http.is_loopback_url(base or "x:"),
+            "gemini": bool(secret("KRITAPILOT_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")),
             **{n: bool(compat.api_key(n)) for n in compat.COMPAT}}
 
 
 def ask(png, question, provider=None, model=None):
-    provider = provider or env("KRITA_MCP_VISION_PROVIDER")
+    provider = provider or env("KRITAPILOT_VISION_PROVIDER")
     if not provider:
         provider = next((p for p, ok in configured().items() if ok), None)
         if not provider:
-            raise ProviderError("No vision model configured. Set KRITA_MCP_ANTHROPIC_API_KEY, "
-                                "KRITA_MCP_OPENAI_API_KEY or KRITA_MCP_GEMINI_API_KEY (see docs/ai-backends.md).")
+            raise ProviderError("No vision model configured. Set KRITAPILOT_ANTHROPIC_API_KEY, "
+                                "KRITAPILOT_OPENAI_API_KEY or KRITAPILOT_GEMINI_API_KEY (see docs/ai-backends.md).")
     key = ALIASES.get(provider.lower(), provider.lower())
     if key not in PROVIDERS:
         raise ProviderError("unknown provider %r; choose from %s" % (provider, ", ".join(PROVIDERS)))

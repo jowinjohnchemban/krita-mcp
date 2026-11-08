@@ -20,7 +20,7 @@ except ImportError:
 from . import tracelog
 from .util import i18n
 
-# (file under ~/.krita-mcp, what it holds)
+# (file under ~/.kritapilot, what it holds)
 LOGS = [("logs/krita.log", "Krita: commands, panel actions, settings"),
         ("logs/assistant.log", "AI Chat assistant: messages, models, tools"),
         ("update.log", "Updates"),

@@ -6,7 +6,7 @@ that were not open before, records their title, text and buttons, and closes the
 AI did not ask for whatever OK would do). Progress windows get time to finish on their own first.
 The AI is told exactly what appeared, so it can take another way; the user's own dialogs are never touched.
 
-Policy (AI Bridge panel setting "dialogs", or KRITA_MCP_DIALOGS): "cancel" (default) or "leave" (the user
+Policy (AI Bridge panel setting "dialogs", or KRITAPILOT_DIALOGS): "cancel" (default) or "leave" (the user
 answers them).
 """
 import os
@@ -25,7 +25,7 @@ POLICY = {"mode": None}
 
 
 def policy():
-    mode = POLICY["mode"] or os.environ.get("KRITA_MCP_DIALOGS") or "cancel"
+    mode = POLICY["mode"] or os.environ.get("KRITAPILOT_DIALOGS") or "cancel"
     return mode if mode in ("cancel", "leave") else "cancel"
 
 

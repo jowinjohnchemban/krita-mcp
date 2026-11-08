@@ -112,15 +112,15 @@ class A1111(Backend):
     native_control = True
 
     def __init__(self):
-        self.url = http.service_url("KRITA_MCP_A1111_URL", "a1111", "http://127.0.0.1:7860")
-        auth = env("KRITA_MCP_A1111_AUTH")  # user:password when the WebUI runs with --api-auth
+        self.url = http.service_url("KRITAPILOT_A1111_URL", "a1111", "http://127.0.0.1:7860")
+        auth = env("KRITAPILOT_A1111_AUTH")  # user:password when the WebUI runs with --api-auth
         self.headers = {"Authorization": "Basic " + _b64(auth.encode())} if auth else {}
 
     def _get(self, path, timeout=60):
         return http.get_json(self.url + path, self.headers, timeout)
 
     def _post(self, path, body):
-        return http.post_json(self.url + path, body, self.headers, timeout=int(env("KRITA_MCP_GEN_TIMEOUT", "900")))
+        return http.post_json(self.url + path, body, self.headers, timeout=int(env("KRITAPILOT_GEN_TIMEOUT", "900")))
 
     def status(self):
         try:
@@ -214,8 +214,8 @@ class ComfyUI(Backend):
     native_control = True
 
     def __init__(self):
-        self.url = http.service_url("KRITA_MCP_COMFYUI_URL", "comfyui", "http://127.0.0.1:8188")
-        self.timeout = int(env("KRITA_MCP_GEN_TIMEOUT", "900"))
+        self.url = http.service_url("KRITAPILOT_COMFYUI_URL", "comfyui", "http://127.0.0.1:8188")
+        self.timeout = int(env("KRITAPILOT_GEN_TIMEOUT", "900"))
 
     def _choices(self, node, inp, timeout=10):
         info = http.get_json("%s/object_info/%s" % (self.url, node), timeout=timeout)
@@ -263,7 +263,7 @@ class ComfyUI(Backend):
                 if st.get("completed", True):
                     return self._collect(h.get("outputs") or {})
             time.sleep(0.5)
-        raise ProviderError("ComfyUI did not finish within %d s (KRITA_MCP_GEN_TIMEOUT)" % self.timeout)
+        raise ProviderError("ComfyUI did not finish within %d s (KRITAPILOT_GEN_TIMEOUT)" % self.timeout)
 
     def _collect(self, outputs):
         imgs = []
@@ -394,10 +394,10 @@ class OpenAIImages(Backend):
     mask_format = "alpha"
 
     def __init__(self):
-        self.base = http.service_url("KRITA_MCP_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
-        self.key = secret("KRITA_MCP_OPENAI_API_KEY", "OPENAI_API_KEY")
-        self.model = env("KRITA_MCP_OPENAI_IMAGE_MODEL")  # None: the newest image model this key can use
-        self.sizes = env("KRITA_MCP_OPENAI_SIZES", "1024x1024,1536x1024,1024x1536").split(",")
+        self.base = http.service_url("KRITAPILOT_OPENAI_BASE_URL", "openai", "https://api.openai.com/v1")
+        self.key = secret("KRITAPILOT_OPENAI_API_KEY", "OPENAI_API_KEY")
+        self.model = env("KRITAPILOT_OPENAI_IMAGE_MODEL")  # None: the newest image model this key can use
+        self.sizes = env("KRITAPILOT_OPENAI_SIZES", "1024x1024,1536x1024,1024x1536").split(",")
         if self.key is None and http.is_loopback_url(self.base):
             self.key = "local"
 
@@ -413,7 +413,7 @@ class OpenAIImages(Backend):
 
     def generate(self, job):
         if not self.key:
-            raise ProviderError("OpenAI is not configured: set KRITA_MCP_OPENAI_API_KEY")
+            raise ProviderError("OpenAI is not configured: set KRITAPILOT_OPENAI_API_KEY")
         if job.mode == "txt2img" and job.controls:  # no ControlNet: give the sketch as the image to work from
             job = _guided(job, "Use the provided image as the layout and line guide (keep its composition). ")
         model = job.model or self.model or catalog.first(catalog.openai_models(self.base, self.key, "image"),
@@ -459,9 +459,9 @@ class Gemini(Backend):
     multiple = 1
 
     def __init__(self):
-        self.key = secret("KRITA_MCP_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
-        self.base = env("KRITA_MCP_GEMINI_BASE_URL", GEMINI_BASE).rstrip("/")
-        self.model = env("KRITA_MCP_GEMINI_IMAGE_MODEL")  # None: the newest Flash Image model the key can use
+        self.key = secret("KRITAPILOT_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
+        self.base = env("KRITAPILOT_GEMINI_BASE_URL", GEMINI_BASE).rstrip("/")
+        self.model = env("KRITAPILOT_GEMINI_IMAGE_MODEL")  # None: the newest Flash Image model the key can use
 
     def configured(self):
         return bool(self.key)
@@ -471,7 +471,7 @@ class Gemini(Backend):
 
     def generate(self, job):
         if not self.key:
-            raise ProviderError("Gemini is not configured: set KRITA_MCP_GEMINI_API_KEY")
+            raise ProviderError("Gemini is not configured: set KRITAPILOT_GEMINI_API_KEY")
         model = job.model or self.model or gemini.pick(self.base, self.key, "image")
         text = job.prompt + ("\nAvoid: " + job.negative if job.negative else "")
         parts = []
@@ -512,15 +512,15 @@ class Stability(Backend):
     multiple = 64
 
     def __init__(self):
-        self.key = secret("KRITA_MCP_STABILITY_API_KEY", "STABILITY_API_KEY")
-        self.base = env("KRITA_MCP_STABILITY_BASE_URL", "https://api.stability.ai").rstrip("/")
+        self.key = secret("KRITAPILOT_STABILITY_API_KEY", "STABILITY_API_KEY")
+        self.base = env("KRITAPILOT_STABILITY_BASE_URL", "https://api.stability.ai").rstrip("/")
 
     def configured(self):
         return bool(self.key)
 
     def _post(self, path, fields, files=()):
         if not self.key:
-            raise ProviderError("Stability is not configured: set KRITA_MCP_STABILITY_API_KEY")
+            raise ProviderError("Stability is not configured: set KRITAPILOT_STABILITY_API_KEY")
         body, ctype = http.multipart(fields, list(files))
         data, hdrs = http.request("POST", self.base + path, body, {
             "Authorization": "Bearer " + self.key, "Accept": "image/*", "Content-Type": ctype})
@@ -606,16 +606,16 @@ class Replicate(Backend):
                 "video": (("text-to-video", "image-to-video"), ())}
 
     def __init__(self):
-        self.key = secret("KRITA_MCP_REPLICATE_API_TOKEN", "REPLICATE_API_TOKEN")
-        self.base = env("KRITA_MCP_REPLICATE_BASE_URL", "https://api.replicate.com/v1").rstrip("/")
-        self.timeout = int(env("KRITA_MCP_GEN_TIMEOUT", "900"))
+        self.key = secret("KRITAPILOT_REPLICATE_API_TOKEN", "REPLICATE_API_TOKEN")
+        self.base = env("KRITAPILOT_REPLICATE_BASE_URL", "https://api.replicate.com/v1").rstrip("/")
+        self.timeout = int(env("KRITAPILOT_GEN_TIMEOUT", "900"))
 
     def configured(self):
         return bool(self.key)
 
     def _hdr(self):
         if not self.key:
-            raise ProviderError("Replicate is not configured: set KRITA_MCP_REPLICATE_API_TOKEN")
+            raise ProviderError("Replicate is not configured: set KRITAPILOT_REPLICATE_API_TOKEN")
         return {"Authorization": "Bearer " + self.key}
 
     def schema(self, model):
@@ -741,17 +741,17 @@ class Fal(Backend):
     multiple = 16
 
     def __init__(self):
-        self.key = secret("KRITA_MCP_FAL_KEY", "FAL_KEY")
-        self.timeout = int(env("KRITA_MCP_GEN_TIMEOUT", "900"))
+        self.key = secret("KRITAPILOT_FAL_KEY", "FAL_KEY")
+        self.timeout = int(env("KRITAPILOT_GEN_TIMEOUT", "900"))
 
     def configured(self):
         return bool(self.key)
 
     def run(self, model, inputs):
         if not self.key:
-            raise ProviderError("fal is not configured: set KRITA_MCP_FAL_KEY")
+            raise ProviderError("fal is not configured: set KRITAPILOT_FAL_KEY")
         hdr = {"Authorization": "Key " + self.key}
-        r = http.post_json(env("KRITA_MCP_FAL_BASE_URL", "https://queue.fal.run").rstrip("/") + "/" + model, inputs, hdr)
+        r = http.post_json(env("KRITAPILOT_FAL_BASE_URL", "https://queue.fal.run").rstrip("/") + "/" + model, inputs, hdr)
         status_url, response_url = r.get("status_url"), r.get("response_url")
         if not status_url:  # some deployments answer synchronously
             return r
@@ -834,9 +834,9 @@ def get(name):
 
 
 def candidates(name=None):
-    """Backends to try, best first: the requested one (or KRITA_MCP_IMAGE_BACKEND) alone, else the local ones
+    """Backends to try, best first: the requested one (or KRITAPILOT_IMAGE_BACKEND) alone, else the local ones
     that answer, then every configured cloud service, then the free services that are turned on."""
-    name = name or env("KRITA_MCP_IMAGE_BACKEND")
+    name = name or env("KRITAPILOT_IMAGE_BACKEND")
     if name:
         yield get(name)
         return
@@ -863,14 +863,14 @@ def unusable(error):
 
 
 def pick(name=None):
-    """The requested backend, else KRITA_MCP_IMAGE_BACKEND, else the first local one that answers, else the
+    """The requested backend, else KRITAPILOT_IMAGE_BACKEND, else the first local one that answers, else the
     first configured cloud one."""
     for b in candidates(name):
         return b
     raise ProviderError(
         "No image-generation backend found. Start ComfyUI (127.0.0.1:8188) or AUTOMATIC1111/Forge with --api "
-        "(127.0.0.1:7860), or set one of KRITA_MCP_OPENAI_API_KEY, KRITA_MCP_GEMINI_API_KEY, "
-        "KRITA_MCP_STABILITY_API_KEY, KRITA_MCP_REPLICATE_API_TOKEN, KRITA_MCP_FAL_KEY for the MCP server. "
+        "(127.0.0.1:7860), or set one of KRITAPILOT_OPENAI_API_KEY, KRITAPILOT_GEMINI_API_KEY, "
+        "KRITAPILOT_STABILITY_API_KEY, KRITAPILOT_REPLICATE_API_TOKEN, KRITAPILOT_FAL_KEY for the MCP server. "
         "Free, no account: turn on Pollinations or AI Horde in Krita's AI Chat > Services. "
         "See docs/ai-backends.md.")
 

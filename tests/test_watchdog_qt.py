@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("bridge_watchdog", ROOT / "plugin/pykrita/krita_mcp_bridge/watchdog.py")
+    spec = importlib.util.spec_from_file_location("bridge_watchdog", ROOT / "plugin/pykrita/kritapilot_plugin/watchdog.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # Qt only: no Krita needed
     return mod
@@ -30,8 +30,8 @@ def a_frozen_main_thread(seconds):
 
 def test_a_freeze_writes_every_threads_stack(tmp_path, monkeypatch):
     app = qtc.QCoreApplication.instance() or qtc.QCoreApplication([])
-    monkeypatch.setenv("KRITA_MCP_HOME", str(tmp_path))
-    monkeypatch.setenv("KRITA_MCP_HANG_SECONDS", "0.5")
+    monkeypatch.setenv("KRITAPILOT_HOME", str(tmp_path))
+    monkeypatch.setenv("KRITAPILOT_HANG_SECONDS", "0.5")
     w = _load()
     try:
         w.start()
@@ -48,8 +48,8 @@ def test_a_freeze_writes_every_threads_stack(tmp_path, monkeypatch):
 
 def test_no_freeze_no_dump(tmp_path, monkeypatch):
     app = qtc.QCoreApplication.instance() or qtc.QCoreApplication([])
-    monkeypatch.setenv("KRITA_MCP_HOME", str(tmp_path))
-    monkeypatch.setenv("KRITA_MCP_HANG_SECONDS", "1")
+    monkeypatch.setenv("KRITAPILOT_HOME", str(tmp_path))
+    monkeypatch.setenv("KRITAPILOT_HANG_SECONDS", "1")
     w = _load()
     try:
         w.start()

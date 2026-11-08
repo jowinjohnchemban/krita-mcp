@@ -13,10 +13,10 @@ from test_providers import B64, Mock
 
 @pytest.fixture()
 def home(tmp_path, monkeypatch):
-    monkeypatch.setenv("KRITA_MCP_HOME", str(tmp_path))
-    monkeypatch.setenv("KRITA_MCP_TOKEN", "test-token")
-    for k in ("KRITA_MCP_GEMINI_API_KEY", "KRITA_MCP_OPENAI_API_KEY", "KRITA_MCP_ANTHROPIC_API_KEY",
-              "KRITA_MCP_USE_ENV_KEYS", "KRITA_MCP_OLLAMA_BASE_URL", "KRITA_MCP_GEMINI_BASE_URL"):
+    monkeypatch.setenv("KRITAPILOT_HOME", str(tmp_path))
+    monkeypatch.setenv("KRITAPILOT_TOKEN", "test-token")
+    for k in ("KRITAPILOT_GEMINI_API_KEY", "KRITAPILOT_OPENAI_API_KEY", "KRITAPILOT_ANTHROPIC_API_KEY",
+              "KRITAPILOT_USE_ENV_KEYS", "KRITAPILOT_OLLAMA_BASE_URL", "KRITAPILOT_GEMINI_BASE_URL"):
         monkeypatch.delenv(k, raising=False)
     agent.SESSIONS.clear()
     return tmp_path
@@ -66,7 +66,7 @@ def test_gemini_agent_loop_calls_tools_and_answers(home, bridge, monkeypatch):
     ])
     try:
         m.json("POST", "/models/gemini-3.8-flash:generateContent", lambda h, b: next(replies))
-        monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", m.url)
+        monkeypatch.setenv("KRITAPILOT_GEMINI_BASE_URL", m.url)
         agent.save_key("gemini", "g-key")
         sess = agent.chat(None, "gemini", None, "make a canvas for a fox")
         events = _wait(sess)
@@ -104,7 +104,7 @@ def test_gemini_falls_back_to_openapi_schemas(home, bridge, monkeypatch):
         m.routes[("POST", "/models/gemini-3.8-flash:generateContent")] = lambda h, b: (
             400 if "parametersJsonSchema" in b.decode() else 200, "application/json",
             json.dumps(reply(h, b)).encode())
-        monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", m.url)
+        monkeypatch.setenv("KRITAPILOT_GEMINI_BASE_URL", m.url)
         agent.save_key("gemini", "k")
         events = _wait(agent.chat(None, "gemini", None, "hi"))
     finally:
@@ -213,14 +213,14 @@ def test_service_requires_the_token_and_runs_a_chat(home, bridge, monkeypatch):
 
 def test_keys_signed_in_from_krita_serve_the_generative_tools(home, monkeypatch):
     from kritapilot.providers import http, images, keys
-    monkeypatch.delenv("KRITA_MCP_FAL_KEY", raising=False)
-    monkeypatch.delenv("KRITA_MCP_COMFYUI_URL", raising=False)
+    monkeypatch.delenv("KRITAPILOT_FAL_KEY", raising=False)
+    monkeypatch.delenv("KRITAPILOT_COMFYUI_URL", raising=False)
     assert images.get("fal").configured() is False
     keys.save("fal", key="fal-from-krita")
     keys.save("comfyui", base_url="http://127.0.0.1:9999/")
     assert images.get("fal").key == "fal-from-krita" and images.get("comfyui").url == "http://127.0.0.1:9999"
-    monkeypatch.setenv("KRITA_MCP_FAL_KEY", "from-env")  # an explicit environment variable wins
-    assert http.secret("KRITA_MCP_FAL_KEY") == "from-env"
+    monkeypatch.setenv("KRITAPILOT_FAL_KEY", "from-env")  # an explicit environment variable wins
+    assert http.secret("KRITAPILOT_FAL_KEY") == "from-env"
     st = keys.status()
     assert st["fal"]["signed_in"] and "fal-from-krita" not in json.dumps(st)
 
@@ -252,7 +252,7 @@ def test_openrouter_browser_sign_in(home, monkeypatch):
         m.json("POST", "/api/v1/auth/keys", lambda h, b: {"key": "sk-or-v1-" + "a" * 64}
                if json.loads(b) == {"code": "good-code", "code_verifier": oauth.FLOWS[fid].verifier,
                                     "code_challenge_method": "S256"} else {"error": "bad"})
-        monkeypatch.setenv("KRITA_MCP_OPENROUTER_BASE_URL", m.url + "/api/v1")
+        monkeypatch.setenv("KRITAPILOT_OPENROUTER_BASE_URL", m.url + "/api/v1")
         flow = oauth.start("openrouter")
         fid = flow["id"]
         q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(flow["url"]).query))
@@ -280,7 +280,7 @@ def test_keys_are_checked_before_saving(home, monkeypatch):
     try:
         m.routes[("GET", "/models")] = lambda h, b: (
             200 if h.headers.get("x-goog-api-key") == "AIza-good" else 400, "application/json", b'{"models": []}')
-        monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", m.url)
+        monkeypatch.setenv("KRITAPILOT_GEMINI_BASE_URL", m.url)
         assert oauth.verify("gemini", "AIza-good") == (True, "key works")
         assert oauth.verify("gemini", "AIza-bad")[0] is False
         assert oauth.verify("fal", "x")[0] is None and oauth.verify("gemini", "")[0] is False
@@ -321,7 +321,7 @@ def test_openrouter_picks_a_tool_using_model_from_the_live_list(home, bridge, mo
             {"id": "acme/vision-tools", "created": 700, "supported_parameters": ["tools", "tool_choice"],
              "architecture": {"input_modalities": ["text", "image"]}}]})
         m.json("POST", "/api/v1/chat/completions", {"choices": [{"message": {"content": "hi"}}]})
-        monkeypatch.setenv("KRITA_MCP_OPENROUTER_BASE_URL", m.url + "/api/v1")
+        monkeypatch.setenv("KRITAPILOT_OPENROUTER_BASE_URL", m.url + "/api/v1")
         agent.save_key("openrouter", "sk-or-v1-x")
         events = _wait(agent.chat(None, "openrouter", None, "hello"))
         body, headers = json.loads(m.calls[-1][3]), m.calls[-1][2]
@@ -340,7 +340,7 @@ def test_chat_with_a_compatible_service(home, bridge, monkeypatch):
                                                    {"id": "mistral-large-2611", "created": 40},
                                                    {"id": "ministral-8b", "created": 45}]})
         m.json("POST", "/mistral/chat/completions", {"choices": [{"message": {"content": "Bonjour."}}]})
-        monkeypatch.setenv("KRITA_MCP_MISTRAL_BASE_URL", m.url + "/mistral")
+        monkeypatch.setenv("KRITAPILOT_MISTRAL_BASE_URL", m.url + "/mistral")
         agent.save_key("mistral", "m-key")
         assert agent.available_models("mistral") == ["mistral-large-2611", "ministral-8b"]
         events = _wait(agent.chat(None, "mistral", None, "hello"))
@@ -353,7 +353,7 @@ def test_chat_with_a_compatible_service(home, bridge, monkeypatch):
     try:
         m2.routes[("GET", "/mistral/models")] = lambda h, b: (
             200 if h.headers.get("Authorization") == "Bearer good" else 401, "application/json", b'{"data": []}')
-        monkeypatch.setenv("KRITA_MCP_MISTRAL_BASE_URL", m2.url + "/mistral")
+        monkeypatch.setenv("KRITAPILOT_MISTRAL_BASE_URL", m2.url + "/mistral")
         assert oauth.verify("mistral", "good")[0] is True and oauth.verify("mistral", "bad")[0] is False
     finally:
         m2.srv.shutdown()
@@ -398,7 +398,7 @@ def test_reply_length_is_capped_and_low_credit_is_handled(home, bridge, monkeypa
         m.json("GET", "/api/v1/models", {"data": [{"id": "acme/vision-tools", "created": 1,
                                                     "supported_parameters": ["tools"],
                                                     "architecture": {"input_modalities": ["text", "image"]}}]})
-        monkeypatch.setenv("KRITA_MCP_OPENROUTER_BASE_URL", m.url + "/api/v1")
+        monkeypatch.setenv("KRITAPILOT_OPENROUTER_BASE_URL", m.url + "/api/v1")
         agent.save_key("openrouter", "sk-or-v1-x")
         events = _wait(agent.chat(None, "openrouter", None, "paint"))
         posts = [json.loads(c[3]) for c in m.calls if c[0] == "POST"]
@@ -416,8 +416,8 @@ def test_no_credit_at_all_and_rejected_keys_explain_themselves(home, bridge, mon
         m.json("GET", "/api/v1/models", {"data": [{"id": "acme/m", "supported_parameters": ["tools"]}]})
         m.routes[("GET", "/models")] = lambda h, b: (
             401, "application/json", b'{"error":{"code":401,"message":"API key not valid."}}')
-        monkeypatch.setenv("KRITA_MCP_OPENROUTER_BASE_URL", m.url + "/api/v1")
-        monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", m.url)
+        monkeypatch.setenv("KRITAPILOT_OPENROUTER_BASE_URL", m.url + "/api/v1")
+        monkeypatch.setenv("KRITAPILOT_GEMINI_BASE_URL", m.url)
         agent.save_key("openrouter", "sk-or-v1-x")
         agent.save_key("gemini", "bad-key")
         no_credit = [e for e in _wait(agent.chat(None, "openrouter", None, "paint")) if e["type"] == "error"]
@@ -432,7 +432,7 @@ def test_openai_uses_max_completion_tokens(home, bridge, monkeypatch):
     m = Mock()
     try:
         m.json("POST", "/v1/chat/completions", {"choices": [{"message": {"content": "ok"}}]})
-        monkeypatch.setenv("KRITA_MCP_OPENAI_BASE_URL", m.url + "/v1")
+        monkeypatch.setenv("KRITAPILOT_OPENAI_BASE_URL", m.url + "/v1")
         agent.save_key("openai", "sk-x")
         _wait(agent.chat(None, "openai", "gpt-x", "hi"))
         body = json.loads([c for c in m.calls if c[0] == "POST"][-1][3])
@@ -549,9 +549,9 @@ def test_gemini_3_thinks_briefly_unless_told_otherwise(home, monkeypatch):
     g = agent.Gemini(None)
     g.model = "gemini-3.8-flash"
     assert g.thinking_config() == {"thinkingConfig": {"thinkingLevel": "low"}}
-    monkeypatch.setenv("KRITA_MCP_GEMINI_THINKING", "off")
+    monkeypatch.setenv("KRITAPILOT_GEMINI_THINKING", "off")
     assert g.thinking_config() is None
-    monkeypatch.delenv("KRITA_MCP_GEMINI_THINKING")
+    monkeypatch.delenv("KRITAPILOT_GEMINI_THINKING")
     g.model = "gemini-2.5-flash"
     assert g.thinking_config() is None  # older models have no thinking level
 
@@ -570,7 +570,7 @@ def test_a_model_without_thinking_levels_still_answers(home, monkeypatch):
             {"candidates": [{"content": {"role": "model", "parts": [{"text": "ok"}]}}]}).encode()
     try:
         m.routes[("POST", "/models/gemini-3.8-flash:generateContent")] = reply
-        monkeypatch.setenv("KRITA_MCP_GEMINI_BASE_URL", m.url)
+        monkeypatch.setenv("KRITAPILOT_GEMINI_BASE_URL", m.url)
         agent.save_key("gemini", "k")
         events = _wait(agent.chat(None, "gemini", "gemini-3.8-flash", "hi"))
     finally:
@@ -687,7 +687,7 @@ def test_auto_order_is_yours_first_then_free(home, monkeypatch):
     agent.save_key("anthropic", "a" * 20)
     order = agent.auto_order()
     assert order[:2] == ["anthropic", "mistral"] and order[2] == "pollinations"
-    monkeypatch.setenv("KRITA_MCP_AUTO_ORDER", "kilo, mistral")
+    monkeypatch.setenv("KRITAPILOT_AUTO_ORDER", "kilo, mistral")
     assert agent.auto_order() == ["kilo", "mistral"]
     st = agent.status()
     assert st["auto"]["chat"] and st["auto"]["setup"] == "auto" and st["auto"]["order"] == ["kilo", "mistral"]

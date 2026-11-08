@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugin" / "pykrita"))
 
-from krita_mcp_bridge.pixels import (analyze, apply_luts, brightness_contrast_lut, color_mask, components,  # noqa: E402
+from kritapilot_plugin.pixels import (analyze, apply_luts, brightness_contrast_lut, color_mask, components,  # noqa: E402
                                      curve_lut, flood_region, histogram, levels_lut, mask_bounds,
                                      percentile_bounds)
 

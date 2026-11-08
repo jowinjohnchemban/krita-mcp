@@ -25,7 +25,7 @@ the document closes.
 ## Security model
 
 - **Loopback only.** The bridge refuses to bind anything except `127.0.0.1` / `::1`.
-- **Token.** Every request must carry the token from `~/.krita-mcp/token` (created with mode 0600),
+- **Token.** Every request must carry the token from `~/.kritapilot/token` (created with mode 0600),
   compared in constant time. You can regenerate it in the panel.
 - **Workspace sandbox.** File access (open, import, export, video, frames) is confined to the
   workspace folder. Paths are resolved (symlinks, `..`) before the check, and file types are

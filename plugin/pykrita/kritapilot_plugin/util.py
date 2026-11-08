@@ -20,7 +20,7 @@ WORKSPACE_OVERRIDE = None  # set from the MCP docker's settings; the env var sti
 
 def workspace_root() -> Path:
     """Directory the bridge is allowed to read from / write to."""
-    root = Path(os.environ.get("KRITA_MCP_WORKSPACE") or WORKSPACE_OVERRIDE or (Path.home() / "KritaMCP"))
+    root = Path(os.environ.get("KRITAPILOT_WORKSPACE") or WORKSPACE_OVERRIDE or (Path.home() / "KritaMCP"))
     root = root.expanduser()
     root.mkdir(parents=True, exist_ok=True)
     return root.resolve()
@@ -44,7 +44,7 @@ def safe_path(value, exts=None, root=None) -> Path:
     except ValueError:
         raise BridgeError(
             "Path is outside the allowed workspace (%s). Save/read files there "
-            "or set KRITA_MCP_WORKSPACE." % base
+            "or set KRITAPILOT_WORKSPACE." % base
         )
     if exts is not None and cand.suffix.lower() not in exts:
         raise BridgeError("Unsupported file type %r; allowed: %s" % (cand.suffix, ", ".join(sorted(exts))))

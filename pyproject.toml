@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kritapilot"
-version = "0.3.0"
+version = "1.0.0"
 description = "Krita MCP server and AI assistant: AI agents (Claude, ChatGPT, Gemini, Cursor, ...) and an AI Chat inside Krita paint, edit and generate art, photos, animation and video, with ComfyUI, OpenAI, Gemini, free models and more"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -42,7 +42,6 @@ anthropic = ["anthropic>=0.70"]
 
 [project.scripts]
 kritapilot = "kritapilot.server:main"
-krita-mcp = "kritapilot.server:main"  # the old name, kept for existing setups
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kritapilot"]

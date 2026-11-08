@@ -5,14 +5,14 @@
 [![PyPI](https://img.shields.io/pypi/v/kritapilot?logo=pypi&logoColor=white)](https://pypi.org/p/kritapilot)
 [![Downloads](https://img.shields.io/github/downloads/jowinjohnchemban/kritapilot/total)](https://github.com/jowinjohnchemban/kritapilot/releases)
 [![Tested on Krita 5.3.4](https://img.shields.io/badge/tested%20on-Krita%205.3.4-3daee9?logo=krita&logoColor=white)](#status)
-[![Python](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjowinjohnchemban%2Fkritapilot%2Fmain%2Fpyproject.toml&query=%24.project%5B'requires-python'%5D&label=python&logo=python&logoColor=white&color=3776ab)](pyproject.toml)
+[![Python](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjowinjohnchemban%2Fkritapilot%2Fmain%2Fpyproject.toml&query=%24.project%5B'requires-python'%5D&label=python&logo=python&logoColor=white&color=3776ab)](https://github.com/jowinjohnchemban/kritapilot/blob/main/pyproject.toml)
 [![MCP SDK](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjowinjohnchemban%2Fkritapilot%2Fmain%2Fpyproject.toml&query=%24.project.dependencies%5B0%5D&label=MCP%20SDK&color=6b4fbb)](https://modelcontextprotocol.io)
-[![License](https://img.shields.io/github/license/jowinjohnchemban/kritapilot)](LICENSE)
+[![License](https://img.shields.io/github/license/jowinjohnchemban/kritapilot)](https://github.com/jowinjohnchemban/kritapilot/tree/main/LICENSE)
 
 **Let AI create and edit art, photos, animation and video inside a running [Krita](https://krita.org).**
 KritaPilot is a **Krita MCP server** for any MCP client - Claude, ChatGPT, Gemini, Cursor, VS Code Copilot,
 Codex and others - and an **AI Chat inside Krita** that works with 40+ AI providers, including free ones.
-(It was called *krita-mcp* until November 2026; that command still works.)
+(Formerly *krita-mcp*.)
 
 ```
 AI client ──MCP (stdio or HTTP)──▶ KritaPilot ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
@@ -20,17 +20,17 @@ AI client ──MCP (stdio or HTTP)──▶ KritaPilot ──127.0.0.1 + token�
 
 <table>
 <tr>
-<td width="38%"><img src="docs/images/galilee-dawn.jpg" alt="A figure in a white robe and red cloak at the shore of a calm sea at dawn, painted by an AI agent in Krita"></td>
-<td width="62%"><img src="docs/images/sunset.jpg" alt="A sunset over layered purple mountains, painted by an AI agent in Krita"><br><br>
+<td width="38%"><img src="https://raw.githubusercontent.com/jowinjohnchemban/kritapilot/main/docs/images/galilee-dawn.jpg" alt="A figure in a white robe and red cloak at the shore of a calm sea at dawn, painted by an AI agent in Krita"></td>
+<td width="62%"><img src="https://raw.githubusercontent.com/jowinjohnchemban/kritapilot/main/docs/images/sunset.jpg" alt="A sunset over layered purple mountains, painted by an AI agent in Krita"><br><br>
 <b>Painted by an AI with Krita's own tools - no image model.</b> The agent laid down procedural skies
 and water, vector shapes and real brush strokes on separate layers, looked at its work with
 <code>canvas_snapshot</code> and <code>analyze_image</code>, and improved it. Both are reproducible:
-<a href="examples/galilee_dawn.py"><code>examples/galilee_dawn.py</code></a> and
-<a href="scripts/paint_sunset.py"><code>scripts/paint_sunset.py</code></a>.</td>
+<a href="https://github.com/jowinjohnchemban/kritapilot/blob/main/examples/galilee_dawn.py"><code>examples/galilee_dawn.py</code></a> and
+<a href="https://github.com/jowinjohnchemban/kritapilot/blob/main/scripts/paint_sunset.py"><code>scripts/paint_sunset.py</code></a>.</td>
 </tr>
 </table>
 
-<img src="docs/images/ai-chat.png" alt="The AI Chat panel in Krita: the request, the tools the AI used, its answer and the tokens it spent" width="380" align="right">
+<img src="https://raw.githubusercontent.com/jowinjohnchemban/kritapilot/main/docs/images/ai-chat.png" alt="The AI Chat panel in Krita: the request, the tools the AI used, its answer and the tokens it spent" width="380" align="right">
 
 ### Why KritaPilot
 
@@ -115,18 +115,21 @@ make the AI read-only or pause it, undo AI edits, set the workspace and token, a
 config for your AI client. Popups Krita opens while the AI works (such as "Missing Colour Profile") are
 cancelled and reported to the AI instead of blocking it. **Logs…** follows every command, chat step,
 setting change and error live, dated to the millisecond and with keys masked. If Krita ever freezes, the
-plugin records where in `~/.krita-mcp/hang.log`.
+plugin records where in `~/.kritapilot/hang.log`.
 
 ## Quick start
 
-1. **Plugin.** Download `krita-mcp-bridge-*.zip` from
+1. **Plugin.** Download `kritapilot-plugin-*.zip` from
    [Releases](https://github.com/jowinjohnchemban/kritapilot/releases). In Krita choose
    *Tools ▸ Scripts ▸ Import Python Plugin from File…*, enable the plugin and restart Krita.
-2. **Server.** Install it from [PyPI](https://pypi.org/p/kritapilot):
+2. **Server.** Install it from [PyPI](https://pypi.org/p/kritapilot) or straight from GitHub:
    ```bash
-   pip install kritapilot
+   pip install kritapilot                                              # PyPI
+   pip install "git+https://github.com/jowinjohnchemban/kritapilot"     # GitHub (latest main)
    ```
-   (Not `pip install krita-mcp`: that is a different project.)
+   `pipx install kritapilot` and `uvx kritapilot` work too, and every
+   [release](https://github.com/jowinjohnchemban/kritapilot/releases) has the wheel. (Not
+   `pip install krita-mcp`: that is a different project.)
 3. **Use it**, either way:
    - **Inside Krita, free:** open *Settings ▸ Dockers ▸ AI Chat*, keep the provider on **Auto** and type.
      Free models need no account; sign in to any provider in **Services…** for faster, stronger results.
@@ -135,8 +138,8 @@ plugin records where in `~/.krita-mcp/hang.log`.
 4. Ask: *"Create a 1200×800 canvas, paint a sunset over mountains with real brushes, look at it and
    improve it."*
 
-Details: [installation](docs/installation.md) · [clients](docs/clients.md) · [AI Chat](docs/ai-chat.md) ·
-[the panel](docs/krita-panel.md)
+Details: [installation](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/installation.md) · [clients](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/clients.md) · [AI Chat](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/ai-chat.md) ·
+[the panel](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/krita-panel.md)
 
 ## Command-line flags
 
@@ -148,10 +151,10 @@ kritapilot [--transport {stdio,http}] [--host HOST] [--port PORT] [--agent [--ag
 | Flag | Default | Meaning |
 |---|---|---|
 | `--transport` | `stdio` | `stdio` for local clients (Claude Code/Desktop, Cursor, VS Code, Gemini CLI, Codex). `http` for clients that need a URL. |
-| `--host` | `127.0.0.1` | HTTP bind address. Binding anything other than loopback requires `KRITA_MCP_HTTP_TOKEN`. |
+| `--host` | `127.0.0.1` | HTTP bind address. Binding anything other than loopback requires `KRITAPILOT_HTTP_TOKEN`. |
 | `--port` | `8765` | HTTP port (the endpoint is `http://HOST:PORT/mcp`). |
 | `--agent` | | Run the in-Krita assistant service for the *AI Chat* docker instead of an MCP server. The docker starts it by itself. |
-| `--agent-port` | `5680` | Port of that service (loopback only, bridge-token auth). Also `KRITA_MCP_AGENT_PORT`. |
+| `--agent-port` | `5680` | Port of that service (loopback only, bridge-token auth). Also `KRITAPILOT_AGENT_PORT`. |
 | `--check-update` | | Ask GitHub whether a newer release exists (prints JSON). |
 | `--update` | | Download, verify and install the newest release of the server. |
 | `--version` | | Print the version and exit. |
@@ -160,45 +163,45 @@ Environment variables:
 
 | Variable | Used by | Default | Meaning |
 |---|---|---|---|
-| `KRITA_MCP_HTTP_TOKEN` | server | random, printed at start | Bearer token HTTP clients must send (`Authorization: Bearer …`) |
-| `KRITA_MCP_PORT` | server + plugin | `5679` | Port of the Krita bridge (not the HTTP port above) |
-| `KRITA_MCP_HOST` | server | `127.0.0.1` | Host of the Krita bridge |
-| `KRITA_MCP_HOME` | server + plugin | `~/.krita-mcp` | Folder holding the bridge token, saved keys, skills, `logs/` and `hang.log` |
-| `KRITA_MCP_TOKEN` | server | read from `KRITA_MCP_HOME` | Bridge token, instead of reading the file |
-| `KRITA_MCP_WORKSPACE` | plugin | `~/KritaMCP` | The only folder the AI may read/write (overrides the panel setting) |
-| `KRITA_MCP_AUTOSTART` | plugin | on | `0` = don't start the bridge with Krita |
-| `KRITA_MCP_FFMPEG` | plugin | Krita's bundled copy | Folder with `ffmpeg`/`ffprobe` for video |
-| `KRITA_MCP_DIALOGS` | plugin | `cancel` | Popups during an AI command: `cancel` (and tell the AI) or `leave` (for you to answer) |
-| `KRITA_MCP_HANG_SECONDS` | plugin | `60` | After this long frozen, every thread's stack goes to `hang.log`; `0` = off |
+| `KRITAPILOT_HTTP_TOKEN` | server | random, printed at start | Bearer token HTTP clients must send (`Authorization: Bearer …`) |
+| `KRITAPILOT_PORT` | server + plugin | `5679` | Port of the Krita bridge (not the HTTP port above) |
+| `KRITAPILOT_HOST` | server | `127.0.0.1` | Host of the Krita bridge |
+| `KRITAPILOT_HOME` | server + plugin | `~/.kritapilot` | Folder holding the bridge token, saved keys, skills, `logs/` and `hang.log` |
+| `KRITAPILOT_TOKEN` | server | read from `KRITAPILOT_HOME` | Bridge token, instead of reading the file |
+| `KRITAPILOT_WORKSPACE` | plugin | `~/KritaMCP` | The only folder the AI may read/write (overrides the panel setting) |
+| `KRITAPILOT_AUTOSTART` | plugin | on | `0` = don't start the bridge with Krita |
+| `KRITAPILOT_FFMPEG` | plugin | Krita's bundled copy | Folder with `ffmpeg`/`ffprobe` for video |
+| `KRITAPILOT_DIALOGS` | plugin | `cancel` | Popups during an AI command: `cancel` (and tell the AI) or `leave` (for you to answer) |
+| `KRITAPILOT_HANG_SECONDS` | plugin | `60` | After this long frozen, every thread's stack goes to `hang.log`; `0` = off |
 Plugin settings can also be changed in Krita's *AI Bridge (MCP)* panel; environment variables take priority.
 
-Generative services are configured with more server variables (`KRITA_MCP_COMFYUI_URL`,
-`KRITA_MCP_A1111_URL`, `KRITA_MCP_OPENAI_API_KEY`, `KRITA_MCP_GEMINI_API_KEY`, `KRITA_MCP_STABILITY_API_KEY`,
-`KRITA_MCP_REPLICATE_API_TOKEN`, `KRITA_MCP_FAL_KEY`, `KRITA_MCP_HEYGEN_API_KEY`,
-`KRITA_MCP_ANTHROPIC_API_KEY`, `KRITA_MCP_IMAGE_BACKEND`, …). Cloud services are used only with a
-`KRITA_MCP_…` key, so a key that happens to be in your environment never uploads your art by surprise.
-See [Connecting AI services](docs/ai-backends.md).
+Generative services are configured with more server variables (`KRITAPILOT_COMFYUI_URL`,
+`KRITAPILOT_A1111_URL`, `KRITAPILOT_OPENAI_API_KEY`, `KRITAPILOT_GEMINI_API_KEY`, `KRITAPILOT_STABILITY_API_KEY`,
+`KRITAPILOT_REPLICATE_API_TOKEN`, `KRITAPILOT_FAL_KEY`, `KRITAPILOT_HEYGEN_API_KEY`,
+`KRITAPILOT_ANTHROPIC_API_KEY`, `KRITAPILOT_IMAGE_BACKEND`, …). Cloud services are used only with a
+`KRITAPILOT_…` key, so a key that happens to be in your environment never uploads your art by surprise.
+See [Connecting AI services](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/ai-backends.md).
 
 ## Documentation
 
 | | |
 |---|---|
-| [AI Chat inside Krita](docs/ai-chat.md) | The chat docker, Auto and the provider menu, setting up services, free services, spending, skills, the queue, settings |
-| [The Krita panel](docs/krita-panel.md) | Status, access modes, popups, workspace and token, updates, Logs and the freeze log |
-| [Connecting AI services](docs/ai-backends.md) | ComfyUI, A1111, OpenAI, Gemini, Stability, Replicate, fal, HeyGen, Sora, Veo, Claude |
-| [Workflows](docs/workflows.md) | Painting, photo retouching, inpainting, line art, animation, video |
-| [Tool reference](docs/tools.md) | All 86 tools, their parameters, and the prompts |
-| [Undo, safety and limits](docs/undo-and-safety.md) | How undo works, the security model, access modes |
-| [Development](docs/development.md) | Architecture, tests, real-Krita smoke test, adding tools |
-| [Krita upstream](docs/krita-upstream.md) | Proposing the plugin for bundling with Krita itself |
-| [Releasing](docs/releasing.md) | How plugin zips and wheels are published to GitHub releases |
+| [AI Chat inside Krita](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/ai-chat.md) | The chat docker, Auto and the provider menu, setting up services, free services, spending, skills, the queue, settings |
+| [The Krita panel](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/krita-panel.md) | Status, access modes, popups, workspace and token, updates, Logs and the freeze log |
+| [Connecting AI services](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/ai-backends.md) | ComfyUI, A1111, OpenAI, Gemini, Stability, Replicate, fal, HeyGen, Sora, Veo, Claude |
+| [Workflows](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/workflows.md) | Painting, photo retouching, inpainting, line art, animation, video |
+| [Tool reference](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/tools.md) | All 86 tools, their parameters, and the prompts |
+| [Undo, safety and limits](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/undo-and-safety.md) | How undo works, the security model, access modes |
+| [Development](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/development.md) | Architecture, tests, real-Krita smoke test, adding tools |
+| [Krita upstream](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/krita-upstream.md) | Proposing the plugin for bundling with Krita itself |
+| [Releasing](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/releasing.md) | How plugin zips and wheels are published to GitHub releases |
 
 ## Safety in one paragraph
 
 The bridge listens on loopback only and requires a secret token. The AI can read and write files only
 in one workspace folder (`~/KritaMCP` by default). There is no code-execution tool. You can switch
 the AI to read-only or pause it from the panel at any time. Full details:
-[security model](docs/undo-and-safety.md#security-model).
+[security model](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/undo-and-safety.md#security-model).
 
 ## Status
 
@@ -232,13 +235,13 @@ or pause it at any time.
 Krita 6 (PyQt6) is covered by the unit tests.
 
 **Where do I start?** Follow the [Quick start](#quick-start), then try the
-[workflows](docs/workflows.md). Something wrong? Open **Logs…** in the panel; it usually says why.
+[workflows](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/workflows.md). Something wrong? Open **Logs…** in the panel; it usually says why.
 
 ## Contributing
 
-Bug reports, ideas, new skills and pull requests are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md).
-What changed recently is in the [changelog](CHANGELOG.md). Security problems:
-[SECURITY.md](SECURITY.md).
+Bug reports, ideas, new skills and pull requests are welcome - see [CONTRIBUTING.md](https://github.com/jowinjohnchemban/kritapilot/blob/main/CONTRIBUTING.md).
+What changed recently is in the [changelog](https://github.com/jowinjohnchemban/kritapilot/blob/main/CHANGELOG.md). Security problems:
+[SECURITY.md](https://github.com/jowinjohnchemban/kritapilot/blob/main/SECURITY.md).
 
 ```bash
 pip install -e .[test] PyQt6
@@ -246,4 +249,4 @@ QT_QPA_PLATFORM=offscreen pytest
 python scripts/smoke_krita.py        # against a real running Krita with the plugin enabled
 ```
 
-See [development](docs/development.md).
+See [development](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/development.md).

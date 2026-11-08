@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Service
 ServiceTypes=Krita/PythonPlugin
-X-KDE-Library=krita_mcp_bridge
+X-KDE-Library=kritapilot_plugin
 X-Python-2-Compatible=false
 Name=KritaPilot
 Comment=AI in Krita: an AI Chat inside Krita and a local, token-protected bridge for AI agents over MCP (Claude, ChatGPT, Gemini, ...).

@@ -23,11 +23,11 @@ def dialogs(monkeypatch):
     app = qtw.QApplication.instance() or qtw.QApplication([])
     if not hasattr(app, "topLevelWidgets"):  # an earlier test made a widget-less QGuiApplication
         pytest.skip("needs a QApplication; run this file on its own")
-    spec = importlib.util.spec_from_file_location("bridge_dialogs", ROOT / "plugin/pykrita/krita_mcp_bridge/dialogs.py")
+    spec = importlib.util.spec_from_file_location("bridge_dialogs", ROOT / "plugin/pykrita/kritapilot_plugin/dialogs.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # Qt only: no Krita needed
     monkeypatch.setattr(mod, "QUESTION_GRACE", 0.05)
-    monkeypatch.delenv("KRITA_MCP_DIALOGS", raising=False)
+    monkeypatch.delenv("KRITAPILOT_DIALOGS", raising=False)
     before = {id(w) for w in app.topLevelWidgets()}  # other tests' widgets: not ours to touch
     yield app, mod
     for w in app.topLevelWidgets():

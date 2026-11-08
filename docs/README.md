@@ -25,7 +25,7 @@ AI client ──MCP (stdio or HTTP)──▶ KritaPilot server ──127.0.0.1 +
 
 There are two parts:
 
-- **The Krita plugin** (`plugin/pykrita/krita_mcp_bridge`) runs inside Krita. It listens on
+- **The Krita plugin** (`plugin/pykrita/kritapilot_plugin`) runs inside Krita. It listens on
   `127.0.0.1` only, checks a secret token on every request, and runs commands on Krita's GUI thread.
   It also adds the *AI Bridge (MCP)* panel.
 - **The MCP server** (`src/kritapilot`) is a normal Python program that your AI client starts. It turns

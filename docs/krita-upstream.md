@@ -16,9 +16,9 @@ up to the Krita maintainers. This page covers how to propose it and what they ar
    ```bash
    python scripts/krita_upstream.py --krita path/to/krita --commit
    ```
-   This creates the branch `krita-mcp-bridge` with:
-   - `plugins/python/krita_mcp_bridge/`: the plugin, with SPDX MIT headers, plus
-     `kritapykrita_krita_mcp_bridge.desktop` and `Manual.html`
+   This creates the branch `kritapilot` with:
+   - `plugins/python/kritapilot_plugin/`: the plugin, with SPDX MIT headers, plus
+     `kritapykrita_kritapilot_plugin.desktop` and `Manual.html`
    - one new line in `plugins/python/CMakeLists.txt`
 
    In this copy the over-the-air updater is removed (Krita ships the updates) and the bridge is **off by
@@ -27,7 +27,7 @@ up to the Krita maintainers. This page covers how to propose it and what they ar
 4. Build Krita from the branch and check that the plugin shows up in the Python Plugin Manager, that the
    docker opens, and that `python scripts/smoke_krita.py` passes against it. (The bundled copy needs
    *Start* to be pressed first.)
-5. Push the branch to your fork (`git push -u origin krita-mcp-bridge`) and open a merge request into
+5. Push the branch to your fork (`git push -u origin kritapilot`) and open a merge request into
    `graphics/krita` **master**. Mark it as a draft and add the **Needs Review** label, as the Krita
    hacking guide asks.
 
