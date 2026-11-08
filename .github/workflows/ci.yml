@@ -24,7 +24,19 @@ jobs:
       KRITA_TEST_QT: ${{ matrix.qt == 'PyQt5' && '5' || '6' }}
     steps:
       - uses: actions/checkout@v4
+      # GitHub's Python download sometimes answers HTTP 504; wait and try again before giving up
       - uses: actions/setup-python@v5
+        id: python
+        continue-on-error: true
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Wait before retrying the Python download
+        if: steps.python.outcome == 'failure'
+        run: python -c "import time; time.sleep(45)"
+        shell: bash
+      - uses: actions/setup-python@v5
+        if: steps.python.outcome == 'failure'
         with:
           python-version: ${{ matrix.python }}
           cache: pip
