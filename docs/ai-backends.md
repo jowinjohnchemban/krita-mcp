@@ -187,7 +187,7 @@ one model write a detailed prompt for an image model.
 
 | Provider | Variables | Model when none is chosen (listed live) |
 |---|---|---|
-| `anthropic` (Claude) | `KRITA_MCP_ANTHROPIC_API_KEY`; needs `pip install "krita-mcp[anthropic]"` | newest Claude, Opus first (`KRITA_MCP_ANTHROPIC_MODEL`) |
+| `anthropic` (Claude) | `KRITA_MCP_ANTHROPIC_API_KEY`; needs `pip install anthropic` | newest Claude, Opus first (`KRITA_MCP_ANTHROPIC_MODEL`) |
 | `openai` | `KRITA_MCP_OPENAI_API_KEY` or a local `KRITA_MCP_OPENAI_BASE_URL` (Ollama: `http://127.0.0.1:11434/v1`) | newest chat model, or the newest installed local model (`KRITA_MCP_OPENAI_VISION_MODEL`) |
 | `gemini` | `KRITA_MCP_GEMINI_API_KEY` | newest Gemini Flash (`KRITA_MCP_GEMINI_VISION_MODEL`) |
 

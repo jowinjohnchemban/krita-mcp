@@ -67,7 +67,7 @@ def anthropic_models(key):
     try:
         import anthropic
     except ImportError:
-        raise ProviderError("install the Anthropic SDK: pip install 'krita-mcp[anthropic]'") from None
+        raise ProviderError("install the Anthropic SDK: pip install anthropic") from None
     try:
         page = anthropic.Anthropic(api_key=key).models.list(limit=100)
     except anthropic.AuthenticationError:

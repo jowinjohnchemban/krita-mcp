@@ -231,8 +231,10 @@ def _ensure_service():
             _SERVICE["proc"] = subprocess.Popen(args, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                                 stderr=subprocess.DEVNULL, creationflags=flags)
         except OSError as e:
-            raise RuntimeError("could not start %r (%s). Install the server (pip install krita-mcp) or set the "
-                               "server command in the AI Bridge (MCP) panel." % (cmd, e)) from None
+            raise RuntimeError("could not start %r (%s). Install the server: pip install "
+                               "\"git+https://github.com/jowinjohnchemban/krita-mcp\" (not 'pip install krita-mcp': "
+                               "that is a different project), or set the server command in the AI Bridge (MCP) "
+                               "panel." % (cmd, e)) from None
     for _ in range(40):
         time.sleep(0.25)
         try:
@@ -979,12 +981,12 @@ class ChatDocker(DockWidget):
             self.account.setText(i18n("%d providers") % len(order) if order else i18n("nothing set up"))
             self.account.setToolTip(i18n("In turn, switching when one runs out of credit or fails:\n") +
                                     "\n".join("%d. %s" % (n + 1, x) for n, x in enumerate(order)))
-            self.signin.setText(i18n("Services…"))
-        elif kind == "local":
+        self.signin.setVisible(kind != "auto")  # Auto has nothing to sign in to (Services... is right beside it)
+        if kind == "local":
             self.signin.setText(i18n("Change") if signed else i18n("Set up"))
         elif kind in ("free", "toggle"):
             self.signin.setText(i18n("Change key") if info.get("has_key") else i18n("Add key"))
-        else:
+        elif kind != "auto":
             self.signin.setText(i18n("Sign out") if signed else i18n("Sign in"))
         if info.get("default_model"):
             self.model.lineEdit().setPlaceholderText(i18n("Auto: %s") % info["default_model"])

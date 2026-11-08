@@ -530,7 +530,7 @@ class Claude(_Adapter):
         try:
             import anthropic
         except ImportError:
-            raise ProviderError("install the Anthropic SDK: pip install 'krita-mcp[anthropic]'") from None
+            raise ProviderError("install the Anthropic SDK: pip install anthropic") from None
         self.anthropic = anthropic
         self.client = anthropic.Anthropic(api_key=key, timeout=chat_timeout())
         self.key, self.chosen, self.model, self.note = key, model, None, None

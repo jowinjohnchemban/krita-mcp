@@ -18,7 +18,7 @@ def ask_anthropic(png, question, model=None, max_tokens=4000):
     try:
         import anthropic
     except ImportError:
-        raise ProviderError("install the Anthropic SDK: pip install 'krita-mcp[anthropic]'") from None
+        raise ProviderError("install the Anthropic SDK: pip install anthropic") from None
     client = anthropic.Anthropic(api_key=key)
     model = model or env("KRITA_MCP_ANTHROPIC_MODEL") or catalog.first(catalog.anthropic_models(key), "Claude model")
     kwargs = dict(model=model, max_tokens=max_tokens, system=SYSTEM, messages=[{"role": "user", "content": [

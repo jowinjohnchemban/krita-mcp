@@ -11,7 +11,7 @@ the chat, and its edits can be undone like any other AI edit.
 | Choice | Sign in with |
 |---|---|
 | Google Gemini | An API key from [Google AI Studio](https://aistudio.google.com/apikey) |
-| Anthropic Claude | An API key from the [Anthropic Console](https://console.anthropic.com/settings/keys) (needs `pip install "krita-mcp[anthropic]"`) |
+| Anthropic Claude | An API key from the [Anthropic Console](https://console.anthropic.com/settings/keys) (needs `pip install anthropic`) |
 | OpenAI / compatible | An OpenAI key, or the URL of any OpenAI-compatible service (a gateway, …) |
 | OpenRouter | **Sign in with browser**, no key to copy. One account reaches Gemini, Claude, GPT and hundreds of other models; leave the model on Auto to use the best one your account offers that can use tools, or enter one such as `anthropic/claude-sonnet-4.6` |
 | Mistral, Groq, DeepSeek, xAI Grok, Together, Fireworks, Cerebras, Hugging Face, NVIDIA, Qwen, Moonshot, SambaNova, Cohere, SiliconFlow, Z.AI, OpenCode Zen, Ollama Cloud, ModelScope, DeepInfra, Vercel AI Gateway, Requesty and more | An API key (**Get a key in the browser**); many have free tiers. See [more providers](ai-backends.md#more-providers-openai-compatible) |
@@ -174,7 +174,7 @@ AI Chat docker ──127.0.0.1:5680 + token──▶ krita-mcp --agent ──mod
 
 - The docker starts the assistant service (`krita-mcp --agent`) when the AI Chat panel is shown, so the
   provider menu can list what you have set up. It uses the server command set in the *AI Bridge (MCP)*
-  panel, so that command must be installed (`pip install krita-mcp`). A hidden panel starts nothing.
+  panel, so that command must be installed (see [installation](installation.md#2-install-the-mcp-server)). A hidden panel starts nothing.
 - The service listens on loopback only and requires the same token as the bridge.
 - All network calls run off Krita's main thread, so Krita stays responsive while the AI works.
 - **Enter** sends, **Shift+Enter** starts a new line, and **Up** in an empty box brings back your last

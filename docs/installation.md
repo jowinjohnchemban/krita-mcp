@@ -34,13 +34,14 @@ with **Settings ▸ Dockers ▸ AI Bridge (MCP)** (it also opens by itself the f
 Pick one:
 
 ```bash
-pip install krita-mcp                                  # from PyPI, once published
+pip install "git+https://github.com/jowinjohnchemban/krita-mcp"   # the latest source
 pip install krita_mcp-<version>-py3-none-any.whl       # the wheel from a GitHub release
 uvx --from git+https://github.com/jowinjohnchemban/krita-mcp krita-mcp   # run without installing
 pip install .                                          # from a source checkout
 ```
 
-This provides the `krita-mcp` command. It talks MCP over stdio by default; `krita-mcp --help` lists
+This provides the `krita-mcp` command. Don't run `pip install krita-mcp`: that name on PyPI belongs to a
+different project. It talks MCP over stdio by default; `krita-mcp --help` lists
 the options.
 
 ## 3. Connect an AI client

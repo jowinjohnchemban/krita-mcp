@@ -1,0 +1,31 @@
+name: Idea or feature request
+description: Something the AI should be able to do in Krita, a service to support, or a better way of working
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to do?
+      description: Describe it as an artist or user would - what you want to make or change, not how to build it.
+      placeholder: I'd like to ask the AI to turn my sketch layer into a coloured comic panel ...
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What happens today?
+      description: How you do it now, or what goes wrong when you try.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Painting and drawing
+        - Photo editing
+        - Animation and video
+        - Image or video generation
+        - AI Chat inside Krita
+        - A new AI service or model provider
+        - A new skill
+        - Something else

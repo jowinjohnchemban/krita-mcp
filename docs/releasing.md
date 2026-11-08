@@ -31,11 +31,14 @@ run Krita: before pushing larger changes, run `python scripts/smoke_krita.py` ag
 
 ## PyPI (optional)
 
+The name `krita-mcp` on PyPI is taken by a different project, so publishing there needs another
+distribution name in `pyproject.toml` first (the `krita-mcp` command can stay the same).
+
 1. On PyPI, add a *trusted publisher* for this repository: workflow `release.yml`, environment `pypi`.
 2. In the GitHub repository, create the environment `pypi` and set the repository variable
    `PUBLISH_PYPI` to `true`.
 
-After that, every release is also published to PyPI, so `pip install krita-mcp` works.
+After that, every release is also published to PyPI under that name.
 
 ## Local builds
 

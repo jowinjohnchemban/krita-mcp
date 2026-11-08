@@ -10,14 +10,23 @@ readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = ["mcp>=1.9", "uvicorn>=0.30"]
-keywords = ["krita", "mcp", "model-context-protocol", "ai", "art", "painting", "photo-editing", "animation", "generative-ai", "stable-diffusion", "comfyui", "inpainting"]
+keywords = ["krita", "mcp", "mcp-server", "model-context-protocol", "ai", "ai-agents", "art", "painting",
+            "digital-painting", "photo-editing", "animation", "generative-ai", "stable-diffusion", "comfyui",
+            "inpainting", "claude", "openrouter", "llm"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Multimedia :: Graphics :: Editors :: Raster-Based",
     "Topic :: Multimedia :: Video",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
 [project.urls]
@@ -25,6 +34,7 @@ Homepage = "https://github.com/jowinjohnchemban/krita-mcp"
 Documentation = "https://github.com/jowinjohnchemban/krita-mcp/tree/main/docs"
 Issues = "https://github.com/jowinjohnchemban/krita-mcp/issues"
 Releases = "https://github.com/jowinjohnchemban/krita-mcp/releases"
+Changelog = "https://github.com/jowinjohnchemban/krita-mcp/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 test = ["pytest>=8"]

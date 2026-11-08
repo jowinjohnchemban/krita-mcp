@@ -15,6 +15,34 @@ It works with any MCP client: Claude, ChatGPT, Gemini, Cursor, VS Code Copilot, 
 AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
 ```
 
+<table>
+<tr>
+<td width="38%"><img src="docs/images/galilee-dawn.jpg" alt="A figure in a white robe and red cloak at the shore of a calm sea at dawn, painted by an AI agent in Krita"></td>
+<td width="62%"><img src="docs/images/sunset.jpg" alt="A sunset over layered purple mountains, painted by an AI agent in Krita"><br><br>
+<b>Painted by an AI with Krita's own tools - no image model.</b> The agent laid down procedural skies
+and water, vector shapes and real brush strokes on separate layers, looked at its work with
+<code>canvas_snapshot</code> and <code>analyze_image</code>, and improved it. Both are reproducible:
+<a href="examples/galilee_dawn.py"><code>examples/galilee_dawn.py</code></a> and
+<a href="scripts/paint_sunset.py"><code>scripts/paint_sunset.py</code></a>.</td>
+</tr>
+</table>
+
+<img src="docs/images/ai-chat.png" alt="The AI Chat panel in Krita: the request, the tools the AI used, its answer and the tokens it spent" width="380" align="right">
+
+### Why krita-mcp
+
+- **It works where artists work.** Everything happens in your open Krita document, on layers you can
+  edit, with undo for every AI step. Nothing is a flat image you have to import.
+- **Any AI, including free ones.** Use it from Claude, ChatGPT, Gemini, Cursor or VS Code over MCP - or
+  chat inside Krita with 40+ providers. **Auto** switches to the next provider when one runs out of
+  credit, and free models with no account are built in.
+- **Real tools, not just a prompt box.** 86 tools cover Krita's brush engine, layers, selections, filters,
+  animation and video, plus image models (ComfyUI, AUTOMATIC1111, OpenAI, Gemini, ...) when you want them.
+- **Safe by design.** Loopback only, a secret token, one workspace folder, no code execution, keys never
+  shown, read-only and pause switches in the panel.
+
+<br clear="right">
+
 ## What the AI can do (86 tools + 7 workflow prompts)
 
 - **Paint like an artist.** It uses Krita's real brush engine with any preset, pressure and eraser,
@@ -91,17 +119,20 @@ plugin records where in `~/.krita-mcp/hang.log`.
 1. **Plugin.** Download `krita-mcp-bridge-*.zip` from
    [Releases](https://github.com/jowinjohnchemban/krita-mcp/releases). In Krita choose
    *Tools ▸ Scripts ▸ Import Python Plugin from File…*, enable the plugin and restart Krita.
-2. **Server.** Run `pip install krita-mcp`, or install the `.whl` from the release, or use
-   `uvx --from git+https://github.com/jowinjohnchemban/krita-mcp krita-mcp`.
-3. **Connect.** Open *Settings ▸ Dockers ▸ AI Bridge (MCP)*, pick your client and copy the snippet.
-   For example, in Claude Code:
+2. **Server.** Install it from this repository (the `.whl` from the release works too):
    ```bash
-   claude mcp add krita -- krita-mcp
+   pip install "git+https://github.com/jowinjohnchemban/krita-mcp"
    ```
+3. **Use it**, either way:
+   - **Inside Krita, free:** open *Settings ▸ Dockers ▸ AI Chat*, keep the provider on **Auto** and type.
+     Free models need no account; sign in to any provider in **Services…** for faster, stronger results.
+   - **From your AI app:** open *Settings ▸ Dockers ▸ AI Bridge (MCP)*, pick your client and copy the
+     snippet. For example, in Claude Code: `claude mcp add krita -- krita-mcp`
 4. Ask: *"Create a 1200×800 canvas, paint a sunset over mountains with real brushes, look at it and
    improve it."*
 
-Details: [installation](docs/installation.md) · [clients](docs/clients.md) · [the panel](docs/krita-panel.md)
+Details: [installation](docs/installation.md) · [clients](docs/clients.md) · [AI Chat](docs/ai-chat.md) ·
+[the panel](docs/krita-panel.md)
 
 ## Command-line flags
 
@@ -156,7 +187,7 @@ See [Connecting AI services](docs/ai-backends.md).
 | [Undo, safety and limits](docs/undo-and-safety.md) | How undo works, the security model, access modes |
 | [Development](docs/development.md) | Architecture, tests, real-Krita smoke test, adding tools |
 | [Krita upstream](docs/krita-upstream.md) | Proposing the plugin for bundling with Krita itself |
-| [Releasing](docs/releasing.md) | How plugin zips, wheels and GitHub/PyPI releases are published |
+| [Releasing](docs/releasing.md) | How plugin zips and wheels are published to GitHub releases |
 
 ## Safety in one paragraph
 
@@ -176,7 +207,34 @@ switch to the next provider happening on the way. Unit tests run on
 Linux and Windows with PyQt5 and PyQt6 in CI. Krita 6 is covered by the PyQt6 unit tests but has not
 yet been run end to end.
 
-## Develop
+## FAQ
+
+**Do I need a paid AI account?** No. The AI Chat inside Krita works with free models and no account
+(Pollinations, Kilo Gateway, OVHcloud, LLM7), and AI Horde makes free pictures. They are slower and
+simpler than paid models; one paid provider (or a local model with Ollama) makes a big difference.
+
+**Do I need a GPU?** No. Painting with Krita's brushes needs none, and cloud image models run elsewhere. If
+you have one, ComfyUI or AUTOMATIC1111 run image models locally for free.
+
+**Does it upload my artwork?** Only to the services you set up, and only when a request uses them (for
+example, an image model reworking a region, or a snapshot shown to a chat model). Painting, editing and
+measuring happen in Krita on your computer. Cloud services are used only with keys you saved yourself.
+
+**Can the AI damage my files?** It can read and write only inside one workspace folder, every edit is a
+separate undo step, it never overwrites your own layers unless asked, and you can switch it to read-only
+or pause it at any time.
+
+**Which Krita versions?** Krita 5.3 is tested end to end on Windows; Linux and macOS use the same plugin.
+Krita 6 (PyQt6) is covered by the unit tests.
+
+**Where do I start?** Follow the [Quick start](#quick-start), then try the
+[workflows](docs/workflows.md). Something wrong? Open **Logs…** in the panel; it usually says why.
+
+## Contributing
+
+Bug reports, ideas, new skills and pull requests are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md).
+What changed recently is in the [changelog](CHANGELOG.md). Security problems:
+[SECURITY.md](SECURITY.md).
 
 ```bash
 pip install -e .[test] PyQt6

@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Installation and first steps
+    url: https://github.com/jowinjohnchemban/krita-mcp/blob/main/docs/installation.md
+    about: Installing the plugin and the server, and connecting an AI client.
+  - name: AI Chat inside Krita
+    url: https://github.com/jowinjohnchemban/krita-mcp/blob/main/docs/ai-chat.md
+    about: Providers, Auto, free services, skills and settings.
+  - name: Report a security problem privately
+    url: https://github.com/jowinjohnchemban/krita-mcp/security/advisories/new
+    about: Please don't post security problems in public issues.

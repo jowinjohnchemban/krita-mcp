@@ -511,6 +511,7 @@ def test_the_provider_menu_lists_what_can_be_used_now(chat, monkeypatch):
                      "Groq - set up…", "Manage services…"]  # every chat provider can be picked; fal is no chat
     assert dock._key() == "auto"  # Gemini (the old choice) is not usable now
     assert "2 providers" in dock.account.text() and "1. Mistral AI" in dock.account.toolTip()
+    assert not dock.signin.isVisibleTo(dock)  # no second "Services..." button next to the real one
     asked = []
     monkeypatch.setattr(dock, "sign_in_service", lambda name, parent=None, action=None: asked.append((name, action)))
     dock.provider.setCurrentIndex(dock.provider.findData(dock.SETUP + "groq"))
