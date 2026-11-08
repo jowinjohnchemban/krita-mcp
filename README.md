@@ -38,14 +38,14 @@ and water, vector shapes and real brush strokes on separate layers, looked at it
 - **Any AI, including free ones.** Use it from Claude, ChatGPT, Gemini, Cursor or VS Code over MCP - or
   chat inside Krita with 40+ providers. **Auto** switches to the next provider when one runs out of
   credit, and free models with no account are built in.
-- **Real tools, not just a prompt box.** 86 tools cover Krita's brush engine, layers, selections, filters,
+- **Real tools, not just a prompt box.** 90 tools cover Krita's brush engine, layers, selections, filters,
   animation and video, plus image models (ComfyUI, AUTOMATIC1111, OpenAI, Gemini, ...) when you want them.
 - **Safe by design.** Loopback only, a secret token, one workspace folder, no code execution, keys never
   shown, read-only and pause switches in the panel.
 
 <br clear="right">
 
-## What the AI can do (86 tools + 7 workflow prompts)
+## What the AI can do (90 tools + 7 workflow prompts)
 
 - **Paint like an artist.** It uses Krita's real brush engine with any preset, pressure and eraser,
   plus crisp shapes and gradients, editable SVG vectors and text, procedural SeExpr textures,
@@ -80,6 +80,13 @@ and water, vector shapes and real brush strokes on separate layers, looked at it
   **generated** (with looks like `photo`, `cinematic`, `portrait` or `product`, plus negative prompts
   that remove AI artefacts). Hand-made requests, or setups with no model connected, are **painted**
   in Krita, with prepared layers, guides and a painting plan.
+- **Edit by describing the change.** *"Make it night"*, *"remove the person on the left"*, *"turn it into a
+  watercolour"*: `edit_image` uses models that edit by instruction (Gemini, OpenAI, Flux Kontext) on the
+  selection or the whole picture, onto a new layer.
+- **Select by describing it.** *"The sky"*, *"the red car"*: `select_by_description` makes a real Krita
+  selection - pixel-accurate with Gemini or fal, approximate but free with any vision model.
+- **Every generated picture is kept.** **History…** in the AI Chat shows them all: add one back to your
+  picture, or reuse its prompt.
 - **Generate with any image model, right on the canvas.** It works with ComfyUI (including your own
   workflows: Flux, ControlNet, IP-Adapter, …), AUTOMATIC1111/Forge, OpenAI, Gemini, Stability AI,
   Replicate and fal.ai. You can generate from text, rework a region (img2img), inpaint a selection,
@@ -139,6 +146,19 @@ plugin records where in `~/.kritapilot/hang.log`.
 
 Details: [installation](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/installation.md) · [clients](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/clients.md) · [AI Chat](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/ai-chat.md) ·
 [the panel](https://github.com/jowinjohnchemban/kritapilot/blob/main/docs/krita-panel.md)
+
+## Commands for people and scripts
+
+With Krita running:
+
+```bash
+kritapilot status                          # Krita, the plugin and the open documents
+kritapilot chat "paint a misty forest"     # ask the AI Chat assistant from a terminal
+kritapilot snapshot canvas.png             # save what the canvas shows
+kritapilot tools selection                 # the tools (here: those about selections)
+kritapilot call set_selection '{"kind": "all"}'   # run any tool with JSON arguments
+kritapilot history                         # recent generated pictures
+```
 
 ## Command-line flags
 

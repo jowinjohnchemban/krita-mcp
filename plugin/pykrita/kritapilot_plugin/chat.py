@@ -448,16 +448,25 @@ class ServicesDialog(QDialog):
         self.scroll.setWidgetResizable(True)
         lay.addWidget(self.scroll, 1)
         self.summary = QLabel()
+        start = QPushButton(i18n("Getting started…"))
+        start.setToolTip(i18n("Free, your account, or your own GPU: set up in one click"))
+        start.clicked.connect(self._getting_started)
         close = QPushButton(i18n("Close"))
         close.clicked.connect(self.accept)
         bottom = QHBoxLayout()
         bottom.addWidget(self.summary, 1)
+        bottom.addWidget(start)
         bottom.addWidget(close)
         lay.addLayout(bottom)
         screen = QGuiApplication.primaryScreen()
         height = int(screen.availableGeometry().height() * 0.75) if screen is not None else 640
         self.resize(600, max(420, min(760, height)))
         self.refresh()
+
+    def _getting_started(self):
+        from . import setup
+        self.accept()
+        setup.show(self.docker)
 
     @staticmethod
     def group(info):
@@ -730,9 +739,13 @@ class ChatDocker(DockWidget):
         self.stop_btn.clicked.connect(self._stop)
         new = QPushButton(i18n("New chat"))
         new.clicked.connect(self._new_chat)
+        history_btn = QPushButton(i18n("History…"))
+        history_btn.setToolTip(i18n("Pictures the AI made: add one again, or reuse its prompt"))
+        history_btn.clicked.connect(self._history)
         buttons.addWidget(self.send_btn, 1)
         buttons.addWidget(self.stop_btn)
         buttons.addWidget(new)
+        buttons.addWidget(history_btn)
         lay.addLayout(buttons)
         self.setWidget(root)
 
@@ -754,6 +767,17 @@ class ChatDocker(DockWidget):
         if visible and not self._started_service:
             self._started_service = True
             self._background(_ensure_service, self._got_health, quiet=True)
+            from . import setup
+            if setup.needed():  # the first time: how would you like to start?
+                QTimer.singleShot(400, lambda: setup.show(self))
+
+    def _history(self):
+        from . import historyview
+
+        def use(prompt):
+            self.input.setPlainText(prompt)
+            self.input.setFocus()
+        self.history_dialog = historyview.show(self, use)
 
     # ---------------------------------------------------------------- plumbing
     def canvasChanged(self, canvas):

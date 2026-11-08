@@ -163,6 +163,28 @@ Turn it on in *AI Chat ▸ Services…* (or `KRITAPILOT_FREE_SERVICES=horde`).
   and allows larger images.
 - A request that waits longer than 10 minutes (`KRITAPILOT_HORDE_TIMEOUT`) is cancelled.
 
+## Editing by instruction (`edit_image`)
+
+`edit_image("make it night")` changes the selection - or the whole picture - the way you describe, onto a
+new layer above, so the original stays. It tries the models that edit by instruction first: Gemini, OpenAI
+(gpt-image), and Flux Kontext on fal (`KRITAPILOT_FAL_EDIT_MODEL`, default `fal-ai/flux-pro/kontext`) or
+Replicate (`KRITAPILOT_REPLICATE_EDIT_MODEL`, default `black-forest-labs/flux-kontext-pro`); then any other
+connected service, which reworks the picture with img2img (`strength` 0..1 sets how much changes). A
+service that refuses the account is skipped for the next one, as for `generate_image`.
+
+## Selecting by description (`select_by_description`)
+
+`select_by_description("the sky")` makes a Krita selection of what you name (`mode`: replace, add,
+subtract, intersect). It uses, best first:
+
+| Method | Needs | Edge |
+|---|---|---|
+| `gemini` | a Gemini key | pixel-accurate masks, one per object |
+| `fal` | a fal key (`KRITAPILOT_FAL_SEGMENT_MODEL`, default `fal-ai/evf-sam`) | pixel-accurate |
+| `vision` | any vision chat model - free with Pollinations | an outline, approximate |
+
+Check the result with `canvas_snapshot`, and refine it with `modify_selection` (grow, shrink, feather).
+
 ## Video backends
 
 `generate_video` saves the video to `<workspace>/generated/` and, by default, opens it in Krita as an

@@ -647,3 +647,64 @@ def _labels(dlg):
 
 def _buttons(dlg):
     return [b.text() for b in dlg.actions + [dlg.save_btn, dlg.cancel_btn]]
+
+
+def _history_entry(home, prompt="a lighthouse at dusk"):
+    import base64
+    import json
+    folder = Path(home) / "history"
+    folder.mkdir(parents=True, exist_ok=True)
+    png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==")
+    (folder / "g1-1.png").write_bytes(png)
+    (folder / "history.jsonl").write_text(json.dumps({"id": "g1", "time": "2026-11-08 10:00:00", "prompt": prompt,
+                                                      "backend": "pollinations", "files": ["g1-1.png"]}) + "\n",
+                                          encoding="utf-8")
+
+
+def test_history_window_shows_pictures_and_reuses_prompts(chat, monkeypatch):
+    app, c, dock, sent = chat
+    _history_entry(os.environ["KRITAPILOT_HOME"])
+    hv = sys.modules["kritapilot_plugin.historyview"] if "kritapilot_plugin.historyview" in sys.modules else None
+    dock._history()
+    hv = sys.modules["kritapilot_plugin.historyview"]
+    dlg = dock.history_dialog
+    assert dlg.view.count() == 1 and "lighthouse" in dlg.view.item(0).toolTip()
+    placed = []
+    monkeypatch.setattr(hv, "place", lambda entry, index=1: placed.append((entry["id"], index)))
+    dlg.view.setCurrentRow(0)
+    dlg._place()
+    assert placed == [("g1", 1)] and "new layer" in dlg.hint.text()
+    dlg._use_prompt()
+    assert dock.input.toPlainText() == "a lighthouse at dusk"  # back in the chat box, ready to run or change
+
+
+def test_getting_started_free_and_own_gpu(chat, monkeypatch):
+    app, c, dock, sent = chat
+    setup = __import__("kritapilot_plugin.setup", fromlist=["SetupDialog"])
+    assert setup.needed()
+    asked = []
+    monkeypatch.setattr(dock, "sign_in_service", lambda name, parent=None, action=None: asked.append((name, action)))
+    dlg = setup.SetupDialog(dock)
+    dlg.choose("free")
+    assert asked == [("pollinations", "on"), ("horde", "on")] and "free" in dlg.result_label.text()
+    real = c._request
+
+    def service(method, path, body=None, timeout=10):
+        if path == "/check":
+            sent.append((method, path, body))
+            return {"ok": state["ok"], "detail": "ComfyUI answers at http://127.0.0.1:8188: 3 model(s)"}
+        return real(method, path, body, timeout)
+    state = {"ok": True}
+    monkeypatch.setattr(c, "_request", service)
+    dlg.choose("gpu")
+    pump(app, 0.4)
+    assert "Found it" in dlg.result_label.text()
+    assert ("POST", "/signin", {"provider": "comfyui", "key": "", "base_url": "http://127.0.0.1:8188",
+                                "verify": False}) in sent
+    state["ok"] = False
+    monkeypatch.setattr(setup, "krita_ai_diffusion_installed", lambda: True)
+    dlg.choose("gpu")
+    pump(app, 0.4)
+    assert "krita-ai-diffusion is installed" in dlg.result_label.text()
+    dlg.finish()
+    assert not setup.needed()  # shown once

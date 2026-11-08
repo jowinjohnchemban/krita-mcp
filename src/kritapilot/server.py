@@ -771,7 +771,14 @@ class _BearerAuth:
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="kritapilot", description=__doc__)
+    argv = sys.argv[1:] if argv is None else argv
+    from . import cli
+    if argv and argv[0] in cli.COMMANDS:  # kritapilot status / tools / call / snapshot / chat / history
+        cli.main(argv)
+        return
+    ap = argparse.ArgumentParser(prog="kritapilot", description=__doc__,
+                                 epilog="Commands for people and scripts: kritapilot status | tools | call | "
+                                        "snapshot | chat | history (kritapilot status --help).")
     ap.add_argument("--transport", choices=["stdio", "http"], default="stdio",
                     help="stdio for local clients (default); http for clients that need a URL")
     ap.add_argument("--host", default="127.0.0.1",

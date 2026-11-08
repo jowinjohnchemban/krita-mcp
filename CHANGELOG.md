@@ -4,6 +4,19 @@ Releases are published automatically from `main` with [SemVer](https://semver.or
 (see [releases](https://github.com/jowinjohnchemban/kritapilot/releases) and [PyPI](https://pypi.org/p/kritapilot)).
 The plugin and the server update themselves. This file lists what changed, newest first.
 
+## 1.0.3
+
+- **Edit by describing the change**: `edit_image("make it night")` - Gemini, OpenAI and Flux Kontext edit by
+  instruction; other services rework the picture. The selection or the whole picture, onto a new layer.
+- **Select by describing it**: `select_by_description("the sky")` - pixel-accurate masks with Gemini or fal,
+  an approximate outline from any vision model (free with Pollinations).
+- **History…**: every generated picture is kept; add one back, or reuse its prompt
+  (`generation_history`, `place_generation`).
+- **Getting started**: the first time the AI Chat opens - start free, sign in, or use your own GPU (it finds a
+  ComfyUI server, including krita-ai-diffusion's).
+- **Commands for people and scripts**: `kritapilot status`, `chat`, `snapshot`, `tools`, `call`, `history`.
+- **About KritaPilot**, with the version, build and system details to copy into a bug report.
+
 ## 2026-11-08
 
 **New name: KritaPilot** (formerly *krita-mcp*). The project is more than an MCP server now, so it has a name of its own: the repository is `jowinjohnchemban/kritapilot`, the package is [`kritapilot` on PyPI](https://pypi.org/p/kritapilot) and the command is `kritapilot`. Versions are SemVer from 1.0.0 and count up by one with each release.

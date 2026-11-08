@@ -26,7 +26,7 @@ when one runs out of credit or fails (see [the provider menu](#the-provider-menu
 The model box lists the models your account can use, loaded live from the provider (⟳ reloads it).
 **Auto (newest)** picks the newest suitable model when a chat starts, keeps it for ten minutes (looking it
 up again before every message would keep you waiting), and the chat shows which one it used. You can also
-type any model name. The AI gets the same 86
+type any model name. The AI gets the same 90
 tools as MCP clients: painting with real brushes, seeing and measuring the canvas, layers, photo editing,
 animation and video, generative AI and the asset libraries. It looks at its work and improves it before it
 answers.
@@ -155,6 +155,25 @@ used by:
   example, lets Claude Desktop's `generate_image` use it too.
 
 An explicit `KRITAPILOT_…` environment variable still wins over a saved key. **Sign out** deletes the key.
+
+## Getting started
+
+The first time the AI Chat opens, it asks how you want to start - one click each:
+
+- **Start free - no account**: chat on Auto with the free models and turn on the free picture services.
+- **I have an AI account**: opens Services to sign in.
+- **Use my own GPU**: finds a ComfyUI server on this computer and uses it for pictures. If the
+  [krita-ai-diffusion](https://github.com/Acly/krita-ai-diffusion) plugin is installed, its ComfyUI server
+  works too: start it in its panel and pick this again.
+
+**Services ▸ Getting started…** brings it back.
+
+## Pictures the AI made: History…
+
+Every picture an image model makes is kept in `~/.kritapilot/history` (the newest 200). **History…** shows
+them as thumbnails: double-click one (or **Place on canvas**) to add it to your picture as a new layer, or
+**Use prompt** to put its prompt back in the box and run it again or change it. The AI can do the same with
+`generation_history` and `place_generation`.
 
 ## When something goes wrong: Logs…
 
