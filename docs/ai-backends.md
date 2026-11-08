@@ -53,9 +53,11 @@ service that has a key, and last the free services you turned on (Pollinations, 
 If the service it chose refuses the account (a key that is no longer valid, no credit left, a rate
 limit), it moves on to the next one in that order. The result names the service that made the picture,
 and the AI tells you which one was skipped and why so you can fix it in **AI Chat ▸ Services**. A
-service you name with `backend` (or `KRITA_MCP_IMAGE_BACKEND`) is never swapped for another one. If
-`create_artwork` decided by itself to generate and no service accepts the account, it sets the
-document up for painting by hand instead.
+service you name with `backend` (or `KRITA_MCP_IMAGE_BACKEND`) is never swapped for another one once it is
+set up. If the name is unknown, or it is a cloud service without a key (models sometimes ask for a service
+you don't have), the service is chosen automatically as above, any `model` named for the missing service
+is dropped, and the result says so. If `create_artwork` decided by itself to generate and no service
+accepts the account, it sets the document up for painting by hand instead.
 
 ### ComfyUI (local, recommended)
 
@@ -151,8 +153,11 @@ Turn it on in *AI Chat ▸ Services…* (or `KRITA_MCP_FREE_SERVICES=pollination
 Turn it on in *AI Chat ▸ Services…* (or `KRITA_MCP_FREE_SERVICES=horde`).
 
 - Stable Diffusion models on volunteers' GPUs ([aihorde.net](https://aihorde.net)). Requests wait in a
-  queue, so a picture can take a minute or more. The model with the most workers online is used unless
-  you pass `model` (or set `KRITA_MCP_HORDE_MODEL`).
+  queue, so a picture usually takes a few minutes. The model with the most workers online is used unless
+  you pass `model` (or set `KRITA_MCP_HORDE_MODEL`); a model no worker serves right now is ignored rather
+  than refused.
+- At most two variations per request, because of the queue. Each variation gets its own seed (the next
+  one after the seed you give), so they differ.
 - Text-to-image and img2img. Without an account, images are kept small (576 px). A free key from
   [aihorde.net/register](https://aihorde.net/register) (`KRITA_MCP_HORDE_API_KEY`) moves you up the queue
   and allows larger images.
@@ -263,7 +268,8 @@ is sent exactly as given.
 If Google answers that a model is no longer available and names its replacement, the request is retried
 with that model and the chat says so. In the AI Chat panel, the model box lists your account's models
 live (it reloads when you switch provider, sign in, or click ⟳). **Auto (newest)** keeps the automatic
-choice.
+choice: the newest suitable model, looked up when a chat starts and again every ten minutes. For the chat
+providers and the **Auto** provider that switches between them, see [AI Chat](ai-chat.md#the-provider-menu).
 
 ## Other settings
 
@@ -279,7 +285,8 @@ choice.
 decides how to make the picture:
 
 - **Generate** when the request is photographic or realistic, or when an image model is connected. It
-  makes several variations and a comparison sheet.
+  makes one picture on paid cloud services, four variations with a comparison sheet on your own GPU
+  (ComfyUI, AUTOMATIC1111), and at most two on AI Horde; `count` asks for a different number.
 - **Paint** when the request is hand-made or graphic ("paint it by hand", line art, pixel art, logos), or
   when no model is connected. It sets up layers (Sketch, Base colours, Shading, Details, Light &
   effects) and thirds guides, and returns a step-by-step painting plan. The agent then paints with

@@ -31,13 +31,19 @@ AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token�
   Cerebras, Hugging Face, NVIDIA, Qwen, Moonshot, SambaNova, Cohere, Z.AI, DeepInfra, Vercel AI Gateway and
   about 20 more, or a local model (Ollama, LM Studio), or use it **free with no sign-in** (Pollinations,
   Kilo Gateway, OVHcloud, LLM7, or the OmniRoute gateway), type what you want and watch it work in your
-  document. It keeps spending down (only the newest pictures are resent, Claude's prompt cache is used,
-  repeated failures stop) and shows the tokens each answer used. **Skills** (39 built in - photoreal images,
-  retouching, pixel art, logos, comics, animation, saving credits, ... - plus any you install) are found and
-  loaded only when a request needs them. Models are always listed live from each provider; nothing is
-  hard-coded. One
-  **Services** list holds every key and server URL, and AI apps connected through MCP use the same
-  sign-in.
+  document.
+  - **Auto** (the default) uses all your providers in turn - yours first, then the free ones - and when
+    one runs out of credit, hits a quota, rejects its key or stops answering, the next one carries on
+    with the same task.
+  - It works like a coding assistant's chat: **Enter** sends, messages typed while the AI works are
+    **queued**, **Stop** stops at once, and a status line shows what it is doing.
+  - It keeps spending down (only the newest pictures are resent, Claude's prompt cache is used, repeated
+    failures stop) and shows the tokens each answer used.
+  - **Skills** (39 built in - photoreal images, retouching, pixel art, logos, comics, animation, saving
+    credits, ... - plus any you add) are loaded only when a request needs them.
+  - One **Services** list sets up every service the way it works: an API key, a browser sign-in, a server
+    address with a connection test, or nothing at all for the free ones. Models are listed live from each
+    provider, and AI apps connected through MCP use the same sign-in.
 - **Real-world materials.** CC0 photo textures and HDRI skies from Poly Haven, and openly licensed photos
   from Openverse (with attribution), tiled or placed on layers to make work look real.
 - **Just give it a prompt.** `create_artwork` decides: realistic or photographic requests are
@@ -75,7 +81,10 @@ and updates the `krita-mcp` server too.
 
 An **AI Bridge (MCP)** panel inside Krita shows the status and a live activity log. From it you can
 make the AI read-only or pause it, undo AI edits, set the workspace and token, and copy a ready-made
-config for your AI client.
+config for your AI client. Popups Krita opens while the AI works (such as "Missing Colour Profile") are
+cancelled and reported to the AI instead of blocking it. **Logs…** follows every command, chat step,
+setting change and error live, dated to the millisecond and with keys masked. If Krita ever freezes, the
+plugin records where in `~/.krita-mcp/hang.log`.
 
 ## Quick start
 
@@ -119,12 +128,13 @@ Environment variables:
 | `KRITA_MCP_HTTP_TOKEN` | server | random, printed at start | Bearer token HTTP clients must send (`Authorization: Bearer …`) |
 | `KRITA_MCP_PORT` | server + plugin | `5679` | Port of the Krita bridge (not the HTTP port above) |
 | `KRITA_MCP_HOST` | server | `127.0.0.1` | Host of the Krita bridge |
-| `KRITA_MCP_HOME` | server + plugin | `~/.krita-mcp` | Folder holding the bridge token |
+| `KRITA_MCP_HOME` | server + plugin | `~/.krita-mcp` | Folder holding the bridge token, saved keys, skills, `logs/` and `hang.log` |
 | `KRITA_MCP_TOKEN` | server | read from `KRITA_MCP_HOME` | Bridge token, instead of reading the file |
 | `KRITA_MCP_WORKSPACE` | plugin | `~/KritaMCP` | The only folder the AI may read/write (overrides the panel setting) |
 | `KRITA_MCP_AUTOSTART` | plugin | on | `0` = don't start the bridge with Krita |
 | `KRITA_MCP_FFMPEG` | plugin | Krita's bundled copy | Folder with `ffmpeg`/`ffprobe` for video |
-
+| `KRITA_MCP_DIALOGS` | plugin | `cancel` | Popups during an AI command: `cancel` (and tell the AI) or `leave` (for you to answer) |
+| `KRITA_MCP_HANG_SECONDS` | plugin | `60` | After this long frozen, every thread's stack goes to `hang.log`; `0` = off |
 Plugin settings can also be changed in Krita's *AI Bridge (MCP)* panel; environment variables take priority.
 
 Generative services are configured with more server variables (`KRITA_MCP_COMFYUI_URL`,
@@ -138,7 +148,8 @@ See [Connecting AI services](docs/ai-backends.md).
 
 | | |
 |---|---|
-| [AI Chat inside Krita](docs/ai-chat.md) | The chat docker, signing in to services, asset libraries |
+| [AI Chat inside Krita](docs/ai-chat.md) | The chat docker, Auto and the provider menu, setting up services, free services, spending, skills, the queue, settings |
+| [The Krita panel](docs/krita-panel.md) | Status, access modes, popups, workspace and token, updates, Logs and the freeze log |
 | [Connecting AI services](docs/ai-backends.md) | ComfyUI, A1111, OpenAI, Gemini, Stability, Replicate, fal, HeyGen, Sora, Veo, Claude |
 | [Workflows](docs/workflows.md) | Painting, photo retouching, inpainting, line art, animation, video |
 | [Tool reference](docs/tools.md) | All 86 tools, their parameters, and the prompts |
@@ -159,7 +170,9 @@ the AI to read-only or pause it from the panel at any time. Full details:
 The project is tested against **Krita 5.3.4 on Windows**. `scripts/smoke_krita.py` runs 56 end-to-end
 checks against a running Krita, including an undo matrix over every kind of edit and the Quick start's
 sunset prompt. `scripts/paint_sunset.py` paints the sunset with real brushes, looks at it, improves it and
-checks the result. Unit tests run on
+checks the result. The AI Chat has been run end to end against real Krita on Auto with only the free
+services (Pollinations, Kilo, AI Horde): a photoreal prompt was generated, compared and saved, with the
+switch to the next provider happening on the way. Unit tests run on
 Linux and Windows with PyQt5 and PyQt6 in CI. Krita 6 is covered by the PyQt6 unit tests but has not
 yet been run end to end.
 
