@@ -49,5 +49,9 @@ kritapilot = "kritapilot.server:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/kritapilot"]
 
+[tool.hatch.build.targets.wheel.force-include]  # `kritapilot install` puts this plugin into Krita
+"plugin/pykrita/kritapilot_plugin" = "kritapilot/krita_plugin/kritapilot_plugin"
+"plugin/pykrita/kritapilot_plugin.desktop" = "kritapilot/krita_plugin/kritapilot_plugin.desktop"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

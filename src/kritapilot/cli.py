@@ -7,6 +7,8 @@
     kritapilot chat "MESSAGE" [--provider P] [--model M]
                                              ask the AI Chat assistant; its steps are printed as it works
     kritapilot history [N]                   the N newest generated pictures
+    kritapilot install [--dest PYKRITA]      put the Krita plugin in place and turn it on
+    kritapilot doctor                        check every link to Krita and the AI services
 
 Without one of these, `kritapilot` is the MCP server that AI apps start (see `kritapilot --help`).
 """
@@ -17,7 +19,7 @@ import json
 import sys
 import time
 
-COMMANDS = ("status", "tools", "call", "snapshot", "chat", "history")
+COMMANDS = ("status", "tools", "call", "snapshot", "chat", "history", "install", "doctor")
 
 
 def _run(name, **args):
@@ -135,6 +137,12 @@ def main(argv):
     ch.add_argument("--model", default=None)
     h = sub.add_parser("history", help="recent generated pictures")
     h.add_argument("n", nargs="?", type=int, default=10)
+    i = sub.add_parser("install", help="put the Krita plugin in place and turn it on")
+    i.add_argument("--dest", help="Krita's pykrita folder (found automatically)")
+    i.add_argument("--kritarc", help="Krita's settings file (found automatically)")
+    i.add_argument("--no-enable", action="store_true", help="only copy the files")
+    sub.add_parser("doctor", help="check every link to Krita and the AI services")
     args = ap.parse_args(argv)
+    from . import install as setup
     {"status": status, "tools": tools, "call": call, "snapshot": snapshot, "chat": chat,
-     "history": history}[args.command](args)
+     "history": history, "install": setup.install, "doctor": setup.doctor}[args.command](args)

@@ -4,6 +4,18 @@ Releases are published automatically from `main` with [SemVer](https://semver.or
 (see [releases](https://github.com/jowinjohnchemban/kritapilot/releases) and [PyPI](https://pypi.org/p/kritapilot)).
 The plugin and the server update themselves. This file lists what changed, newest first.
 
+## 1.0.5
+
+- **`kritapilot install`** puts the Krita plugin in place and turns it on - from PyPI or a GitHub checkout.
+- **`kritapilot doctor`** checks every link (plugin version, turned on, Krita, token, bridge, AI Chat service)
+  and says how to fix what is broken.
+- **The bridge moves on when its port is taken** (another Krita, another program) and tells AI apps where it
+  went (`~/.kritapilot/bridge.json`). On Windows no other program can share its port.
+- **Layers by path**: `"Background/Sky"` picks the Sky layer inside the Background group when names repeat.
+- **`dismiss_recovery_dialog`** closes Krita's "recover autosaved files" dialog, which otherwise blocks the AI.
+- Every tool tells AI apps whether it only reads, changes or deletes things, or reaches the internet (MCP tool
+  annotations), so they can ask before the risky ones.
+
 ## 1.0.3
 
 - **Edit by describing the change**: `edit_image("make it night")` - Gemini, OpenAI and Flux Kontext edit by

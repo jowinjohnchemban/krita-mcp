@@ -5,7 +5,19 @@ on Krita 5.3.4; Krita 6 (PyQt6) is covered by unit tests only.
 
 ## 1. Install the Krita plugin
 
-### From a release (recommended)
+### With the command (recommended)
+
+Install the server first (step 2), close Krita, then:
+
+```bash
+kritapilot install                   # copies the plugin into Krita's pykrita folder and turns it on
+kritapilot install --dest DIR        # if Krita's resource folder is somewhere unusual (DIR = .../pykrita)
+```
+
+It works the same from PyPI and from a GitHub checkout, and replaces an older plugin. With Krita open it still
+copies the files, but you tick the plugin yourself (Krita rewrites its settings when it closes).
+
+### From a release zip
 
 1. Download `kritapilot-plugin-<version>.zip` from the
    [Releases page](https://github.com/jowinjohnchemban/kritapilot/releases).
@@ -13,17 +25,13 @@ on Krita 5.3.4; Krita 6 (PyQt6) is covered by unit tests only.
 3. Restart Krita when it asks. Then make sure the plugin is ticked under **Settings ▸ Configure Krita ▸
    Python Plugin Manager** (*KritaPilot*), and restart once more if you had to tick it.
 
-### From a source checkout
-
-```bash
-python scripts/install_plugin.py              # copies the plugin into Krita's pykrita folder
-python scripts/install_plugin.py --dest DIR   # if Krita's resource folder is somewhere unusual
-```
-
-Then enable it in the Python Plugin Manager as above. To find the resource folder by hand, use
-**Settings ▸ Manage Resources ▸ Open Resource Folder**; the plugin goes in its `pykrita/` subfolder.
+To find the resource folder by hand, use **Settings ▸ Manage Resources ▸ Open Resource Folder**; the plugin
+goes in its `pykrita/` subfolder.
 
 ### Check it
+
+`kritapilot doctor` checks each link in turn - the plugin's version, that it is turned on, Krita, the token,
+the bridge and the AI Chat service - and prints how to fix anything marked `!!`.
 
 On start-up the plugin creates `~/.kritapilot/token` and listens on `127.0.0.1:5679`. Open the panel
 with **Settings ▸ Dockers ▸ AI Bridge (MCP)** (it also opens by itself the first time). It should say

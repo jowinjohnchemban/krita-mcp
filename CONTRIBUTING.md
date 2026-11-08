@@ -22,7 +22,7 @@ git clone https://github.com/jowinjohnchemban/kritapilot
 cd KritaPilot
 python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e ".[test]" PyQt6 PyQt5
-python scripts/install_plugin.py                   # copy the plugin into Krita, then restart Krita
+kritapilot install                                 # copy the plugin into Krita, then restart Krita
 ```
 
 ## Tests

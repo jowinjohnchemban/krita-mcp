@@ -9,6 +9,14 @@ from . import config  # noqa: E402
 DEFAULT_PORT = config.BRIDGE_PORT
 
 
+def discovered_port():
+    """The port the running bridge wrote to ~/.kritapilot/bridge.json (it moves on if its port is taken)."""
+    try:
+        return int(json.loads((config.home() / "bridge.json").read_text(encoding="utf-8"))["port"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 class KritaError(RuntimeError):
     """Raised for any bridge problem; the message is safe to show to an LLM."""
 
@@ -31,7 +39,7 @@ def _token() -> str:
 class BridgeClient:
     def __init__(self, host=None, port=None, timeout=180.0):
         self.host = host or os.environ.get("KRITAPILOT_HOST", "127.0.0.1")
-        self.port = int(port or os.environ.get("KRITAPILOT_PORT", DEFAULT_PORT))
+        self.port = int(port or os.environ.get(config.BRIDGE_PORT_ENV) or discovered_port() or DEFAULT_PORT)
         self.timeout = timeout
         self._ids = itertools.count(1)
 

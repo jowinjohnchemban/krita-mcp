@@ -41,7 +41,6 @@ src/kritapilot/
                                (Pollinations, AI Horde), catalog.py (live model lists), http.py, assets.py
   bundled_skills/              the 39 built-in skills
 scripts/
-  install_plugin.py            copy the plugin into Krita's pykrita folder
   build_plugin.py              build the installable plugin zip
   gen_tool_docs.py             regenerate docs/tools.md
   smoke_krita.py               end-to-end test against a real running Krita

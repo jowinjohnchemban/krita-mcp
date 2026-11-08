@@ -51,9 +51,43 @@ _client = BridgeClient()
 TOOLS = {}  # name -> coroutine function, for `batch`
 
 
+# MCP tool annotations (spec 2025-06-18): AI apps may run read-only tools without asking, ask before destructive
+# ones, and know which ones reach services outside this computer. Every edit can be undone in Krita, but files
+# written (save, export) and the tools that run anything (batch, krita_action) count as destructive.
+READ_ONLY = {
+    "ai_backends", "analyze_image", "animation_contact_sheet", "animation_info", "ask_vision", "canvas_snapshot",
+    "describe_filter", "document_info", "find_color", "find_skills", "generation_history", "history",
+    "krita_status", "list_brush_presets", "list_filters", "list_keyframes", "list_layers", "list_resources",
+    "list_vector_shapes", "list_workspace", "palette_colors", "read_pixels", "sample_color", "search_assets",
+    "use_skill", "user_tool_state", "video_info", "view_image"}
+DESTRUCTIVE = {
+    "batch", "crop_image", "delete_layer", "document_close", "export_animation_frames", "export_image",
+    "export_selection_mask", "fill_selection", "flatten_image", "for_each_frame", "krita_action", "merge_down",
+    "remove_background", "remove_vector_shapes", "render_video", "save_document"}
+OPEN_WORLD = {
+    "ai_backends", "ask_vision", "create_artwork", "edit_image", "generate_image", "generate_video", "import_asset",
+    "import_image_from_url", "outpaint", "remove_background", "search_assets", "select_by_description",
+    "upscale_image"}
+
+
+def annotations(name):
+    from mcp.types import ToolAnnotations
+    read_only = name in READ_ONLY
+    values = {"title": name.replace("_", " ").capitalize(), "read_only": read_only,
+              "destructive": (not read_only) and name in DESTRUCTIVE, "open_world": name in OPEN_WORLD}
+    snake = "read_only_hint" in ToolAnnotations.model_fields  # MCP SDK 2.x; 1.x uses camelCase
+    keys = {"read_only": "read_only_hint" if snake else "readOnlyHint",
+            "destructive": "destructive_hint" if snake else "destructiveHint",
+            "open_world": "open_world_hint" if snake else "openWorldHint", "title": "title"}
+    return ToolAnnotations(**{keys[k]: v for k, v in values.items()})
+
+
 def tool(fn):
     TOOLS[fn.__name__] = fn
-    return mcp.tool()(fn)
+    try:
+        return mcp.tool(annotations=annotations(fn.__name__))(fn)
+    except TypeError:  # an MCP SDK without annotations
+        return mcp.tool()(fn)
 
 
 async def _call(method: str, /, **params) -> Any:
@@ -65,6 +99,14 @@ async def _call(method: str, /, **params) -> Any:
 
 
 # ------------------------------------------------------------------ status
+@tool
+async def dismiss_recovery_dialog() -> dict:
+    """Krita asks at start-up whether to recover autosaved files after a crash, and nothing else can happen until
+    someone answers. This cancels that question and keeps the autosaves (it neither recovers nor deletes them).
+    Other dialogs are left alone. Use it when calls fail or hang right after Krita starts."""
+    return await _call("krita.dismiss_recovery")
+
+
 @tool
 async def krita_status() -> dict:
     """Krita version, the sandboxed workspace folder, and the open documents (index, size, active)."""

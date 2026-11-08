@@ -95,6 +95,21 @@ class DialogGuard:
         return [{k: v for k, v in e.items() if not k.startswith("_")} for e in self.events]
 
 
+RECOVERY = "KisAutoSaveRecoveryDialog"  # Krita's "recover autosaved files?" question at start-up
+
+
+def dismiss_recovery():
+    """Cancel Krita's start-up recovery dialog (the autosaves are kept, not recovered or deleted). It blocks every
+    command until someone answers it. Other dialogs are left alone. Returns how many were closed."""
+    app = QApplication.instance()
+    closed = 0
+    for w in (app.topLevelWidgets() if app is not None and hasattr(app, "topLevelWidgets") else []):
+        if w.isVisible() and w.metaObject().className() == RECOVERY:
+            _cancel(w)
+            closed += 1
+    return closed
+
+
 def summary(events):
     """One line for the AI and the activity log."""
     return "; ".join("Krita showed %s'%s'%s - %s" % ("a progress window " if e.get("progress") else "",

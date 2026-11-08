@@ -107,3 +107,17 @@ def test_leave_policy_lets_the_user_answer(dialogs, monkeypatch):
     result = box.exec()
     events = guard.stop()
     assert result != 0 and events[0]["handled"] == "left for the user"
+
+
+def test_only_the_recovery_dialog_is_dismissed(dialogs):
+    app, d = dialogs
+
+    class KisAutoSaveRecoveryDialog(qtw.QDialog):  # stands in for Krita's (matched by class name)
+        pass
+    recovery, other = KisAutoSaveRecoveryDialog(), qtw.QDialog()
+    recovery.show()
+    other.show()
+    assert d.dismiss_recovery() == 1
+    assert not recovery.isVisible() and recovery.result() == 0 and other.isVisible()  # cancelled; the rest stay
+    assert d.dismiss_recovery() == 0
+    other.close()

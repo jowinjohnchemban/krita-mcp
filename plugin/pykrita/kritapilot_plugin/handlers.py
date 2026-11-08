@@ -65,7 +65,7 @@ READS = {"app.info", "app.actions", "document.info", "canvas.snapshot", "canvas.
          "filter.list", "filter.describe", "brush.presets", "history.list", "image.analyze", "image.read_pixels",
          "image.find_color", "file.list", "file.view", "vector.list", "resources.list", "palette.colors",
          "animation.info", "animation.keyframes", "animation.contact_sheet", "video.info", "krita.action_list",
-         "generator.describe", "gen.context"}
+         "generator.describe", "gen.context", "krita.dismiss_recovery"}
 
 ACCESS = {"mode": "full"}  # full | read_only | paused - set from the MCP docker
 ACTIVITY = collections.deque(maxlen=300)  # (time, method, ok, ms, detail) for the docker's log
@@ -192,8 +192,22 @@ def find_layer(doc, ref):
     if len(named) == 1:
         return named[0]
     if len(named) > 1:
-        raise BridgeError("Several layers are named %r; use the layer id from layer_list" % ref)
+        raise BridgeError("Several layers are named %r; use the layer id from layer_list, or its path through the "
+                          "groups like \"Group/Layer\"" % ref)
+    if "/" in ref:  # a path through groups: "Background/Sky"
+        found = _by_path(doc.rootNode(), [part for part in ref.split("/") if part])
+        if found is not None:
+            return found
     raise BridgeError("No layer with id/name %r" % ref)
+
+
+def _by_path(parent, parts):
+    """The layer at `parts` (names, outermost group first) under `parent`; None if there is none or several."""
+    matches = [c for c in parent.childNodes() if c.name() == parts[0]]
+    if len(parts) == 1:
+        return matches[0] if len(matches) == 1 else None
+    found = [n for n in (_by_path(m, parts[1:]) for m in matches) if n is not None]
+    return found[0] if len(found) == 1 else None
 
 
 def node_info(n, deep=False):
@@ -1207,6 +1221,12 @@ def selection_set(p):
         sel = cur
     doc.setSelection(sel)
     return {"selection": [sel.x(), sel.y(), sel.width(), sel.height()]}
+
+
+@handler("krita.dismiss_recovery")
+def krita_dismiss_recovery(p):
+    return {"closed": dialogs.dismiss_recovery(),
+            "note": "The autosaves are kept: File > Recover from autosave is still possible later."}
 
 
 @handler("selection.from_masks", edit=True)

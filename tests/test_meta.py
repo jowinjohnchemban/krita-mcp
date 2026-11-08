@@ -56,3 +56,24 @@ def test_the_server_and_plugin_configs_agree():
     for name in shared:
         assert getattr(server, name) == getattr(plugin, name), name
     assert server.version_text() == plugin.version_text() and server.home() == plugin.home()
+
+
+def test_every_tool_tells_clients_what_it_does():
+    """MCP annotations: read-only tools can be run without asking, destructive ones are confirmed, and those that
+    reach outside services say so. Every name in the lists must be a real tool."""
+    import asyncio
+    from kritapilot import server
+    for group in (server.READ_ONLY, server.DESTRUCTIVE, server.OPEN_WORLD):
+        assert group <= set(server.TOOLS), group - set(server.TOOLS)
+    assert not server.READ_ONLY & server.DESTRUCTIVE
+    listed = {t.name: t.annotations for t in asyncio.run(server.mcp.list_tools())}
+    assert set(listed) == set(server.TOOLS)
+
+    def hint(ann, name):
+        return getattr(ann, name + "_hint", None) if hasattr(ann, "read_only_hint") else getattr(
+            ann, {"read_only": "readOnlyHint", "destructive": "destructiveHint", "open_world": "openWorldHint"}[name])
+    assert hint(listed["list_layers"], "read_only") and not hint(listed["list_layers"], "destructive")
+    assert hint(listed["delete_layer"], "destructive") and not hint(listed["delete_layer"], "read_only")
+    assert not hint(listed["brush_stroke"], "destructive")  # adds paint; undoable
+    assert hint(listed["generate_image"], "open_world") and not hint(listed["brush_stroke"], "open_world")
+    assert listed["select_by_description"].title == "Select by description"

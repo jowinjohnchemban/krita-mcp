@@ -217,3 +217,25 @@ def test_mcp_batch(bridge):
     assert s2["completed"] == 0 and len(s2["results"]) == 1  # stopped at the first failure
     s3 = json.loads(bad.content[0].text)
     assert [r["ok"] for r in s3["results"]] == [False, False] and "bad arguments" in s3["results"][1]["error"]
+
+
+def test_a_taken_port_moves_the_bridge_on_and_the_server_finds_it(tmp_path, monkeypatch):
+    """Another program (or another Krita) holds the port: the bridge takes the next one, writes it to
+    ~/.kritapilot/bridge.json, and the server connects there without being told."""
+    monkeypatch.setenv("KRITAPILOT_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("KRITAPILOT_PORT", raising=False)
+    from kritapilot import bridge_client
+    blocker = socket.socket()
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen(1)
+    taken = blocker.getsockname()[1]
+    srv = BridgeServer(fake_dispatch, port=taken, request_timeout=5)
+    try:
+        port = srv.start()
+        assert port != taken and taken < port < taken + 10
+        assert json.loads((tmp_path / "home" / "bridge.json").read_text())["port"] == port
+        assert bridge_client.discovered_port() == port and bridge_client.BridgeClient().port == port
+    finally:
+        srv.stop()
+        blocker.close()
+    assert not (tmp_path / "home" / "bridge.json").exists()  # stopped: the file goes too

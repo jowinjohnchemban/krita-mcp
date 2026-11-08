@@ -125,17 +125,19 @@ plugin records where in `~/.kritapilot/hang.log`.
 
 ## Quick start
 
-1. **Plugin.** Download `kritapilot-plugin-*.zip` from
-   [Releases](https://github.com/jowinjohnchemban/kritapilot/releases). In Krita choose
-   *Tools ▸ Scripts ▸ Import Python Plugin from File…*, enable the plugin and restart Krita.
-2. **Server.** Install it from [PyPI](https://pypi.org/p/kritapilot) or straight from GitHub:
+1. **Install** from [PyPI](https://pypi.org/p/kritapilot) or straight from GitHub, then put the plugin in
+   Krita (close Krita first, so it can also turn the plugin on):
    ```bash
    pip install kritapilot                                              # PyPI
    pip install "git+https://github.com/jowinjohnchemban/kritapilot"     # GitHub (latest main)
+   kritapilot install                                                  # the plugin, into Krita
    ```
-   `pipx install kritapilot` and `uvx kritapilot` work too, and every
-   [release](https://github.com/jowinjohnchemban/kritapilot/releases) has the wheel. (Not
-   `pip install krita-mcp`: that is a different project.)
+   `pipx install kritapilot` works too, and every
+   [release](https://github.com/jowinjohnchemban/kritapilot/releases) has the wheel and the plugin zip (in
+   Krita: *Tools ▸ Scripts ▸ Import Python Plugin from File…*). (Not `pip install krita-mcp`: that is a
+   different project.)
+2. **Start Krita.** `kritapilot doctor` checks every link - plugin, bridge, AI services - and says how to
+   fix what is broken.
 3. **Use it**, either way:
    - **Inside Krita, free:** open *Settings ▸ Dockers ▸ AI Chat*, keep the provider on **Auto** and type.
      Free models need no account; sign in to any provider in **Services…** for faster, stronger results.
@@ -158,6 +160,8 @@ kritapilot snapshot canvas.png             # save what the canvas shows
 kritapilot tools selection                 # the tools (here: those about selections)
 kritapilot call set_selection '{"kind": "all"}'   # run any tool with JSON arguments
 kritapilot history                         # recent generated pictures
+kritapilot install                         # put the plugin into Krita and turn it on (Krita closed)
+kritapilot doctor                          # check every link to Krita and the AI services
 ```
 
 ## Command-line flags

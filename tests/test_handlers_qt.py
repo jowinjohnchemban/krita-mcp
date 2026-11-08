@@ -752,3 +752,16 @@ def test_selection_from_masks_and_polygons(H):
     assert (x, y) == (0, 0) and abs(w - 200) <= 2 and abs(h - 100) <= 2  # united with the box
     with pytest.raises(H.BridgeError, match="nothing matching"):
         H.dispatch("selection.from_masks", {"region": [0, 0, 200, 100], "polygons": []})
+
+
+def test_layers_can_be_named_by_their_path_through_groups(H):
+    H.dispatch("document.new", {"width": 20, "height": 20})
+    for g in ("Day", "Night"):
+        H.dispatch("layer.create", {"name": g, "type": "grouplayer"})
+        H.dispatch("layer.create", {"name": "Sky", "parent": g})
+    with pytest.raises(H.BridgeError, match="Several layers are named"):
+        H.find_layer(H.active_doc(), "Sky")
+    night = H.find_layer(H.active_doc(), "Night/Sky")
+    assert night.name() == "Sky" and night.parentNode().name() == "Night"
+    with pytest.raises(H.BridgeError, match="No layer"):
+        H.find_layer(H.active_doc(), "Dusk/Sky")

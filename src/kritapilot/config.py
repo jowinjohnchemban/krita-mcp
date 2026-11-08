@@ -30,6 +30,7 @@ BRIDGE_PORT = 5679  # the Krita plugin's bridge, which AI apps connect to
 BRIDGE_PORT_ENV = "KRITAPILOT_PORT"
 AGENT_PORT = 5680  # the AI Chat assistant service
 AGENT_PORT_ENV = "KRITAPILOT_AGENT_PORT"
+SETTINGS = "kritapilot"  # the group in kritarc (Krita's settings) the plugin's settings are saved under
 HOME_DIR = ".kritapilot"  # the data folder in your home folder: keys, logs, skills and the token
 HOME_ENV = "KRITAPILOT_HOME"
 UPDATE_HOSTS = ("github.com", "api.github.com", "objects.githubusercontent.com",

@@ -17,7 +17,7 @@ TARGET = ROOT / "docs" / "tools.md"
 
 GROUPS = [
     ("Start here", ["create_artwork"]),
-    ("Documents", ["krita_status", "document_new", "document_open", "document_activate", "document_info",
+    ("Documents", ["krita_status", "dismiss_recovery_dialog", "document_new", "document_open", "document_activate", "document_info",
                    "save_document", "export_image", "document_close", "resize_canvas", "scale_image",
                    "crop_image", "rotate_image", "flip", "flatten_image", "convert_color_space", "set_guides"]),
     ("Seeing and reading the image", ["canvas_snapshot", "analyze_image", "read_pixels", "sample_color",

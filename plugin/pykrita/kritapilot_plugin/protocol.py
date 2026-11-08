@@ -29,6 +29,33 @@ MAX_MESSAGE_BYTES = 64 * 1024 * 1024
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 
 
+PORT_TRIES = 10  # when the port is taken (another Krita, another program), the next ones are tried
+
+
+def discovery_file() -> Path:
+    return config_dir() / "bridge.json"
+
+
+def write_discovery(port):
+    """Tell the server which port the bridge got (it may not be the configured one)."""
+    try:
+        from . import config as _config
+        p = discovery_file()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"port": port, "pid": os.getpid(), "version": _config.VERSION}), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def clear_discovery(port):
+    try:
+        p = discovery_file()
+        if json.loads(p.read_text(encoding="utf-8")).get("port") == port:
+            p.unlink()
+    except (OSError, ValueError):
+        pass
+
+
 def config_dir() -> Path:
     return config.home()
 
@@ -109,9 +136,23 @@ class BridgeServer:
         if self.running:
             return self.port
         family = socket.AF_INET6 if ":" in self.host else socket.AF_INET
-        s = socket.socket(family, socket.SOCK_STREAM)
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((self.host, self.port))
+        s, wanted = None, self.port
+        for port in ([wanted] if wanted == 0 else range(wanted, wanted + PORT_TRIES)):
+            s = socket.socket(family, socket.SOCK_STREAM)
+            if os.name == "nt":  # Windows' SO_REUSEADDR would let another program share the port silently
+                s.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_EXCLUSIVEADDRUSE", socket.SO_REUSEADDR), 1)
+            else:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind((self.host, port))
+                break
+            except OSError:
+                s.close()
+                s = None
+                if port != wanted + PORT_TRIES - 1 and wanted:
+                    self._log("port %d is taken; trying %d" % (port, port + 1))
+        if s is None:
+            raise OSError("ports %d-%d are all taken" % (wanted, wanted + PORT_TRIES - 1))
         s.listen(8)
         s.settimeout(0.5)
         self.port = s.getsockname()[1]
@@ -120,9 +161,11 @@ class BridgeServer:
         self._thread = threading.Thread(target=self._accept_loop, name="kritapilot-accept", daemon=True)
         self._thread.start()
         self._log("KritaPilot bridge listening on %s:%d" % (self.host, self.port))
+        write_discovery(self.port)
         return self.port
 
     def stop(self):
+        clear_discovery(self.port)
         self._stop.set()
         if self._sock:
             try:
