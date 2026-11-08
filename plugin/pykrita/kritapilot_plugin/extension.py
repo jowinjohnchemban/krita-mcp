@@ -203,17 +203,17 @@ class KritaMcpBridge(Extension):
     def toggle(self):
         if self.running:
             self.stop()
-            self._status(i18n("Krita MCP bridge stopped"))
+            self._status(i18n("KritaPilot bridge stopped"))
         else:
             self.start()
             self.show_info()
 
     def show_info(self):
         if self.running:
-            self._status(i18n("Krita MCP bridge listening on %s:%d (token in ~/.kritapilot/token)")
+            self._status(i18n("KritaPilot bridge listening on %s:%d (token in ~/.kritapilot/token)")
                          % (self.server.host, self.server.port))
         else:
-            self._status(i18n("Krita MCP bridge is NOT running"))
+            self._status(i18n("KritaPilot bridge is NOT running"))
 
     def _status(self, msg):
         _log(msg)

@@ -147,6 +147,6 @@ def _notify(message):
         win = Krita.instance().activeWindow()
         view = win.activeView() if win is not None else None
         if view is not None:
-            view.showFloatingMessage("Krita MCP: " + message, QIcon(), 10000, 1)
+            view.showFloatingMessage("KritaPilot: " + message, QIcon(), 10000, 1)
     except Exception:  # noqa: BLE001 - notifications are best effort
         pass

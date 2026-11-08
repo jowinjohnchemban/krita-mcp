@@ -414,7 +414,7 @@ class OpenAICompat(_Adapter):
         self.headers = {"Authorization": "Bearer " + self.key}
         if provider == "openrouter":  # app attribution, as OpenRouter suggests
             self.headers.update({"HTTP-Referer": "https://github.com/jowinjohnchemban/kritapilot",
-                                 "X-OpenRouter-Title": "Krita MCP"})
+                                 "X-OpenRouter-Title": "KritaPilot"})
 
     def prepare(self):
         """The user's model, else the newest suitable one listed now (OpenRouter: the account's default)."""

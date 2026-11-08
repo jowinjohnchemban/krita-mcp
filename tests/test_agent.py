@@ -257,7 +257,7 @@ def test_openrouter_browser_sign_in(home, monkeypatch):
         fid = flow["id"]
         q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(flow["url"]).query))
         assert flow["url"].startswith("https://openrouter.ai/auth?") and q["code_challenge_method"] == "S256"
-        assert q["callback_url"].startswith("http://localhost:") and q["key_label"] == "Krita MCP"
+        assert q["callback_url"].startswith("http://localhost:") and q["key_label"] == "KritaPilot"
         cb = q["callback_url"].replace("localhost", "127.0.0.1")
         code, page = _browser_hits(cb + "?code=good-code&state=forged")  # CSRF: wrong state is refused
         assert code == 400 and oauth.poll(fid)["status"] == "pending"
@@ -330,7 +330,7 @@ def test_openrouter_picks_a_tool_using_model_from_the_live_list(home, bridge, mo
         m.srv.shutdown()
     assert events[-1]["text"] == "hi" and body["model"] == "acme/vision-tools"  # tools + sees the canvas
     assert listed[:2] == ["acme/vision-tools", "acme/text-tools"]
-    assert headers["x-openrouter-title"] == "Krita MCP" and headers["authorization"] == "Bearer sk-or-v1-x"
+    assert headers["x-openrouter-title"] == "KritaPilot" and headers["authorization"] == "Bearer sk-or-v1-x"
 
 
 def test_chat_with_a_compatible_service(home, bridge, monkeypatch):

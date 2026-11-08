@@ -119,7 +119,7 @@ class BridgeServer:
         self._stop.clear()
         self._thread = threading.Thread(target=self._accept_loop, name="kritapilot-accept", daemon=True)
         self._thread.start()
-        self._log("Krita MCP bridge listening on %s:%d" % (self.host, self.port))
+        self._log("KritaPilot bridge listening on %s:%d" % (self.host, self.port))
         return self.port
 
     def stop(self):

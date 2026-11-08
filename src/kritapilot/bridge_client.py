@@ -23,7 +23,7 @@ def _token() -> str:
         return p.read_text().strip()
     except OSError:
         raise KritaError(
-            "No bridge token found at %s. Start Krita with the 'Krita MCP Bridge' plugin enabled "
+            "No bridge token found at %s. Start Krita with the 'KritaPilot' plugin enabled "
             "(it creates the token), or set KRITAPILOT_TOKEN." % p
         )
 
@@ -46,7 +46,7 @@ class BridgeClient:
         except (ConnectionRefusedError, socket.timeout, OSError) as e:
             raise KritaError(
                 "Cannot reach Krita on %s:%d (%s). Make sure Krita is running and the "
-                "'Krita MCP Bridge' plugin is enabled (Settings > Configure Krita > Python Plugin Manager)."
+                "'KritaPilot' plugin is enabled (Settings > Configure Krita > Python Plugin Manager)."
                 % (self.host, self.port, e)
             )
         if not line:

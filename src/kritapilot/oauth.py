@@ -91,7 +91,7 @@ class Flow:
         base = env("KRITAPILOT_OPENROUTER_AUTH_URL", "https://openrouter.ai/auth")
         return base + "?" + urllib.parse.urlencode({
             "callback_url": self.callback_url, "code_challenge": self.challenge, "code_challenge_method": "S256",
-            "state": self.state, "key_label": "Krita MCP"})
+            "state": self.state, "key_label": "KritaPilot"})
 
     def complete(self, q):
         if self.status != "pending":
