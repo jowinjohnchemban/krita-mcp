@@ -2,7 +2,7 @@
 "AI Chat" docker. This module runs the agent loop - the model gets the same tools the MCP server exposes
 and its tool calls are executed against Krita - and serves it to the docker over loopback HTTP.
 
-    krita-mcp --agent            # started automatically by the docker; 127.0.0.1:5680, bridge-token auth
+    kritapilot --agent            # started automatically by the docker; 127.0.0.1:5680, bridge-token auth
 
 Sign-in: API keys entered in the docker are stored in KRITA_MCP_HOME/agent_keys.json (user-only file);
 KRITA_MCP_<PROVIDER>_API_KEY environment variables work too.
@@ -413,7 +413,7 @@ class OpenAICompat(_Adapter):
             raise ProviderError("Sign in to %s first (Services... > Sign in)" % PROVIDERS[provider]["label"])
         self.headers = {"Authorization": "Bearer " + self.key}
         if provider == "openrouter":  # app attribution, as OpenRouter suggests
-            self.headers.update({"HTTP-Referer": "https://github.com/jowinjohnchemban/krita-mcp",
+            self.headers.update({"HTTP-Referer": "https://github.com/jowinjohnchemban/kritapilot",
                                  "X-OpenRouter-Title": "Krita MCP"})
 
     def prepare(self):
@@ -1054,7 +1054,7 @@ def _bridge_token():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "krita-mcp-agent"
+    server_version = "kritapilot-agent"
 
     def log_message(self, *a):
         pass
@@ -1221,7 +1221,7 @@ def serve(port=None, host="127.0.0.1", ready=None):
     import platform
     import sys
     trace("service", "=" * 20 + " assistant service started " + "=" * 20)
-    trace("service", "krita-mcp %s on %s:%s, Python %s, %s, %s" % (
+    trace("service", "KritaPilot %s on %s:%s, Python %s, %s, %s" % (
         __version__, host, srv.server_address[1], platform.python_version(), platform.platform(), sys.executable))
     try:
         st = status()

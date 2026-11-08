@@ -116,7 +116,7 @@ class BridgeServer:
         self.port = s.getsockname()[1]
         self._sock = s
         self._stop.clear()
-        self._thread = threading.Thread(target=self._accept_loop, name="krita-mcp-accept", daemon=True)
+        self._thread = threading.Thread(target=self._accept_loop, name="kritapilot-accept", daemon=True)
         self._thread.start()
         self._log("Krita MCP bridge listening on %s:%d" % (self.host, self.port))
         return self.port

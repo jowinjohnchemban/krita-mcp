@@ -92,7 +92,7 @@ def error_message(text):
 
 def request(method, url, body=None, headers=None, timeout=600, raw=False):
     """Returns (bytes, headers). body: dict -> JSON, bytes -> as is. Errors -> ProviderError."""
-    hdrs = {"User-Agent": "krita-mcp"}
+    hdrs = {"User-Agent": "kritapilot"}
     hdrs.update(headers or {})
     data = None
     if isinstance(body, (dict, list)):
@@ -188,7 +188,7 @@ def download(url, headers=None, timeout=600, allow_local=False):
             raise ProviderError("provider returned an unsupported URL")
         if not allow_local:
             _public(u.hostname)
-        req = urllib.request.Request(url, headers=dict({"User-Agent": "krita-mcp"}, **(headers or {})))
+        req = urllib.request.Request(url, headers=dict({"User-Agent": "kritapilot"}, **(headers or {})))
         try:
             with opener.open(req, timeout=timeout) as r:
                 data = r.read(MAX_DOWNLOAD + 1)

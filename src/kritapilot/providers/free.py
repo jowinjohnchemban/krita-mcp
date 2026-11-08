@@ -21,7 +21,7 @@ ANON_HORDE_KEY = "0000000000"
 
 def _client_agent():
     from .. import __version__
-    return "krita-mcp:%s:github.com/jowinjohnchemban/krita-mcp" % __version__
+    return "kritapilot:%s:github.com/jowinjohnchemban/kritapilot" % __version__
 
 
 # ====================================================================== Pollinations

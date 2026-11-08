@@ -8,10 +8,10 @@ on Krita 5.3.4; Krita 6 (PyQt6) is covered by unit tests only.
 ### From a release (recommended)
 
 1. Download `krita-mcp-bridge-<version>.zip` from the
-   [Releases page](https://github.com/jowinjohnchemban/krita-mcp/releases).
+   [Releases page](https://github.com/jowinjohnchemban/kritapilot/releases).
 2. In Krita, choose **Tools ▸ Scripts ▸ Import Python Plugin from File…** and select the zip.
 3. Restart Krita when it asks. Then make sure the plugin is ticked under **Settings ▸ Configure Krita ▸
-   Python Plugin Manager** (*Krita MCP Bridge*), and restart once more if you had to tick it.
+   Python Plugin Manager** (*KritaPilot*), and restart once more if you had to tick it.
 
 ### From a source checkout
 
@@ -34,20 +34,20 @@ with **Settings ▸ Dockers ▸ AI Bridge (MCP)** (it also opens by itself the f
 Pick one:
 
 ```bash
-pip install "git+https://github.com/jowinjohnchemban/krita-mcp"   # the latest source
-pip install krita_mcp-<version>-py3-none-any.whl       # the wheel from a GitHub release
-uvx --from git+https://github.com/jowinjohnchemban/krita-mcp krita-mcp   # run without installing
+pip install "git+https://github.com/jowinjohnchemban/kritapilot"   # the latest source
+pip install kritapilot-<version>-py3-none-any.whl       # the wheel from a GitHub release
+uvx --from git+https://github.com/jowinjohnchemban/kritapilot kritapilot   # run without installing
 pip install .                                          # from a source checkout
 ```
 
-This provides the `krita-mcp` command. Don't run `pip install krita-mcp`: that name on PyPI belongs to a
-different project. It talks MCP over stdio by default; `krita-mcp --help` lists
+This provides the `kritapilot` command. Don't run `pip install krita-mcp`: that name on PyPI belongs to a
+different project. It talks MCP over stdio by default; `kritapilot --help` lists
 the options.
 
 ## 3. Connect an AI client
 
 In the Krita panel, choose your client under **Connect an AI client**, then copy the snippet. If
-`krita-mcp` is not on your PATH, put the full path to the command in **Server command** first. For
+`kritapilot` is not on your PATH, put the full path to the command in **Server command** first. For
 per-client details see [Connecting AI clients](clients.md).
 
 Then try a prompt such as: *"Create a 1200×800 canvas, paint a sunset with mountains using real

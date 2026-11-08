@@ -29,7 +29,7 @@ def isolated_keys(monkeypatch, tmp_path_factory):
                  "KRITA_MCP_CHAT_MAX_STEPS"):
         monkeypatch.delenv(name, raising=False)
     # skills: only the built-in ones (never whatever is installed in the user's home)
-    from krita_mcp import skills
+    from kritapilot import skills
     monkeypatch.setenv("KRITA_MCP_SKILLS_DIRS", str(skills.BUNDLED))
 
 
@@ -61,7 +61,7 @@ def bridge(monkeypatch, tmp_path):
             return out
         return {"ok": method}
 
-    import krita_mcp.server as S
+    import kritapilot.server as S
 
     monkeypatch.setattr(S._client, "call", fake)
     return calls, state

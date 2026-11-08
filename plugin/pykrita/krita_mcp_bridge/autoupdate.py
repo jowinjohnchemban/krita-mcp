@@ -4,8 +4,6 @@ then notifies, or installs automatically, depending on the setting in the AI Bri
 Network work runs in threads; STATE is read by the panel's timer on the GUI thread.
 """
 import json
-import os
-import shlex
 import subprocess
 import threading
 import time
@@ -83,15 +81,14 @@ def _install(info):
 
 
 def _update_server():
-    """Upgrade the krita-mcp server too (stops the assistant service first so its files are not locked)."""
+    """Upgrade the KritaPilot server too (stops the assistant service first so its files are not locked)."""
     try:
         from . import chat
         try:
             chat._request("POST", "/shutdown", {}, timeout=3)
         except Exception:  # noqa: BLE001 - not running
             pass
-        cmd = extension.setting("client_command", "krita-mcp") or "krita-mcp"
-        args = shlex.split(cmd, posix=os.name != "nt") + ["--update"]
+        args = extension.server_args() + ["--update"]
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         r = subprocess.run(args, capture_output=True, text=True, timeout=180, creationflags=flags)
         out = json.loads((r.stdout or "{}").strip().splitlines()[-1] or "{}")
@@ -99,7 +96,7 @@ def _update_server():
             return " (Server: %s)" % out["error"]
         return " The server is updating in the background." if out.get("started") else ""
     except FileNotFoundError:
-        return " (The krita-mcp server is not installed here; only the plugin was updated.)"
+        return " (The KritaPilot server is not installed here; only the plugin was updated.)"
     except Exception as e:  # noqa: BLE001
         return " (Server not updated: %s)" % e
 

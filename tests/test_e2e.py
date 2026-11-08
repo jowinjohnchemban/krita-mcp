@@ -133,7 +133,7 @@ def run_mcp(env, coro_fn):
 
     async def main():
         params = StdioServerParameters(
-            command=sys.executable, args=["-m", "krita_mcp"],
+            command=sys.executable, args=["-m", "kritapilot"],
             env={**os.environ, **env, "PYTHONPATH": str(ROOT / "src")},
         )
         async with stdio_client(params) as (r, w):

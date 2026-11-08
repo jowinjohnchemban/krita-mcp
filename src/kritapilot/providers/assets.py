@@ -9,7 +9,7 @@ import urllib.parse
 from . import http
 from .http import ProviderError
 
-UA = {"User-Agent": "krita-mcp (https://github.com/jowinjohnchemban/krita-mcp)"}
+UA = {"User-Agent": "kritapilot (https://github.com/jowinjohnchemban/kritapilot)"}
 POLYHAVEN_URL = "https://api.polyhaven.com"
 OPENVERSE_URL = "https://api.openverse.org/v1"
 

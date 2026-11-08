@@ -30,7 +30,7 @@ def fetch_image(url: str) -> bytes:
         raise ValueError("only http(s) URLs are allowed")
     _check_host(u.hostname)
     opener = urllib.request.build_opener(_NoRedirect)
-    req = urllib.request.Request(url, headers={"User-Agent": "krita-mcp"})
+    req = urllib.request.Request(url, headers={"User-Agent": "kritapilot"})
     try:
         with opener.open(req, timeout=30) as r:
             ctype = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()

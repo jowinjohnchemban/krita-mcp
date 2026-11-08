@@ -25,7 +25,7 @@ plugin/pykrita/
     tracelog.py                one dated line per action, keys masked (same file as the server's)
     watchdog.py                main-thread heartbeat: a freeze writes every stack to hang.log
     autoupdate.py, updater.py  over-the-air updates from GitHub releases
-src/krita_mcp/
+src/kritapilot/
   server.py                    the MCP server: one @tool per command, batch, for_each_frame
   gen_tools.py                 generative tools: images, video, vision, assets, create_artwork, skills
   presets.py                   looks (styles) and camera moves for prompts

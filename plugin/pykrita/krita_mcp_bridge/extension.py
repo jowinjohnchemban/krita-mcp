@@ -15,7 +15,7 @@ from .util import i18n
 from .handlers import dispatch
 from .protocol import DEFAULT_PORT, BridgeServer
 
-SETTINGS = "krita_mcp"
+SETTINGS = "krita_mcp"  # Krita settings group: never rename (users would lose their settings)
 # A copy bundled with Krita itself sets both to False (scripts/krita_upstream.py): nothing listens and no
 # panel pops up until the user presses Start in Settings > Dockers > AI Bridge (MCP).
 AUTOSTART_DEFAULT = True
@@ -26,7 +26,7 @@ INSTANCE = None  # the running extension, for the docker
 
 
 def _log(msg):
-    print("[krita-mcp] " + msg, file=sys.stderr)
+    print("[KritaPilot] " + msg, file=sys.stderr)
     trace("bridge", msg)
 
 
@@ -45,6 +45,21 @@ def bridge_port():
         return ext.port()
     env = os.environ.get("KRITA_MCP_PORT")
     return int(env) if env else int(setting("port", DEFAULT_PORT))
+
+
+COMMAND = "kritapilot"
+OLD_COMMAND = "krita-mcp"  # what the server command was called before; servers still install it as an alias
+
+
+def server_args():
+    """The server command as a list: the one set in the AI Bridge panel, else `kritapilot` - or `krita-mcp` when
+    only a server from before the rename is installed (it has no `kritapilot` command yet)."""
+    import shlex
+    import shutil
+    cmd = (setting("client_command", "") or "").strip()
+    if not cmd or cmd in (COMMAND, OLD_COMMAND):
+        cmd = COMMAND if shutil.which(COMMAND) or not shutil.which(OLD_COMMAND) else OLD_COMMAND
+    return shlex.split(cmd, posix=os.name != "nt")
 
 
 def setting(key, default):
@@ -115,11 +130,11 @@ class KritaMcpBridge(Extension):
             _log("updater unavailable:\n" + traceback.format_exc())
 
     def createActions(self, window):
-        toggle = window.createAction("krita_mcp_toggle", i18n("Krita MCP Bridge: start / stop"), "tools/scripts")
+        toggle = window.createAction("krita_mcp_toggle", i18n("KritaPilot: start / stop the AI bridge"), "tools/scripts")
         toggle.triggered.connect(self.toggle)
-        info = window.createAction("krita_mcp_info", i18n("Krita MCP Bridge: show status"), "tools/scripts")
+        info = window.createAction("krita_mcp_info", i18n("KritaPilot: show status"), "tools/scripts")
         info.triggered.connect(self.show_info)
-        panel = window.createAction("krita_mcp_panel", i18n("Krita MCP Bridge: show panel"), "tools/scripts")
+        panel = window.createAction("krita_mcp_panel", i18n("KritaPilot: show panel"), "tools/scripts")
         panel.triggered.connect(lambda: self.show_panel())
         if INTRODUCE_PANEL and setting("panel_introduced", "false") != "true":  # open it once for new users
             QTimer.singleShot(3000, lambda: self.show_panel(first_time=True))

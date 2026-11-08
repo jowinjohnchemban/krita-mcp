@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn a Krita source checkout into a merge-request branch that bundles the Krita MCP Bridge plugin.
+"""Turn a Krita source checkout into a merge-request branch that bundles the KritaPilot plugin.
 
     git clone https://invent.kde.org/<you>/krita.git        # your fork on KDE Invent
     python scripts/krita_upstream.py --krita path/to/krita    # this script: copies + wires the plugin
@@ -102,7 +102,7 @@ def main():
     if args.commit:
         git(krita, "add", "plugins/python/CMakeLists.txt", "plugins/python/" + NAME)
         git(krita, "commit", "-q", "-m",
-            "Add Krita MCP Bridge Python plugin\n\nA local, token-protected bridge that lets AI assistants using "
+            "Add KritaPilot Python plugin\n\nA local, token-protected bridge that lets AI assistants using "
             "the Model Context Protocol\nwork in Krita. Off by default; started from Settings > Dockers > "
             "AI Bridge (MCP).")
         print("Committed on branch %s: %s" % (args.branch, git(krita, "log", "--oneline", "-1")))

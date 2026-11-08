@@ -1,6 +1,6 @@
 # The Krita panel: *AI Bridge (MCP)*
 
-Open it with **Settings ▸ Dockers ▸ AI Bridge (MCP)** or **Tools ▸ Scripts ▸ Krita MCP Bridge: show
+Open it with **Settings ▸ Dockers ▸ AI Bridge (MCP)** or **Tools ▸ Scripts ▸ KritaPilot: show
 panel**. It opens by itself the first time Krita starts with the plugin. Like all dockers, it is only
 shown while a document is open.
 
@@ -41,7 +41,7 @@ The mode is remembered between sessions.
 
 ## Connect an AI client
 
-Pick your client, set **Server command** if `krita-mcp` isn't on your PATH, and copy the generated
+Pick your client, set **Server command** if `kritapilot` isn't on your PATH, and copy the generated
 snippet. See [Connecting AI clients](clients.md).
 
 ## AI edits in this document
@@ -67,14 +67,14 @@ The plugin updates itself over the air from this project's GitHub releases.
    paths;
 3. swaps the plugin folder in one step (the old one comes back if anything fails); the new version is
    used after Krita restarts;
-4. also updates the `krita-mcp` server (`krita-mcp --update`): it stops the assistant service, downloads and
-   checks the server package, and upgrades it in the background once `krita-mcp` has exited (on Windows,
+4. also updates the `kritapilot` server (`kritapilot --update`): it stops the assistant service, downloads and
+   checks the server package, and upgrades it in the background once `kritapilot` has exited (on Windows,
    files of a running program are locked). If an AI app connected to Krita (Claude Desktop, for example)
-   still runs `krita-mcp`, the update waits up to 3 minutes for it to close; if it stays open, the update is
+   still runs `kritapilot`, the update waits up to 3 minutes for it to close; if it stays open, the update is
    skipped and the installed version is left as it was, so close the app and update again. Progress is
    written to `~/.krita-mcp/update.log`.
 
-From a terminal: `krita-mcp --check-update` and `krita-mcp --update`.
+From a terminal: `kritapilot --check-update` and `kritapilot --update`.
 
 A copy of the plugin bundled with Krita itself has no updater: it is updated with Krita.
 
@@ -85,7 +85,7 @@ refused by the access mode.
 
 ## Logs
 
-**Logs…** (under Activity, and in the AI Chat panel) opens a window that follows krita-mcp's logs live,
+**Logs…** (under Activity, and in the AI Chat panel) opens a window that follows KritaPilot's logs live,
 like `tail -f`. It stays open beside Krita while you work. Pick a log at the top:
 
 | Log | File in `~/.krita-mcp` | What it records |

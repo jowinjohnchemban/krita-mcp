@@ -3,13 +3,13 @@ import asyncio
 import os
 from pathlib import Path
 
-from krita_mcp import agent, tracelog
+from kritapilot import agent, tracelog
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_server_and_plugin_share_one_logger():
-    assert (ROOT / "src/krita_mcp/tracelog.py").read_bytes() == \
+    assert (ROOT / "src/kritapilot/tracelog.py").read_bytes() == \
         (ROOT / "plugin/pykrita/krita_mcp_bridge/tracelog.py").read_bytes()
 
 

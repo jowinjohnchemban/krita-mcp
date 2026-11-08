@@ -1,18 +1,20 @@
-# krita-mcp
+# KritaPilot: Krita MCP server and AI assistant
 
-[![CI](https://github.com/jowinjohnchemban/krita-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jowinjohnchemban/krita-mcp/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/jowinjohnchemban/krita-mcp?sort=semver)](https://github.com/jowinjohnchemban/krita-mcp/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/jowinjohnchemban/krita-mcp/total)](https://github.com/jowinjohnchemban/krita-mcp/releases)
+[![CI](https://github.com/jowinjohnchemban/kritapilot/actions/workflows/ci.yml/badge.svg)](https://github.com/jowinjohnchemban/kritapilot/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/jowinjohnchemban/kritapilot?sort=semver)](https://github.com/jowinjohnchemban/kritapilot/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/jowinjohnchemban/kritapilot/total)](https://github.com/jowinjohnchemban/kritapilot/releases)
 [![Tested on Krita 5.3.4](https://img.shields.io/badge/tested%20on-Krita%205.3.4-3daee9?logo=krita&logoColor=white)](#status)
-[![Python](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjowinjohnchemban%2Fkrita-mcp%2Fmain%2Fpyproject.toml&query=%24.project%5B'requires-python'%5D&label=python&logo=python&logoColor=white&color=3776ab)](pyproject.toml)
-[![MCP SDK](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjowinjohnchemban%2Fkrita-mcp%2Fmain%2Fpyproject.toml&query=%24.project.dependencies%5B0%5D&label=MCP%20SDK&color=6b4fbb)](https://modelcontextprotocol.io)
-[![License](https://img.shields.io/github/license/jowinjohnchemban/krita-mcp)](LICENSE)
+[![Python](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjowinjohnchemban%2Fkritapilot%2Fmain%2Fpyproject.toml&query=%24.project%5B'requires-python'%5D&label=python&logo=python&logoColor=white&color=3776ab)](pyproject.toml)
+[![MCP SDK](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjowinjohnchemban%2Fkritapilot%2Fmain%2Fpyproject.toml&query=%24.project.dependencies%5B0%5D&label=MCP%20SDK&color=6b4fbb)](https://modelcontextprotocol.io)
+[![License](https://img.shields.io/github/license/jowinjohnchemban/kritapilot)](LICENSE)
 
-**Let AI agents create and edit art, photos, animation and video inside a running [Krita](https://krita.org).**
-It works with any MCP client: Claude, ChatGPT, Gemini, Cursor, VS Code Copilot, Codex and others.
+**Let AI create and edit art, photos, animation and video inside a running [Krita](https://krita.org).**
+KritaPilot is a **Krita MCP server** for any MCP client - Claude, ChatGPT, Gemini, Cursor, VS Code Copilot,
+Codex and others - and an **AI Chat inside Krita** that works with 40+ AI providers, including free ones.
+(It was called *krita-mcp* until November 2026; that command still works.)
 
 ```
-AI client ──MCP (stdio or HTTP)──▶ krita-mcp ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
+AI client ──MCP (stdio or HTTP)──▶ KritaPilot ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
 ```
 
 <table>
@@ -29,7 +31,7 @@ and water, vector shapes and real brush strokes on separate layers, looked at it
 
 <img src="docs/images/ai-chat.png" alt="The AI Chat panel in Krita: the request, the tools the AI used, its answer and the tokens it spent" width="380" align="right">
 
-### Why krita-mcp
+### Why KritaPilot
 
 - **It works where artists work.** Everything happens in your open Krita document, on layers you can
   edit, with undo for every AI step. Nothing is a flat image you have to import.
@@ -105,7 +107,7 @@ Built-in **prompts** (`create`, `generative_inpaint`, `concept_variations`, `ret
 
 The plugin **updates itself** from this project's GitHub releases: it tells you when a new version is out
 (or installs it automatically, if you choose), checks every download against GitHub's published checksum,
-and updates the `krita-mcp` server too.
+and updates the KritaPilot server too.
 
 An **AI Bridge (MCP)** panel inside Krita shows the status and a live activity log. From it you can
 make the AI read-only or pause it, undo AI edits, set the workspace and token, and copy a ready-made
@@ -117,17 +119,17 @@ plugin records where in `~/.krita-mcp/hang.log`.
 ## Quick start
 
 1. **Plugin.** Download `krita-mcp-bridge-*.zip` from
-   [Releases](https://github.com/jowinjohnchemban/krita-mcp/releases). In Krita choose
+   [Releases](https://github.com/jowinjohnchemban/kritapilot/releases). In Krita choose
    *Tools ▸ Scripts ▸ Import Python Plugin from File…*, enable the plugin and restart Krita.
 2. **Server.** Install it from this repository (the `.whl` from the release works too):
    ```bash
-   pip install "git+https://github.com/jowinjohnchemban/krita-mcp"
+   pip install "git+https://github.com/jowinjohnchemban/kritapilot"
    ```
 3. **Use it**, either way:
    - **Inside Krita, free:** open *Settings ▸ Dockers ▸ AI Chat*, keep the provider on **Auto** and type.
      Free models need no account; sign in to any provider in **Services…** for faster, stronger results.
    - **From your AI app:** open *Settings ▸ Dockers ▸ AI Bridge (MCP)*, pick your client and copy the
-     snippet. For example, in Claude Code: `claude mcp add krita -- krita-mcp`
+     snippet. For example, in Claude Code: `claude mcp add krita -- kritapilot`
 4. Ask: *"Create a 1200×800 canvas, paint a sunset over mountains with real brushes, look at it and
    improve it."*
 
@@ -137,7 +139,7 @@ Details: [installation](docs/installation.md) · [clients](docs/clients.md) · [
 ## Command-line flags
 
 ```
-krita-mcp [--transport {stdio,http}] [--host HOST] [--port PORT] [--agent [--agent-port N]]
+kritapilot [--transport {stdio,http}] [--host HOST] [--port PORT] [--agent [--agent-port N]]
           [--check-update | --update] [--version]
 ```
 

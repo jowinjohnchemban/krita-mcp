@@ -1,7 +1,7 @@
 # Examples
 
 Scripts that drive Krita through the MCP server, exactly like an AI client (Claude Desktop, Claude Code, …)
-does: they start `krita-mcp` over stdio and only call MCP tools. Krita must be running with the plugin.
+does: they start `kritapilot` over stdio and only call MCP tools. Krita must be running with the plugin.
 
 | Script | What it makes |
 |---|---|

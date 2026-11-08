@@ -32,16 +32,16 @@ def github(monkeypatch):
     m = Mock()
     zdata, wheel = plugin_zip(), b"PK-fake-wheel"
     m.raw("GET", "/dl/krita-mcp-bridge-2099.1.1.zip", zdata, "application/zip")
-    m.raw("GET", "/dl/krita_mcp-2099.1.1-py3-none-any.whl", wheel, "application/octet-stream")
+    m.raw("GET", "/dl/kritapilot-2099.1.1-py3-none-any.whl", wheel, "application/octet-stream")
     m.json("GET", "/releases/latest", {
         "tag_name": "2099.01.01", "html_url": "https://github.com/x/releases/2099.01.01", "body": "notes",
         "assets": [
             {"name": "krita-mcp-bridge-2099.1.1.zip", "size": len(zdata),
              "digest": "sha256:" + hashlib.sha256(zdata).hexdigest(),
              "browser_download_url": m.url + "/dl/krita-mcp-bridge-2099.1.1.zip"},
-            {"name": "krita_mcp-2099.1.1-py3-none-any.whl", "size": len(wheel),
+            {"name": "kritapilot-2099.1.1-py3-none-any.whl", "size": len(wheel),
              "digest": "sha256:" + hashlib.sha256(wheel).hexdigest(),
-             "browser_download_url": m.url + "/dl/krita_mcp-2099.1.1-py3-none-any.whl"}]})
+             "browser_download_url": m.url + "/dl/kritapilot-2099.1.1-py3-none-any.whl"}]})
     monkeypatch.setenv("KRITA_MCP_UPDATE_API", m.url + "/releases/latest")
     yield m, zdata
     m.srv.shutdown()
@@ -87,7 +87,7 @@ def test_plugin_swap_is_atomic_and_rejects_unsafe_zips(tmp_path):
 
 
 def test_server_update_runs_pip_in_a_helper(github, monkeypatch, tmp_path):
-    from krita_mcp import updater
+    from kritapilot import updater
     monkeypatch.setenv("KRITA_MCP_HOME", str(tmp_path))
     launched = {}
 
@@ -98,20 +98,21 @@ def test_server_update_runs_pip_in_a_helper(github, monkeypatch, tmp_path):
     info = updater.check()
     assert info["latest"] == "2099.1.1" and info["newer"] is True
     out = updater.update()
-    args = launched["args"]
-    pip = args[args.index("-m"):]
+    cmds = json.loads(launched["args"][-1])  # the helper gets its commands as JSON
+    assert len(cmds) == 1  # no old-name package here: nothing to remove first
+    pip = cmds[0][cmds[0].index("-m"):]
     assert out["started"] and pip[:3] == ["-m", "pip", "install"] and "--upgrade" in pip
     wheel = Path(pip[-1].split("[")[0])
-    assert wheel.name == "krita_mcp-2099.1.1-py3-none-any.whl" and wheel.read_bytes() == b"PK-fake-wheel"
+    assert wheel.name == "kritapilot-2099.1.1-py3-none-any.whl" and wheel.read_bytes() == b"PK-fake-wheel"
     assert out["log"].endswith("update.log")
     monkeypatch.setattr(updater, "__version__", "2099.1.1")
     assert updater.update()["started"] is False  # already current: nothing is installed
 
 
 def test_server_update_refuses_a_tampered_wheel(github, monkeypatch):
-    from krita_mcp import updater
+    from kritapilot import updater
     m, _ = github
-    m.raw("GET", "/dl/krita_mcp-2099.1.1-py3-none-any.whl", b"tampered", "application/octet-stream")
+    m.raw("GET", "/dl/kritapilot-2099.1.1-py3-none-any.whl", b"tampered", "application/octet-stream")
     monkeypatch.setattr(updater.subprocess, "Popen", lambda *a, **k: pytest.fail("must not install"))
     with pytest.raises(updater.UpdateError, match="checksum"):
         updater.update()
@@ -119,19 +120,43 @@ def test_server_update_refuses_a_tampered_wheel(github, monkeypatch):
 
 
 def test_update_helper_never_breaks_a_locked_installation(tmp_path, monkeypatch):
-    """While another krita-mcp runs (files locked on Windows) the helper waits, then skips - never half-installs."""
+    """While another kritapilot runs (files locked on Windows) the helper waits, then skips - never half-installs."""
     import subprocess
     import sys
-    from krita_mcp import updater
+    from kritapilot import updater
     log = tmp_path / "update.log"
     fake_pip = [sys.executable, "-c", "open(r'%s', 'w').write('pip ran')" % (tmp_path / "pip_ran")]
 
-    def helper(still_running):  # the same helper, with "is krita-mcp running?" answered for the test (any OS)
+    def helper(still_running):  # the same helper, with "is kritapilot running?" answered for the test (any OS)
         stub = "def running():\n    return %s\n\n\ndef _real():" % still_running
         return updater.HELPER.replace("def running():", stub).replace("time.sleep(", "(lambda s: None)(")
+    cmds = json.dumps([fake_pip])
     script = helper(True)
-    code = subprocess.call([sys.executable, "-c", script, str(log), "2099.1.1"] + fake_pip)
+    code = subprocess.call([sys.executable, "-c", script, str(log), "2099.1.1", cmds])
     assert code == 2 and "skipped" in log.read_text() and not (tmp_path / "pip_ran").exists()
     script = helper(False)
-    code = subprocess.call([sys.executable, "-c", script, str(log), "2099.1.1"] + fake_pip)
+    code = subprocess.call([sys.executable, "-c", script, str(log), "2099.1.1", cmds])
     assert code == 0 and "result: updated" in log.read_text() and (tmp_path / "pip_ran").exists()
+
+
+def test_the_old_package_name_is_removed_before_installing(github, monkeypatch, tmp_path):
+    """Renamed from krita-mcp to kritapilot: an old-name install of this project is removed first (both would
+    own the same command), but a different project that happens to be called krita-mcp is never touched."""
+    from importlib import metadata
+    from kritapilot import updater
+    monkeypatch.setenv("KRITA_MCP_HOME", str(tmp_path))
+    launched = {}
+    monkeypatch.setattr(updater.subprocess, "Popen", lambda args, **kw: launched.update(args=args))
+
+    def meta_for(home):
+        class Meta(dict):
+            def get_all(self, key):
+                return ["Homepage, " + home] if key == "Project-URL" else None
+        return lambda name: Meta() if name == "krita-mcp" else (_ for _ in ()).throw(metadata.PackageNotFoundError())
+    monkeypatch.setattr(metadata, "metadata", meta_for("https://github.com/jowinjohnchemban/krita-mcp"))
+    updater.update()
+    cmds = json.loads(launched["args"][-1])
+    assert cmds[0][-1] == "krita-mcp" and "uninstall" in cmds[0] and "install" in cmds[1]
+    monkeypatch.setattr(metadata, "metadata", meta_for("https://github.com/someone-else/krita-mcp"))
+    updater.update()
+    assert len(json.loads(launched["args"][-1])) == 1  # someone else's krita-mcp: left alone

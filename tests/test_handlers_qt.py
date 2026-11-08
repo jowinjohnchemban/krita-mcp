@@ -546,12 +546,12 @@ def test_access_modes_and_activity(H):
 def test_docker_client_snippets(H):
     import importlib
     dock = importlib.import_module("krita_mcp_bridge.dock")
-    assert dock.client_snippet("Claude Code", "krita-mcp", 5679) == "claude mcp add krita -- krita-mcp"
-    assert "-e KRITA_MCP_PORT=6000" in dock.client_snippet("Claude Code", "krita-mcp", 6000)
-    js = dock.client_snippet("Claude Desktop", '"C:/My Tools/krita-mcp.exe" --x', 5679)
-    assert '"command": "C:/My Tools/krita-mcp.exe"' in js and '"--x"' in js
-    assert "[mcp_servers.krita]" in dock.client_snippet("Codex CLI", "uvx krita-mcp", 5679)
-    assert '"type": "stdio"' in dock.client_snippet("VS Code (Copilot)", "krita-mcp", 5679)
+    assert dock.client_snippet("Claude Code", "kritapilot", 5679) == "claude mcp add krita -- kritapilot"
+    assert "-e KRITA_MCP_PORT=6000" in dock.client_snippet("Claude Code", "kritapilot", 6000)
+    js = dock.client_snippet("Claude Desktop", '"C:/My Tools/kritapilot.exe" --x', 5679)
+    assert '"command": "C:/My Tools/kritapilot.exe"' in js and '"--x"' in js
+    assert "[mcp_servers.krita]" in dock.client_snippet("Codex CLI", "uvx kritapilot", 5679)
+    assert '"type": "stdio"' in dock.client_snippet("VS Code (Copilot)", "kritapilot", 5679)
 
 
 # ------------------------------------------------------------ generative round trips

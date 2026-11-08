@@ -242,7 +242,7 @@ class ComfyUI(Backend):
 
     def upload(self, png):
         body, ctype = http.multipart([("type", "input"), ("overwrite", "true")],
-                                     [("image", "krita-mcp-%s.png" % uuid.uuid4().hex[:12], png, "image/png")])
+                                     [("image", "kritapilot-%s.png" % uuid.uuid4().hex[:12], png, "image/png")])
         data, _ = http.request("POST", self.url + "/upload/image", body, {"Content-Type": ctype}, timeout=120)
         r = json.loads(data)
         return (r["subfolder"] + "/" + r["name"]) if r.get("subfolder") else r["name"]
@@ -315,7 +315,7 @@ class ComfyUI(Backend):
             "scheduler": job.scheduler, "denoise": job.strength_or_default(),
             "model": ["4", 0], "positive": pos, "negative": neg, "latent_image": latent}}
         g["8"] = {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}}
-        g["9"] = {"class_type": "SaveImage", "inputs": {"filename_prefix": "krita-mcp", "images": ["8", 0]}}
+        g["9"] = {"class_type": "SaveImage", "inputs": {"filename_prefix": "kritapilot", "images": ["8", 0]}}
         return g, seed
 
     def generate(self, job):
@@ -361,7 +361,7 @@ class ComfyUI(Backend):
         g = {"1": {"class_type": "LoadImage", "inputs": {"image": self.upload(png)}},
              "2": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": model}},
              "3": {"class_type": "ImageUpscaleWithModel", "inputs": {"upscale_model": ["2", 0], "image": ["1", 0]}},
-             "4": {"class_type": "SaveImage", "inputs": {"filename_prefix": "krita-mcp-up", "images": ["3", 0]}}}
+             "4": {"class_type": "SaveImage", "inputs": {"filename_prefix": "kritapilot-up", "images": ["3", 0]}}}
         return self.run(g)[0]
 
 

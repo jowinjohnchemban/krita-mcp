@@ -1,4 +1,4 @@
-"""The Logs window: follows krita-mcp's log files live (like `tail -f`), to trace what happened and why.
+"""The Logs window: follows KritaPilot's log files live (like `tail -f`), to trace what happened and why.
 
 It stays open beside Krita (not modal), shows the end of the chosen log and every new line as it is
 written, and can filter, copy and open the folder. The files are written by tracelog.py; keys are masked
@@ -46,7 +46,7 @@ def show(parent=None, which=None):
 class LogsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(i18n("krita-mcp logs"))
+        self.setWindowTitle(i18n("KritaPilot logs"))
         self.resize(900, 520)
         lay = QVBoxLayout(self)
         top = QHBoxLayout()

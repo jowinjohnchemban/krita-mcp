@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy the Krita MCP Bridge plugin into Krita's pykrita folder.
+"""Copy the KritaPilot plugin into Krita's pykrita folder.
 
 Usage:  python scripts/install_plugin.py [--dest /custom/pykrita]
 """
@@ -39,7 +39,7 @@ def main():
     shutil.copytree(SRC / "krita_mcp_bridge", target, ignore=shutil.ignore_patterns("__pycache__"))
     print("Installed to", dest)
     print("Next: restart Krita, then Settings > Configure Krita > Python Plugin Manager > enable "
-          "'Krita MCP Bridge', and restart Krita once more.")
+          "'KritaPilot', and restart Krita once more.")
 
 
 if __name__ == "__main__":

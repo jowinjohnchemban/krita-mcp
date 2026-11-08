@@ -12,8 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_providers import B64, Mock  # noqa: E402
 
-import krita_mcp.server as S  # noqa: E402
-from krita_mcp import gen_tools as G  # noqa: E402
+import kritapilot.server as S  # noqa: E402
+from kritapilot import gen_tools as G  # noqa: E402
 
 
 def test_tool_parameter_named_method_reaches_the_bridge(bridge):

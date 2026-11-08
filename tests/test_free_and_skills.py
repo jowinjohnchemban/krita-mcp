@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-from krita_mcp import agent, skills
-from krita_mcp.providers import ProviderError, compat, free, images, keys
+from kritapilot import agent, skills
+from kritapilot.providers import ProviderError, compat, free, images, keys
 from test_providers import B64, Mock
 
 PNG = base64.b64decode(B64)
@@ -209,7 +209,7 @@ def test_ai_horde_queue_round_trip(home, monkeypatch):
     sent = json.loads([c for c in m.calls if c[0] == "POST"][0][3])
     headers = [c for c in m.calls if c[0] == "POST"][0][2]
     assert sent["models"] == ["popular"] and sent["prompt"] == "a castle ### blurry"
-    assert headers["apikey"] == free.ANON_HORDE_KEY and headers["client-agent"].startswith("krita-mcp:")
+    assert headers["apikey"] == free.ANON_HORDE_KEY and headers["client-agent"].startswith("kritapilot:")
     assert imgs == [PNG] and meta["model"] == "popular"
 
 
@@ -272,7 +272,7 @@ def test_default_skill_folders(monkeypatch):
 
 def test_skill_tools_for_mcp_clients():
     import asyncio
-    from krita_mcp.server import TOOLS
+    from kritapilot.server import TOOLS
     out = asyncio.run(TOOLS["find_skills"]("hand painted oil landscape"))
     assert out["skills"][0]["name"] == "paint-by-hand"
     got = asyncio.run(TOOLS["use_skill"]("paint-by-hand"))
@@ -282,7 +282,7 @@ def test_skill_tools_for_mcp_clients():
 # ---------------------------------------------------------------- variations cost money in the cloud
 def test_create_artwork_makes_one_cloud_image_but_four_local(bridge, monkeypatch):
     import asyncio
-    from krita_mcp import gen_tools
+    from kritapilot import gen_tools
 
     class Be:
         name, kind, native_control, mask_format, multiple, sizes, default_side = "x", "cloud", False, "gray", 8, None, 512
@@ -301,7 +301,7 @@ def test_create_artwork_makes_one_cloud_image_but_four_local(bridge, monkeypatch
 
 def _backends(monkeypatch, *names_ok):
     """Fake image services in order; (name, True) works, (name, False) rejects the saved key."""
-    from krita_mcp import gen_tools
+    from kritapilot import gen_tools
     made, used = {}, []
     for n, ok in names_ok:
         class Be:
@@ -335,7 +335,7 @@ def _backends(monkeypatch, *names_ok):
 
 def test_a_rejected_key_falls_through_to_the_next_image_service(bridge, monkeypatch):
     import asyncio
-    from krita_mcp import gen_tools
+    from kritapilot import gen_tools
     used = _backends(monkeypatch, ("gemini", False), ("pollinations", True))
     out = asyncio.run(gen_tools.create_artwork("sunrise over green mountains", approach="generate"))
     assert used == ["gemini", "pollinations"]
@@ -344,7 +344,7 @@ def test_a_rejected_key_falls_through_to_the_next_image_service(bridge, monkeypa
 
 def test_a_named_image_service_is_never_swapped(bridge, monkeypatch):
     import asyncio
-    from krita_mcp import gen_tools
+    from kritapilot import gen_tools
     used = _backends(monkeypatch, ("gemini", False), ("pollinations", True))
     with pytest.raises(gen_tools.ToolError, match="rejected"):
         asyncio.run(gen_tools.generate_image("a lake", backend="gemini"))
@@ -353,7 +353,7 @@ def test_a_named_image_service_is_never_swapped(bridge, monkeypatch):
 
 def test_auto_artwork_paints_by_hand_when_no_service_accepts_the_account(bridge, monkeypatch):
     import asyncio
-    from krita_mcp import gen_tools
+    from kritapilot import gen_tools
     _backends(monkeypatch, ("gemini", False))
     out = asyncio.run(gen_tools.create_artwork("a photo of sunrise over mountains"))
     assert out[0]["approach"] == "paint" and "Gemini" in out[0]["why"] and out[0]["layers"]
@@ -362,7 +362,7 @@ def test_auto_artwork_paints_by_hand_when_no_service_accepts_the_account(bridge,
 
 
 def test_account_problems_are_told_apart_from_bad_requests():
-    from krita_mcp.providers import images
+    from kritapilot.providers import images
     for e in ("HTTP 401 unauthorized", "Google rejected the Gemini API key", "HTTP 402: insufficient credits",
               "HTTP 429 rate limit"):
         assert images.unusable(e), e
@@ -371,7 +371,7 @@ def test_account_problems_are_told_apart_from_bad_requests():
 
 def test_every_built_in_skill_is_valid_and_names_only_real_tools():
     import re
-    from krita_mcp.server import TOOLS
+    from kritapilot.server import TOOLS
     found = skills.all_skills()
     assert len(found) >= 30 and len({s["name"] for s in found}) == len(found)
     for s in found:
@@ -426,7 +426,7 @@ def test_keyless_gateways_chat_without_any_key(home, bridge, monkeypatch):
 
 
 def test_open_instruct_models_count_as_chat_models():
-    from krita_mcp.providers import catalog
+    from kritapilot.providers import catalog
     ids = ["Meta-Llama-3_3-70B-Instruct", "gpt-3.5-turbo-instruct", "Qwen3Guard-Gen-8B", "bge-m3",
            "stable-diffusion-xl-base-v10", "whisper-large-v3", "gpt-oss-120b"]
     kept = [i for i in ids if not catalog.NOT_CHAT.search(i)]
@@ -435,7 +435,7 @@ def test_open_instruct_models_count_as_chat_models():
 
 def test_no_working_image_service_points_to_the_free_ones(bridge, monkeypatch):
     import asyncio
-    from krita_mcp import gen_tools
+    from kritapilot import gen_tools
     _backends(monkeypatch, ("gemini", False))
     with pytest.raises(gen_tools.ToolError, match="turn on Pollinations or AI Horde in AI Chat > Services"):
         asyncio.run(gen_tools.generate_image("a lake"))
@@ -445,14 +445,14 @@ def test_no_working_image_service_points_to_the_free_ones(bridge, monkeypatch):
 def test_a_made_up_image_service_falls_back_to_the_automatic_choice(bridge, monkeypatch):
     """Models invent services ("stability" with no key): use what is set up instead of failing."""
     import asyncio
-    from krita_mcp import gen_tools
+    from kritapilot import gen_tools
     used = _backends(monkeypatch, ("pollinations", True))
     out = asyncio.run(gen_tools.generate_image("a lake", backend="stability"))
     assert used == ["pollinations"] and "stability is not set up" in out[0]["note_backend"]
 
 
 def test_model_calls_give_up_after_the_chat_timeout(monkeypatch):
-    from krita_mcp import agent
+    from kritapilot import agent
     assert agent.chat_timeout() == 180
     monkeypatch.setenv("KRITA_MCP_CHAT_TIMEOUT", "60")
     assert agent.chat_timeout() == 60
@@ -500,7 +500,7 @@ def test_ai_horde_variations_get_different_seeds(home, monkeypatch):
 
 def test_ai_horde_makes_at_most_two_variations(bridge, monkeypatch):
     import asyncio
-    from krita_mcp import gen_tools
+    from kritapilot import gen_tools
     seen = []
 
     class Horde:

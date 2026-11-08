@@ -80,7 +80,7 @@ stroke, and never repeat a call that failed.
 
 ## Skills
 
-Skills are step-by-step know-how for kinds of work, each a folder with a `SKILL.md`. krita-mcp ships 39:
+Skills are step-by-step know-how for kinds of work, each a folder with a `SKILL.md`. KritaPilot ships 39:
 
 | Area | Skills |
 |---|---|
@@ -99,7 +99,7 @@ Skills are step-by-step know-how for kinds of work, each a folder with a `SKILL.
   audits and the like) are not used: they don't fit painting. To use a folder of skills anyway, list it in
   `KRITA_MCP_SKILLS_DIRS`, which replaces the list of folders.
 - AI apps connected through MCP get the same skills with the `find_skills` and `use_skill` tools.
-- Skills are read as text. krita-mcp never runs scripts that a skill folder contains, and it only reads
+- Skills are read as text. KritaPilot never runs scripts that a skill folder contains, and it only reads
   files inside the skill's own folder.
 
 ## Two ways to sign in
@@ -111,12 +111,12 @@ Skills are step-by-step know-how for kinds of work, each a folder with a `SKILL.
 - **API key**, for every other service (Google, Anthropic, OpenAI, Stability, Replicate, fal, HeyGen).
   These providers do not offer browser sign-in to third-party apps. Click **Get a key in the browser**: the
   provider's key page opens, and when you copy the key there, the dialog recognises it from the clipboard
-  and fills it in. You can also paste it by hand. Before saving, krita-mcp checks the key with the provider
+  and fills it in. You can also paste it by hand. Before saving, KritaPilot checks the key with the provider
   (where the provider allows a free check), so a mistyped key is reported instead of stored.
 
 ## Services: sign in once
 
-**Services…** lists every AI service krita-mcp can use, grouped (chat models; images, video and more; on this
+**Services…** lists every AI service KritaPilot can use, grouped (chat models; images, video and more; on this
 computer), with a search box (try `free`, `images`, `local`). Services you can use right now come first,
 marked ✓, and each row says where it stands. Each one is set up the way it actually works - not everything
 has an API key:
@@ -167,12 +167,12 @@ can paste into a bug report. See [the Krita panel](krita-panel.md#logs) for the 
 ## How it works
 
 ```
-AI Chat docker ──127.0.0.1:5680 + token──▶ krita-mcp --agent ──model API──▶ Gemini / Claude / GPT / local
+AI Chat docker ──127.0.0.1:5680 + token──▶ kritapilot --agent ──model API──▶ Gemini / Claude / GPT / local
        ▲                                         │ tool calls
        └───────────── your canvas ◀── Krita plugin bridge (127.0.0.1:5679 + token) ◀┘
 ```
 
-- The docker starts the assistant service (`krita-mcp --agent`) when the AI Chat panel is shown, so the
+- The docker starts the assistant service (`kritapilot --agent`) when the AI Chat panel is shown, so the
   provider menu can list what you have set up. It uses the server command set in the *AI Bridge (MCP)*
   panel, so that command must be installed (see [installation](installation.md#2-install-the-mcp-server)). A hidden panel starts nothing.
 - The service listens on loopback only and requires the same token as the bridge.

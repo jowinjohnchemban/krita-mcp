@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from krita_mcp.bridge_client import BridgeClient  # noqa: E402
+from kritapilot.bridge_client import BridgeClient  # noqa: E402
 
 W, H = 1200, 800
 HORIZON = 500

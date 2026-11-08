@@ -2,7 +2,7 @@
 
 Krita bundles Python plugins from `plugins/python/` in its source tree. Each plugin is installed by an
 `install_pykrita_plugin(<name>)` line in `plugins/python/CMakeLists.txt`. `scripts/krita_upstream.py`
-prepares a Krita checkout so the Krita MCP Bridge is bundled the same way. Whether it is accepted is
+prepares a Krita checkout so the KritaPilot plugin is bundled the same way. Whether it is accepted is
 up to the Krita maintainers. This page covers how to propose it and what they are likely to ask.
 
 ## Steps
@@ -33,7 +33,7 @@ up to the Krita maintainers. This page covers how to propose it and what they ar
 
 ## Suggested merge request description
 
-> **Add Krita MCP Bridge: let AI assistants work in Krita through the Model Context Protocol**
+> **Add KritaPilot: let AI assistants work in Krita through the Model Context Protocol**
 >
 > This adds an optional Python plugin that exposes Krita's scripting API to AI assistants that speak the
 > [Model Context Protocol](https://modelcontextprotocol.io) (Claude, ChatGPT, Gemini, Cursor, VS Code,
@@ -43,7 +43,7 @@ up to the Krita maintainers. This page covers how to propose it and what they ar
 >
 > **What runs inside Krita:** only this plugin. It is a loopback-only (127.0.0.1) JSON bridge that
 > requires a random token stored in the user's home folder. The AI client and any image/video model
-> services run *outside* Krita in a separate program, `krita-mcp`. The plugin itself makes no network
+> services run *outside* Krita in a separate program, `kritapilot`. The plugin itself makes no network
 > requests.
 >
 > **Off by default.** When bundled, the bridge does not start until the user presses *Start* in its
@@ -59,7 +59,7 @@ up to the Krita maintainers. This page covers how to propose it and what they ar
 >
 > **Tests:** unit tests run with PyQt5 and PyQt6 against a fake `krita` module. There is also an
 > end-to-end smoke test with 56 steps, last run against Krita 5.3.4 on Windows. Upstream project:
-> https://github.com/jowinjohnchemban/krita-mcp (MIT; Krita's `LICENSES/` already contains MIT).
+> https://github.com/jowinjohnchemban/kritapilot (MIT; Krita's `LICENSES/` already contains MIT).
 
 ## What reviewers are likely to ask
 

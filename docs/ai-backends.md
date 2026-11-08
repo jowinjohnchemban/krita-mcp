@@ -1,6 +1,6 @@
 # Connecting AI services
 
-krita-mcp works with two kinds of AI:
+KritaPilot works with two kinds of AI:
 
 1. **The agent that drives Krita.** This is any MCP client: Claude (Desktop, Code, claude.ai), ChatGPT,
    Gemini CLI, Cursor, VS Code Copilot, Codex, Windsurf, LM Studio, and others. See
@@ -22,11 +22,11 @@ ComfyUI workflows you have saved.
 
 The easiest way to connect a service is to sign in inside Krita: *AI Chat ▸ Services…* (see
 [AI Chat](ai-chat.md)). Keys saved there serve both the chat docker and MCP clients. Alternatively, the
-settings below are **environment variables for the MCP server** (`krita-mcp`). Most MCP clients
+settings below are **environment variables for the MCP server** (`kritapilot`). Most MCP clients
 let you set them in the server entry. For example, in Claude Desktop's config:
 
 ```json
-{ "mcpServers": { "krita": { "command": "krita-mcp",
+{ "mcpServers": { "krita": { "command": "kritapilot",
     "env": { "KRITA_MCP_COMFYUI_URL": "http://127.0.0.1:8188", "KRITA_MCP_OPENAI_API_KEY": "sk-..." } } } }
 ```
 
@@ -103,7 +103,7 @@ If you use `--api-auth`, also set `KRITA_MCP_A1111_AUTH=user:password`.
 Set `KRITA_MCP_GEMINI_API_KEY`. The image model is set by `KRITA_MCP_GEMINI_IMAGE_MODEL` (default
 the newest Gemini image model your key can use, listed live).
 
-Gemini edits by instruction and has no mask input. krita-mcp sends the mask as a second image, then cuts
+Gemini edits by instruction and has no mask input. KritaPilot sends the mask as a second image, then cuts
 the result back to your selection, so nothing outside the selection changes.
 
 ### Stability AI
@@ -123,7 +123,7 @@ Set `KRITA_MCP_STABILITY_API_KEY`.
 Set `KRITA_MCP_REPLICATE_API_TOKEN`.
 
 - Pass any model as `model="owner/name"` or `"owner/name:version"`.
-- krita-mcp reads the model's input schema and maps the prompt, image, mask, size or aspect ratio, seed,
+- KritaPilot reads the model's input schema and maps the prompt, image, mask, size or aspect ratio, seed,
   output count, strength, steps and guidance onto the input names that model uses. `extra` adds or
   overrides inputs.
 - Without `model`, a model is found in Replicate's own curated collections (text-to-image, image editing,
@@ -136,7 +136,7 @@ Set `KRITA_MCP_FAL_KEY`.
 
 - Pass any endpoint as `model="fal-ai/..."`. Requests go through fal's queue, so long jobs are fine.
 - fal.ai has no API for listing models, so choose the endpoint with `model` for every task (browse
-  [fal.ai/models](https://fal.ai/models)). krita-mcp never guesses a fal model name.
+  [fal.ai/models](https://fal.ai/models)). KritaPilot never guesses a fal model name.
 
 ### Pollinations (free, no account)
 
@@ -243,7 +243,7 @@ xAI and Together image generation is text-to-image; use another backend to edit 
 
 ## Models are never hard-coded
 
-When you do not name a model, krita-mcp asks the provider **at that moment** which models your account can
+When you do not name a model, KritaPilot asks the provider **at that moment** which models your account can
 use, and picks the newest suitable one. Nothing is cached, so a newly released model is used as soon as your
 account has it, and a retired model is never requested again:
 

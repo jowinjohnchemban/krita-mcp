@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from krita_mcp.bridge_client import BridgeClient, KritaError  # noqa: E402
+from kritapilot.bridge_client import BridgeClient, KritaError  # noqa: E402
 
 client = BridgeClient(timeout=60)
 RESULTS = []
@@ -108,7 +108,7 @@ def draw_shapes():
         {"type": "bezier", "points": [[150, 160], [180, 100], [220, 220], [260, 140]], "color": "#ffcc00",
          "stroke_width": 5},
         {"type": "polygon", "points": [[300, 120], [350, 200], [250, 200]], "fill": "#00ffff", "opacity": 0.5},
-        {"type": "text", "x": 10, "y": 280, "text": "krita-mcp", "size": 36, "bold": True, "color": "#ffffff"},
+        {"type": "text", "x": 10, "y": 280, "text": "kritapilot", "size": 36, "bold": True, "color": "#ffffff"},
     ]
     r = call("draw.shapes", shapes=shapes, layer=STATE["shapes"])
     expect(r["drawn"] == len(shapes), r)
@@ -739,7 +739,7 @@ def user_controls():
     v = call("view.control", zoom=2.0, rotation=15, mirror=True)
     expect(abs(abs(v["rotation"]) - 15) < 0.5 and v["mirror"] is True, v)  # mirrored views report -angle
     call("view.control", reset=True, fit=True)
-    call("user.notify", message="krita-mcp smoke test", seconds=2)
+    call("user.notify", message="KritaPilot smoke test", seconds=2)
     call("document.close")
     return {"view": v}
 

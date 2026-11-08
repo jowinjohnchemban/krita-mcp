@@ -1,8 +1,8 @@
-# krita-mcp documentation
+# KritaPilot documentation (Krita MCP server and AI Chat)
 
-krita-mcp lets AI agents work inside a running [Krita](https://krita.org). It covers painting, photo
-editing, vector art, animation and video, through the
-[Model Context Protocol](https://modelcontextprotocol.io).
+KritaPilot lets AI work inside a running [Krita](https://krita.org): AI agents through the
+[Model Context Protocol](https://modelcontextprotocol.io) (MCP), and an AI Chat inside Krita itself. It covers
+painting, photo editing, vector art, animation and video.
 
 | Guide | What it covers |
 |---|---|
@@ -20,7 +20,7 @@ editing, vector art, animation and video, through the
 ## How it fits together
 
 ```
-AI client ──MCP (stdio or HTTP)──▶ krita-mcp server ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
+AI client ──MCP (stdio or HTTP)──▶ KritaPilot server ──127.0.0.1 + token──▶ Krita plugin ──▶ your canvas
 ```
 
 There are two parts:
@@ -28,5 +28,5 @@ There are two parts:
 - **The Krita plugin** (`plugin/pykrita/krita_mcp_bridge`) runs inside Krita. It listens on
   `127.0.0.1` only, checks a secret token on every request, and runs commands on Krita's GUI thread.
   It also adds the *AI Bridge (MCP)* panel.
-- **The MCP server** (`src/krita_mcp`) is a normal Python program that your AI client starts. It turns
+- **The MCP server** (`src/kritapilot`) is a normal Python program that your AI client starts. It turns
   MCP tool calls into commands for the plugin.

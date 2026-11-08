@@ -771,7 +771,7 @@ class _BearerAuth:
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="krita-mcp", description=__doc__)
+    ap = argparse.ArgumentParser(prog="kritapilot", description=__doc__)
     ap.add_argument("--transport", choices=["stdio", "http"], default="stdio",
                     help="stdio for local clients (default); http for clients that need a URL")
     ap.add_argument("--host", default="127.0.0.1",
@@ -784,7 +784,7 @@ def main(argv=None):
     ap.add_argument("--check-update", action="store_true", help="check GitHub for a newer release (JSON)")
     ap.add_argument("--update", action="store_true",
                     help="download, verify and install the newest release of this server from GitHub")
-    ap.add_argument("--version", action="version", version="krita-mcp " + __version__)
+    ap.add_argument("--version", action="version", version="KritaPilot " + __version__)
     args = ap.parse_args(argv)
 
     if args.check_update or args.update:
@@ -793,7 +793,7 @@ def main(argv=None):
 
     if args.agent:
         from . import agent
-        print("krita-mcp assistant on 127.0.0.1:%d" % (args.agent_port or agent.DEFAULT_PORT), file=sys.stderr)
+        print("KritaPilot assistant on 127.0.0.1:%d" % (args.agent_port or agent.DEFAULT_PORT), file=sys.stderr)
         agent.serve(args.agent_port)
         return
 
@@ -806,7 +806,7 @@ def main(argv=None):
     token = os.environ.get("KRITA_MCP_HTTP_TOKEN") or secrets.token_urlsafe(32)
     if args.host not in ("127.0.0.1", "::1", "localhost") and not os.environ.get("KRITA_MCP_HTTP_TOKEN"):
         sys.exit("Refusing to bind a non-loopback address without KRITA_MCP_HTTP_TOKEN set.")
-    print("krita-mcp HTTP endpoint: http://%s:%d/mcp\nAuthorization: Bearer %s" % (args.host, args.port, token),
+    print("KritaPilot HTTP endpoint: http://%s:%d/mcp\nAuthorization: Bearer %s" % (args.host, args.port, token),
           file=sys.stderr)
     uvicorn.run(_BearerAuth(mcp.streamable_http_app(), token), host=args.host, port=args.port, log_level="warning")
 

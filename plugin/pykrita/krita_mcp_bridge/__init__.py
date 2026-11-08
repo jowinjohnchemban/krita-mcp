@@ -1,4 +1,4 @@
-"""Krita MCP Bridge plugin entry point.
+"""KritaPilot plugin entry point.
 
 Registers the extension only when running inside Krita, so the Qt-free
 modules (protocol, util) stay importable for tests.

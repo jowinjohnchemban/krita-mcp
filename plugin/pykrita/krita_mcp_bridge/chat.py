@@ -1,6 +1,6 @@
 """The "AI Chat" docker: sign in to an AI (Gemini, Claude, GPT, or a local model) and ask it to work in Krita.
 
-Settings > Dockers > AI Chat. The conversation runs in the krita-mcp assistant service (`krita-mcp --agent`,
+Settings > Dockers > AI Chat. The conversation runs in the KritaPilot assistant service (`kritapilot --agent`,
 started automatically on 127.0.0.1:5680); its tool calls come back through this plugin's bridge. All network
 calls happen in worker threads: the bridge executes the assistant's tools on Krita's GUI thread, so the GUI
 thread must never wait for the assistant.
@@ -10,7 +10,6 @@ import json
 import re
 import os
 import queue
-import shlex
 import subprocess
 import threading
 import time
@@ -200,7 +199,7 @@ def _send_request(method, path, body, timeout):
 
 
 def _ensure_service():
-    """Make sure the current `krita-mcp --agent` is running; start it with the panel's server command if needed.
+    """Make sure the current `kritapilot --agent` is running; start it with the panel's server command if needed.
     A running service of another version (left over from before an update) is asked to stop and replaced."""
     try:
         health = _request("GET", "/health", timeout=2)
@@ -222,8 +221,8 @@ def _ensure_service():
         pass
     proc = _SERVICE["proc"]
     if proc is None or proc.poll() is not None:
-        cmd = extension.setting("client_command", "krita-mcp") or "krita-mcp"
-        args = shlex.split(cmd, posix=os.name != "nt") + ["--agent", "--agent-port", str(AGENT_PORT)]
+        args = extension.server_args() + ["--agent", "--agent-port", str(AGENT_PORT)]
+        cmd = args[0]
         env = dict(os.environ, KRITA_MCP_PORT=str(extension.bridge_port()), KRITA_MCP_HOME=str(protocol.config_dir()))
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         trace("service", "starting the assistant service: %s" % " ".join(args))
@@ -232,7 +231,7 @@ def _ensure_service():
                                                 stderr=subprocess.DEVNULL, creationflags=flags)
         except OSError as e:
             raise RuntimeError("could not start %r (%s). Install the server: pip install "
-                               "\"git+https://github.com/jowinjohnchemban/krita-mcp\" (not 'pip install krita-mcp': "
+                               "\"git+https://github.com/jowinjohnchemban/kritapilot\" (not 'pip install krita-mcp': "
                                "that is a different project), or set the server command in the AI Bridge (MCP) "
                                "panel." % (cmd, e)) from None
     for _ in range(40):
@@ -243,7 +242,7 @@ def _ensure_service():
             if _SERVICE["proc"].poll() is not None:
                 break
     trace("service", "✗ the assistant service did not start (exit code %s)" % _SERVICE["proc"].poll())
-    raise RuntimeError("the assistant service did not start (run `krita-mcp --agent` in a terminal to see why)")
+    raise RuntimeError("the assistant service did not start (run `kritapilot --agent` in a terminal to see why)")
 
 
 def _plugin_version():

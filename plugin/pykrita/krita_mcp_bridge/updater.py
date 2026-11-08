@@ -2,7 +2,7 @@
 
 The plugin checks github.com/<REPO>/releases/latest, and when a newer release exists can download its plugin
 zip, verify it (SHA-256 published by GitHub, safe paths only) and swap it in atomically. The new version is
-loaded when Krita restarts. The MCP server is updated with `krita-mcp --update`.
+loaded when Krita restarts. The server is updated with `kritapilot --update`.
 """
 import hashlib
 import io
@@ -15,12 +15,12 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-REPO = "jowinjohnchemban/krita-mcp"
+REPO = "jowinjohnchemban/kritapilot"
 MAX_ZIP = 50 * 1024 * 1024
 TRUSTED_HOSTS = ("github.com", "api.github.com", "objects.githubusercontent.com",
                  "release-assets.githubusercontent.com", "github-releases.githubusercontent.com")
 PACKAGE = "krita_mcp_bridge"
-UA = {"User-Agent": "krita-mcp-updater", "Accept": "application/vnd.github+json"}
+UA = {"User-Agent": "kritapilot-updater", "Accept": "application/vnd.github+json"}
 
 
 class UpdateError(RuntimeError):
@@ -81,7 +81,7 @@ def latest():
         if m:
             version = m.group(1)
             assets["plugin"] = a
-        elif name.endswith(".whl") and name.startswith("krita_mcp-"):
+        elif name.endswith(".whl") and name.startswith(("kritapilot-", "krita_mcp-")):  # new and old name
             assets["server"] = a
     if "plugin" not in assets:
         raise UpdateError("the latest release has no plugin zip")
@@ -109,7 +109,7 @@ def _check_zip(zf):
         if not (n == PACKAGE + ".desktop" or n.startswith(PACKAGE + "/")):
             raise UpdateError("unexpected file in the update: %s" % n)
     if PACKAGE + "/__init__.py" not in names or PACKAGE + ".desktop" not in names:
-        raise UpdateError("the update is not a Krita MCP Bridge plugin")
+        raise UpdateError("the update is not a KritaPilot plugin")
 
 
 def install_plugin(data, pykrita=None):

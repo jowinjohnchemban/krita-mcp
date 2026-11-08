@@ -6,7 +6,7 @@ Files live in KRITA_MCP_HOME/logs (default ~/.krita-mcp/logs):
 Each file is kept under MAX_BYTES (the older half moves to NAME.1). Keys never reach a log: anything that
 looks like a key, token or password is masked before writing, and long data (images) is cut.
 
-The same file is shipped in the server package (krita_mcp/tracelog.py) and the plugin
+The same file is shipped in the server package (kritapilot/tracelog.py) and the plugin
 (krita_mcp_bridge/tracelog.py); a test keeps them identical.
 """
 import datetime

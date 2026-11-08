@@ -154,7 +154,7 @@ def verify(provider, key):
             try:
                 import anthropic
             except ImportError:
-                return None, "install krita-mcp[anthropic] to check Claude keys"
+                return None, "pip install anthropic to check Claude keys"
             try:
                 anthropic.Anthropic(api_key=key).models.list(limit=1)
             except anthropic.AuthenticationError:

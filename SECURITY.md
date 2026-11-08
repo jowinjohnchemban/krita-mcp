@@ -3,19 +3,19 @@
 ## Supported versions
 
 Only the latest release is supported. The plugin and the server update themselves, so please check that
-you are on the newest version (**AI Bridge (MCP) ▸ Updates ▸ Check now**, or `krita-mcp --check-update`)
+you are on the newest version (**AI Bridge (MCP) ▸ Updates ▸ Check now**, or `kritapilot --check-update`)
 before reporting.
 
 ## Reporting a vulnerability
 
 Please report it privately through GitHub:
-[**Report a vulnerability**](https://github.com/jowinjohnchemban/krita-mcp/security/advisories/new).
+[**Report a vulnerability**](https://github.com/jowinjohnchemban/kritapilot/security/advisories/new).
 Don't open a public issue. Include what an attacker can do, the steps to reproduce it, and the versions.
 You'll get an answer within a few days, and credit in the release notes if you want it.
 
 ## What is in scope
 
-krita-mcp lets software control a creative application, so these matter most:
+KritaPilot lets software control a creative application, so these matter most:
 
 - **The bridge.** It listens on loopback only and every request needs the token in
   `~/.krita-mcp/token`. Anything that reaches Krita without the token, or from another machine, is a bug.

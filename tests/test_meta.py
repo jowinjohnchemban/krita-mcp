@@ -14,7 +14,7 @@ def _grab(path, pattern):
 
 def test_versions_agree():
     v = _grab("pyproject.toml", r'^version\s*=\s*"([^"]+)"')
-    assert _grab("src/krita_mcp/__init__.py", r'__version__\s*=\s*"([^"]+)"') == v
+    assert _grab("src/kritapilot/__init__.py", r'__version__\s*=\s*"([^"]+)"') == v
     assert _grab("plugin/pykrita/krita_mcp_bridge/handlers.py", r'^BRIDGE_VERSION\s*=\s*"([^"]+)"') == v
 
 
@@ -35,6 +35,6 @@ def test_tool_reference_is_current():
 def test_tests_never_see_the_users_real_keys():
     """conftest isolates every test: the key store must not be the real ~/.krita-mcp."""
     sys.path.insert(0, str(ROOT / "src"))
-    from krita_mcp.providers import keys
+    from kritapilot.providers import keys
     real = (Path.home() / ".krita-mcp").resolve()
     assert real not in keys.path().resolve().parents

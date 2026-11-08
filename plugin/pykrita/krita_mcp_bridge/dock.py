@@ -35,7 +35,7 @@ CLIENTS = ["Claude Code", "Claude Desktop", "Cursor / Windsurf", "VS Code (Copil
 
 
 def _split(cmd):
-    parts = shlex.split(cmd, posix=False) if cmd.strip() else ["krita-mcp"]
+    parts = shlex.split(cmd, posix=False) if cmd.strip() else ["kritapilot"]
     return parts[0].strip('"'), [a.strip('"') for a in parts[1:]]
 
 
@@ -47,7 +47,7 @@ def client_snippet(client, cmd, port):
         server["env"] = env
     if client == "Claude Code":
         envs = "".join(" -e %s=%s" % kv for kv in env.items())
-        return "claude mcp add krita%s -- %s" % (envs, cmd.strip() or "krita-mcp")
+        return "claude mcp add krita%s -- %s" % (envs, cmd.strip() or "kritapilot")
     if client == "VS Code (Copilot)":
         return "// .vscode/mcp.json\n" + json.dumps({"servers": {"krita": dict(server, type="stdio")}}, indent=2)
     if client == "Codex CLI":
@@ -61,7 +61,7 @@ def client_snippet(client, cmd, port):
                 "KRITA_MCP_HTTP_TOKEN=<long-random-secret> %s --transport http --port 8765\n"
                 "# URL: http://127.0.0.1:8765/mcp   header: Authorization: Bearer <secret>\n"
                 "# remote clients need an HTTPS tunnel in front; anyone with the URL+token can edit your art"
-                % (cmd.strip() or "krita-mcp"))
+                % (cmd.strip() or "kritapilot"))
     where = {"Claude Desktop": "claude_desktop_config.json", "Cursor / Windsurf": "~/.cursor/mcp.json",
              "Gemini CLI": "~/.gemini/settings.json"}.get(client, "MCP config")
     return "// %s\n%s" % (where, json.dumps({"mcpServers": {"krita": server}}, indent=2))
@@ -149,7 +149,7 @@ class McpDocker(DockWidget):
         self.client.addItems(CLIENTS)
         self.client.currentIndexChanged.connect(self._update_snippet)
         self.command = QLineEdit()
-        self.command.setPlaceholderText("krita-mcp  (or: uvx krita-mcp, or a full path)")
+        self.command.setPlaceholderText("kritapilot  (or: uvx kritapilot, or a full path)")
         self.command.editingFinished.connect(self._command_changed)
         self.snippet = QPlainTextEdit()
         self.snippet.setReadOnly(True)
@@ -252,7 +252,7 @@ class McpDocker(DockWidget):
         self.port.setValue(ext.port() if ext else protocol.DEFAULT_PORT)
         self.autostart.setChecked(extension.setting("autostart", "true" if extension.AUTOSTART_DEFAULT else "false")
                                   == "true")
-        self.command.setText(extension.setting("client_command", "krita-mcp"))
+        self.command.setText(extension.setting("client_command", "kritapilot"))
         idx = [k for k, _ in ACCESS_MODES].index(handlers.ACCESS["mode"])
         self.access.setCurrentIndex(idx)
         self.dialog_mode.blockSignals(True)
@@ -365,11 +365,11 @@ class McpDocker(DockWidget):
         self._say(i18n("New token written to ~/.krita-mcp/token. Restart connected AI clients."))
 
     def _command_changed(self):
-        extension.set_setting("client_command", self.command.text().strip() or "krita-mcp")
+        extension.set_setting("client_command", self.command.text().strip() or "kritapilot")
         self._update_snippet()
 
     def _update_snippet(self):
-        self.snippet.setPlainText(client_snippet(self.client.currentText(), self.command.text() or "krita-mcp",
+        self.snippet.setPlainText(client_snippet(self.client.currentText(), self.command.text() or "kritapilot",
                                                  self.port.value()))
 
     def _history(self, method):

@@ -21,7 +21,7 @@ body:
     id: versions
     attributes:
       label: Versions
-      description: Krita, the plugin and the server. The AI Bridge (MCP) panel shows them; or run `krita-mcp --version`.
+      description: Krita, the plugin and the server. The AI Bridge (MCP) panel shows them; or run `kritapilot --version`.
       placeholder: Krita 5.3.4, plugin 2026.11.8.35, server 2026.11.8.35
     validations:
       required: true

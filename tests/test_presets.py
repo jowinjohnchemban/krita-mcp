@@ -9,11 +9,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from krita_mcp import presets  # noqa: E402
+from kritapilot import presets  # noqa: E402
 from test_providers import B64, Mock  # noqa: E402
 
-import krita_mcp.server as S  # noqa: E402
-from krita_mcp import gen_tools as G  # noqa: E402
+import kritapilot.server as S  # noqa: E402
+from kritapilot import gen_tools as G  # noqa: E402
 
 
 def test_style_and_camera_recipes():

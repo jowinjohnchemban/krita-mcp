@@ -11,8 +11,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from krita_mcp.providers import ProviderError, http  # noqa: E402
-from krita_mcp.providers import images, video, vision  # noqa: E402
+from kritapilot.providers import ProviderError, http  # noqa: E402
+from kritapilot.providers import images, video, vision  # noqa: E402
 
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 B64 = base64.b64encode(PNG).decode()
@@ -423,7 +423,7 @@ def test_cloud_backends_use_the_guide_image(mock, monkeypatch):
 
 # ---------------------------------------------------------------- asset libraries
 def test_polyhaven_search_and_fetch(mock, monkeypatch):
-    from krita_mcp.providers import assets
+    from kritapilot.providers import assets
     monkeypatch.setenv("KRITA_MCP_POLYHAVEN_URL", mock.url)
     mock.json("GET", "/assets", {
         "rock_wall": {"name": "Rock Wall", "tags": ["stone", "cliff"], "categories": ["rock"], "authors": {"A": "All"}},
@@ -431,7 +431,7 @@ def test_polyhaven_search_and_fetch(mock, monkeypatch):
         "grey_rock": {"name": "Grey Rock", "tags": ["rock"], "categories": ["rock", "natural"]}})
     found = assets.search("rock", "textures", 5)
     assert [r["id"] for r in found["results"]] == ["grey_rock", "rock_wall"] and "CC0" in found["licence"]
-    assert mock.calls[-1][2]["user-agent"].startswith("krita-mcp")
+    assert mock.calls[-1][2]["user-agent"].startswith("kritapilot")
     mock.json("GET", "/files/rock_wall", {"Diffuse": {"1k": {"jpg": {"url": mock.url + "/t/rock_1k.jpg"}},
                                                       "2k": {"jpg": {"url": mock.url + "/t/rock_2k.jpg"}}}})
     mock.json("GET", "/info/rock_wall", {"name": "Rock Wall"})
@@ -443,7 +443,7 @@ def test_polyhaven_search_and_fetch(mock, monkeypatch):
 
 
 def test_openverse_photos_carry_attribution(mock, monkeypatch):
-    from krita_mcp.providers import assets
+    from kritapilot.providers import assets
     monkeypatch.setenv("KRITA_MCP_OPENVERSE_URL", mock.url + "/v1")
     mock.json("GET", "/v1/images/", {"results": [{"id": "abc", "title": "Granite", "creator": "Ana",
                                                   "license": "by", "license_version": "2.0", "width": 800,
@@ -459,7 +459,7 @@ def test_openverse_photos_carry_attribution(mock, monkeypatch):
 
 # ---------------------------------------------------------------- OpenAI-compatible services
 def test_compatible_services_list_models_live(mock, monkeypatch):
-    from krita_mcp.providers import compat
+    from kritapilot.providers import compat
     monkeypatch.setenv("KRITA_MCP_TOGETHER_API_KEY", "t-key")
     monkeypatch.setenv("KRITA_MCP_TOGETHER_BASE_URL", mock.url + "/tg")
     mock.json("GET", "/tg/models", [  # Together answers with a bare list and labels each model's type

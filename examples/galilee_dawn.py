@@ -3,7 +3,7 @@
 
     python examples/galilee_dawn.py [stage ...] [--out DIR]     stages: scene figure light finish (default: all)
 
-It starts the krita-mcp server over stdio and talks MCP to it, exactly like Claude Desktop / Claude Code would.
+It starts the KritaPilot server over stdio and talks MCP to it, exactly like Claude Desktop / Claude Code would.
 Every pixel is made by Krita: procedural SeExpr layers (sky, clouds, water, rock), vector shapes with gradients
 (hills, the figure), real brush strokes (rim light, folds, glints), filters, blend modes and masks. After each
 stage it saves the canvas_snapshot that the agent looks at.
@@ -327,7 +327,7 @@ async def main(stages):
     global SESSION
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
-    params = StdioServerParameters(command=sys.executable, args=["-m", "krita_mcp"],
+    params = StdioServerParameters(command=sys.executable, args=["-m", "kritapilot"],
                                    env={**os.environ, "PYTHONPATH": str(ROOT / "src")})
     async with stdio_client(params) as (r, w):
         async with ClientSession(r, w) as session:

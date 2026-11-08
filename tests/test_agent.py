@@ -7,7 +7,7 @@ import urllib.request
 
 import pytest
 
-from krita_mcp import agent
+from kritapilot import agent
 from test_providers import B64, Mock
 
 
@@ -212,7 +212,7 @@ def test_service_requires_the_token_and_runs_a_chat(home, bridge, monkeypatch):
 
 
 def test_keys_signed_in_from_krita_serve_the_generative_tools(home, monkeypatch):
-    from krita_mcp.providers import http, images, keys
+    from kritapilot.providers import http, images, keys
     monkeypatch.delenv("KRITA_MCP_FAL_KEY", raising=False)
     monkeypatch.delenv("KRITA_MCP_COMFYUI_URL", raising=False)
     assert images.get("fal").configured() is False
@@ -229,7 +229,7 @@ def test_keys_signed_in_from_krita_serve_the_generative_tools(home, monkeypatch)
 def test_pkce_pair_is_s256_base64url():
     import base64
     import hashlib
-    from krita_mcp import oauth
+    from kritapilot import oauth
     verifier, challenge = oauth.pkce_pair()
     assert 43 <= len(verifier) <= 128 and "=" not in challenge
     assert challenge == base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
@@ -245,8 +245,8 @@ def _browser_hits(url):
 
 def test_openrouter_browser_sign_in(home, monkeypatch):
     import urllib.parse
-    from krita_mcp import oauth
-    from krita_mcp.providers import keys
+    from kritapilot import oauth
+    from kritapilot.providers import keys
     m = Mock()
     try:
         m.json("POST", "/api/v1/auth/keys", lambda h, b: {"key": "sk-or-v1-" + "a" * 64}
@@ -275,7 +275,7 @@ def test_openrouter_browser_sign_in(home, monkeypatch):
 
 
 def test_keys_are_checked_before_saving(home, monkeypatch):
-    from krita_mcp import oauth
+    from kritapilot import oauth
     m = Mock()
     try:
         m.routes[("GET", "/models")] = lambda h, b: (
@@ -348,7 +348,7 @@ def test_chat_with_a_compatible_service(home, bridge, monkeypatch):
         m.srv.shutdown()
     assert [e["text"] for e in events if e["type"] == "note"] == ["Model: mistral-large-2611"]
     assert events[-1]["text"] == "Bonjour." and agent.status()["mistral"]["chat"] is True
-    from krita_mcp import oauth
+    from kritapilot import oauth
     m2 = Mock()
     try:
         m2.routes[("GET", "/mistral/models")] = lambda h, b: (
@@ -360,7 +360,7 @@ def test_chat_with_a_compatible_service(home, bridge, monkeypatch):
 
 
 def test_service_reports_its_version_and_can_be_stopped(home):
-    from krita_mcp import __version__
+    from kritapilot import __version__
     srv = {}
     t = threading.Thread(target=agent.serve, kwargs={"port": 0, "ready": lambda s: srv.setdefault("s", s)},
                          daemon=True)

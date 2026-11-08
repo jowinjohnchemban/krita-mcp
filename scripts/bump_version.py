@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FILES = [
     ("pyproject.toml", r'^(version\s*=\s*")([^"]+)(")'),
-    ("src/krita_mcp/__init__.py", r'^(__version__\s*=\s*")([^"]+)(")'),
+    ("src/kritapilot/__init__.py", r'^(__version__\s*=\s*")([^"]+)(")'),
     ("plugin/pykrita/krita_mcp_bridge/handlers.py", r'^(BRIDGE_VERSION\s*=\s*")([^"]+)(")'),
 ]
 
