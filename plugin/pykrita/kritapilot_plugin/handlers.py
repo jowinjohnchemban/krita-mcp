@@ -53,6 +53,7 @@ JOIN_ROUND = _enum(Qt, "PenJoinStyle", "RoundJoin")
 NO_PEN = _enum(Qt, "PenStyle", "NoPen")
 NO_BRUSH = _enum(Qt, "BrushStyle", "NoBrush")
 KEEP_AR = _enum(Qt, "AspectRatioMode", "KeepAspectRatio")
+IGNORE_AR = _enum(Qt, "AspectRatioMode", "IgnoreAspectRatio")
 SMOOTH = _enum(Qt, "TransformationMode", "SmoothTransformation")
 WRITE_ONLY = _enum(QIODevice, "OpenModeFlag", "WriteOnly")
 TRANSPARENT = _enum(Qt, "GlobalColor", "transparent")
@@ -1205,6 +1206,60 @@ def selection_set(p):
         getattr(cur, mode)(sel)
         sel = cur
     doc.setSelection(sel)
+    return {"selection": [sel.x(), sel.y(), sel.width(), sel.height()]}
+
+
+@handler("selection.from_masks", edit=True)
+def selection_from_masks(p):
+    """A selection from what a segmentation or vision model found in a picture of `region` ([x, y, w, h] of the
+    document): `masks` - [{box: [x0, y0, x1, y1] (0..1 of the region), data_base64: a grey or alpha PNG (white /
+    opaque = selected) for that box}] - and/or `polygons` - [[[x, y], ...] (0..1 of the region)]. Everything
+    found is united, then combined with the current selection by `mode`."""
+    doc = active_doc()
+    W, H = doc.width(), doc.height()
+    rx, ry, rw, rh = [float(v) for v in (p.get("region") or [0, 0, W, H])]
+    threshold = _num(p, "threshold", 128, 1, 255, True)
+    full = QImage(W, H, FMT_ALPHA8)
+    full.fill(TRANSPARENT)
+    pt = QPainter(full)
+    try:
+        pt.setRenderHint(AA, True)
+        for m in p.get("masks") or []:
+            x0, y0, x1, y1 = [float(v) for v in m.get("box") or (0, 0, 1, 1)]
+            bx, by = int(round(rx + x0 * rw)), int(round(ry + y0 * rh))
+            bw, bh = max(1, int(round((x1 - x0) * rw))), max(1, int(round((y1 - y0) * rh)))
+            src = _load_qimage({"data_base64": m.get("data_base64")})
+            if src.hasAlphaChannel() and not m.get("use_brightness"):
+                grey = bytes(src.convertToFormat(FMT_ARGB32).scaled(bw, bh, IGNORE_AR, SMOOTH)
+                             .constBits().asstring(bw * bh * 4)[3::4])
+            else:
+                g = src.convertToFormat(FMT_GRAY8).scaled(bw, bh, IGNORE_AR, SMOOTH)
+                bits, bpl = g.constBits().asstring(g.sizeInBytes()), g.bytesPerLine()
+                grey = bits if bpl == bw else b"".join(bits[r * bpl:r * bpl + bw] for r in range(bh))
+            cut = bytes(255 if v >= threshold else 0 for v in grey)
+            pt.drawImage(bx, by, QImage(cut, bw, bh, bw, FMT_ALPHA8).copy())
+        pt.setPen(NO_PEN)
+        pt.setBrush(QBrush(QColor(0, 0, 0, 255)))
+        for poly in p.get("polygons") or []:
+            pts = [QPointF(rx + float(a) * rw, ry + float(b) * rh) for a, b in poly]
+            if len(pts) >= 3:
+                pt.drawPolygon(QPolygonF(pts))
+    finally:
+        pt.end()
+    sel = _mask_selection(full, 0, 0)
+    if sel.width() <= 0 or sel.height() <= 0:
+        raise BridgeError("nothing matching was found in the picture")
+    if p.get("feather"):
+        sel.feather(_num(p, "feather", 0, 0, 200, True))
+    history.backup_selection(doc)
+    cur, mode = doc.selection(), p.get("mode", "replace")
+    if cur is not None and mode != "replace":
+        if mode not in ("add", "subtract", "intersect"):
+            raise BridgeError("mode must be replace, add, subtract or intersect")
+        getattr(cur, mode)(sel)
+        sel = cur
+    doc.setSelection(sel)
+    _refresh(doc)
     return {"selection": [sel.x(), sel.y(), sel.width(), sel.height()]}
 
 

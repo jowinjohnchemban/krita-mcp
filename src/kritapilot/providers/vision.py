@@ -84,9 +84,27 @@ def ask_gemini(png, question, model=None, max_tokens=4000):
     return "".join(p.get("text", "") for p in parts), {"model": model}
 
 
+def ask_pollinations(png, question, model=None, max_tokens=4000):
+    """Free, no account: Pollinations' models that can see pictures."""
+    from . import free
+    key = secret("KRITAPILOT_POLLINATIONS_API_KEY")
+    url, headers = free.pollinations_chat(key)
+    model = model or catalog.first(free.pollinations_models(key, seeing=True), "Pollinations model that can see")
+    body = {"model": model, "max_tokens": max_tokens, "messages": [
+        {"role": "system", "content": SYSTEM},
+        {"role": "user", "content": [{"type": "text", "text": question},
+                                     {"type": "image_url", "image_url": {"url": http.data_uri(png)}}]}]}
+    r = http.post_json(url, body, headers, timeout=180)
+    try:
+        return r["choices"][0]["message"]["content"] or "", {"model": r.get("model", model)}
+    except (KeyError, IndexError):
+        raise ProviderError("unexpected response: %s" % str(r)[:300]) from None
+
+
 PROVIDERS = {"anthropic": ask_anthropic, "openai": ask_openai, "gemini": ask_gemini}
 for _name in compat.COMPAT:
     PROVIDERS[_name] = (lambda n: lambda png, q, model=None: ask_openai(png, q, model, service=n))(_name)
+PROVIDERS["pollinations"] = ask_pollinations  # free; the last resort when nothing else is set up
 ALIASES = {"claude": "anthropic", "gpt": "openai", "chatgpt": "openai", "google": "gemini", "ollama": "openai"}
 
 
@@ -95,7 +113,8 @@ def configured():
     return {"anthropic": bool(secret("KRITAPILOT_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")),
             "openai": bool(secret("KRITAPILOT_OPENAI_API_KEY", "OPENAI_API_KEY")) or http.is_loopback_url(base or "x:"),
             "gemini": bool(secret("KRITAPILOT_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")),
-            **{n: bool(compat.api_key(n)) for n in compat.COMPAT}}
+            **{n: bool(compat.api_key(n)) for n in compat.COMPAT},
+            "pollinations": True}  # free, so always there - and last
 
 
 def ask(png, question, provider=None, model=None):

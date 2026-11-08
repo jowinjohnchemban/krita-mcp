@@ -7,10 +7,11 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from . import presets
+from . import gen_history, presets
 from .providers import ProviderError
 from .providers import assets as gen_assets
 from .providers import images as gen_images
+from .providers import segment as gen_segment
 from .providers import video as gen_video
 from .providers import vision as gen_vision
 from .server import Image, ToolError, _call, mcp, tool
@@ -159,8 +160,12 @@ async def _generate(prompt, mode="auto", negative_prompt=None, count=1, backend=
                          mask=ctx["has_selection"] or None, name=name or ("%s: %s" % (be.name, prompt))[:80],
                          labels=labels, sheet=True)
     sheet = placed.pop("sheet_png", None)
+    gid = await asyncio.to_thread(gen_history.record, prompt, imgs, be.name, mode, meta.get("model") or model, style,
+                                  ctx["size"], seeds)
     summary = {"backend": be.name, "mode": mode, "style": style, "generated_at": ctx["size"], "placed": placed,
                "meta": {k: v for k, v in meta.items() if v is not None}}
+    if gid:
+        summary["history_id"] = gid
     if note:
         summary["note"] = note
     if len(imgs) > 1:
@@ -356,6 +361,114 @@ async def ask_vision(question: str, provider: Optional[str] = None, model: Optio
     text, meta = await _provider(gen_vision.ask, base64.b64decode(r["png_base64"]), question, provider, model)
     return dict(answer=text, **meta)
 
+
+
+# ------------------------------------------------------------------ editing by instruction, selecting by description
+EDIT_FIRST = ("gemini", "openai", "fal", "replicate")  # models that edit by instruction come first
+EDIT_MODELS = {"fal": ("KRITAPILOT_FAL_EDIT_MODEL", "fal-ai/flux-pro/kontext"),
+               "replicate": ("KRITAPILOT_REPLICATE_EDIT_MODEL", "black-forest-labs/flux-kontext-pro")}
+
+
+def _edit_order(backend):
+    """The image services to try for an edit, edit-capable ones first."""
+    if backend or gen_images.env("KRITAPILOT_IMAGE_BACKEND"):
+        return [backend or gen_images.env("KRITAPILOT_IMAGE_BACKEND")]
+    names = [b.name for b in gen_images.candidates()]
+    return sorted(names, key=lambda n: EDIT_FIRST.index(n) if n in EDIT_FIRST else len(EDIT_FIRST))
+
+
+@tool
+async def edit_image(instruction: str, backend: Optional[str] = None, model: Optional[str] = None,
+                     strength: Optional[float] = None, region: str = "auto", name: Optional[str] = None) -> list:
+    """Change the picture by describing the change, like a photo editor that understands words: "make it
+    night", "remove the person on the left", "turn it into a watercolour", "add snow on the roofs", "make her
+    smile". With a selection only that area changes (select it first, e.g. with select_by_description);
+    otherwise the whole picture. The result is a NEW layer above, so the original stays untouched.
+    Uses image models that edit by instruction first - Gemini, OpenAI (gpt-image), Flux Kontext on fal or
+    Replicate - then any other connected service (img2img; `strength` 0..1 = how much changes)."""
+    prompt = "%s. Keep everything else exactly as it is." % instruction.strip().rstrip(".")
+    order = await _provider(_edit_order, backend)
+    if not order:
+        await _provider(gen_images.pick)  # nothing connected: the usual "how to connect one" message
+    tried = []
+    for be in order:
+        use_model = model
+        if not use_model and be in EDIT_MODELS:
+            use_model = gen_images.env(*EDIT_MODELS[be])
+        try:
+            out = await _generate(prompt, "img2img", None, 1, be, use_model,
+                                  strength if strength is not None else 0.8, region=region,
+                                  name=name or ("Edit: " + instruction)[:80])
+        except ToolError as e:
+            if backend or not gen_images.unusable(e):
+                raise
+            tried.append("%s: %s" % (be, str(e)[:160]))
+            continue
+        out[0]["instruction"] = instruction
+        if tried:
+            out[0]["skipped"] = tried
+        return out
+    raise ToolError("No connected image service accepted the edit: %s.%s" % (" | ".join(tried), _free_hint()))
+
+
+@tool
+async def select_by_description(what: str, mode: str = "replace", method: str = "auto",
+                                layer: Optional[str] = None, feather: int = 1, provider: Optional[str] = None,
+                                model: Optional[str] = None) -> dict:
+    """Select something by describing it: "the sky", "the person on the left", "all the windows", "the red
+    car". Makes a real Krita selection you can then edit, mask, fill or pass to edit_image / generate_image.
+    mode: replace, add, subtract, intersect (with the current selection). method: auto (best available),
+    gemini (pixel-accurate masks; needs a Gemini key), fal (a segmentation model; needs a fal key), or vision
+    (any vision chat model outlines it - free with Pollinations, but approximate). layer = look at one layer
+    only. feather = soft edge in pixels."""
+    snap = await _call("canvas.snapshot", max_size=1024, layer=layer)
+    png = base64.b64decode(snap["png_base64"])
+    found = await _provider(gen_segment.segment, png, what, snap["width"], snap["height"], method, provider, model)
+    masks, polygons = [], list(found["polygons"])
+    for m in found["masks"]:
+        if m.get("png"):
+            masks.append({"box": m["box"], "data_base64": base64.b64encode(m["png"]).decode(),
+                          "use_brightness": bool(m.get("use_brightness"))})
+        else:  # a box without a mask: select the box
+            x0, y0, x1, y1 = m["box"]
+            polygons.append([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
+    out = await _call("selection.from_masks", region=snap["region"], masks=masks, polygons=polygons, mode=mode,
+                      feather=feather)
+    out.update(found=len(masks) + len(polygons), method=found["method"], model=found.get("model"))
+    if found["method"].startswith("vision"):
+        out["note"] = ("Outlined by a vision model, so the edge is approximate: check it with canvas_snapshot and "
+                       "refine with modify_selection. A Gemini or fal key gives pixel-accurate masks.")
+    if found.get("tried"):
+        out["skipped"] = found["tried"]
+    return out
+
+
+# ------------------------------------------------------------------ the history of generated pictures
+@tool
+async def generation_history(limit: int = 10) -> dict:
+    """The pictures image models made recently, newest first: id, time, prompt, service, model and how many
+    pictures. Bring one back with place_generation(id), or reuse its prompt."""
+    items = await asyncio.to_thread(gen_history.entries, min(max(1, limit), 100))
+    return {"generations": [{k: e.get(k) for k in ("id", "time", "kind", "prompt", "backend", "model", "mode",
+                                                   "size")} | {"pictures": len(e.get("files") or [])}
+                            for e in items],
+            "folder": str(gen_history.folder())}
+
+
+@tool
+async def place_generation(id: str, index: int = 1, name: Optional[str] = None) -> dict:
+    """Put a picture from generation_history back on the canvas, as a new layer covering the picture
+    (index = which of its variations, from 1)."""
+    try:
+        png = await asyncio.to_thread(gen_history.image, id, index)
+        entry = gen_history.get(id) or {}
+    except (KeyError, OSError) as e:
+        raise ToolError(str(e)) from None
+    ctx = await _call("gen.context", region="canvas", padding=0, multiple=1, need_image=False)
+    placed = await _call("gen.place", images=[base64.b64encode(png).decode()], region=ctx["region"],
+                         name=name or ("History: %s" % (entry.get("prompt") or id))[:80])
+    placed.pop("sheet_png", None)
+    return {"placed": placed, "prompt": entry.get("prompt")}
 
 PAINT_LAYERS = ["Sketch", "Base colours", "Shading", "Details", "Light & effects"]
 

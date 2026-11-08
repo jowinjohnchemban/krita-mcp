@@ -734,3 +734,21 @@ def test_scripted_strokes_run_without_instant_preview(H, monkeypatch):
     assert got is act and act.on is False
     act.on = False  # already off (the user's choice): nothing to give back
     assert H._instant_preview_off() is None and act.on is False
+
+
+def test_selection_from_masks_and_polygons(H):
+    """select_by_description: masks in boxes and outline polygons (fractions of a region) become one selection."""
+    H.dispatch("document.new", {"width": 200, "height": 100})
+    mask = H.QImage(10, 10, H.FMT_GRAY8)
+    mask.fill(255)  # all white: the whole box is the thing
+    r = H.dispatch("selection.from_masks", {"region": [0, 0, 200, 100], "masks": [
+        {"box": [0.5, 0.5, 1.0, 1.0], "data_base64": H._b64png(mask),
+         "use_brightness": True}]})
+    x, y, w, h = r["selection"]
+    assert abs(x - 100) <= 1 and abs(y - 50) <= 1 and abs(w - 100) <= 2 and abs(h - 50) <= 2
+    r = H.dispatch("selection.from_masks", {"region": [0, 0, 200, 100], "mode": "add",
+                                            "polygons": [[[0, 0], [0.25, 0], [0.25, 0.4], [0, 0.4]]]})
+    x, y, w, h = r["selection"]
+    assert (x, y) == (0, 0) and abs(w - 200) <= 2 and abs(h - 100) <= 2  # united with the box
+    with pytest.raises(H.BridgeError, match="nothing matching"):
+        H.dispatch("selection.from_masks", {"region": [0, 0, 200, 100], "polygons": []})
