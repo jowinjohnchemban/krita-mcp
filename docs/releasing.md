@@ -1,10 +1,13 @@
 # Releasing
 
-Every push to `main` publishes a release (`.github/workflows/release.yml`). There is nothing to do by hand.
+Every push to `main` publishes a release (`.github/workflows/release.yml`) - but only if **every test passes**.
+There is nothing to do by hand.
 
 ## What happens on a push to `main`
 
-Three jobs, as in PyPA's guide: **build** (steps 1-3), **github-release** (4) and **pypi** (5).
+Four jobs. **tests** runs the whole CI matrix (Linux and Windows, Python 3.10 and 3.13, PyQt5 and PyQt6); one
+red test stops everything, and nothing is published. Then, as in PyPA's guide: **build** (steps 1-3),
+**github-release** (4) and **pypi** (5).
 
 1. **The next version.** Versions are [SemVer](https://semver.org) (`MAJOR.MINOR.PATCH`) and count up by one
    on their own: `MAJOR.MINOR` comes from `pyproject.toml`, and `PATCH` is one more than the highest version
@@ -16,7 +19,7 @@ Three jobs, as in PyPA's guide: **build** (steps 1-3), **github-release** (4) an
 2. The version, build id and commit are stamped into the job's own checkout only (`pyproject.toml`,
    `__version__`/`__build__`/`__commit__`, the plugin's `BRIDGE_VERSION`/`BRIDGE_BUILD`/`BRIDGE_COMMIT`,
    `docs/tools.md`). **Nothing is committed to the repository.**
-3. The tests run, then `kritapilot-plugin-<version>.zip` (the Krita plugin, for *Import Python Plugin from
+3. `kritapilot-plugin-<version>.zip` (the Krita plugin, for *Import Python Plugin from
    File*), the wheel and the sdist are built, and checked with `twine check --strict`.
 4. They are published as the GitHub release `v<version>`. Every version stays available.
 5. The same wheel and sdist go to PyPI (see below).
@@ -31,8 +34,7 @@ You can also publish by hand: *Actions ▸ Release ▸ Run workflow*.
 Because every release has a higher version than the one before, the over-the-air updater in Krita and
 `kritapilot --update` pick it up.
 
-CI (`ci.yml`) still tests every push and pull request on Linux and Windows with PyQt5 and PyQt6. CI cannot
-run Krita: before pushing larger changes, run `python scripts/smoke_krita.py` against a real Krita.
+The same tests (`ci.yml`) also run on every pull request. They cannot run Krita itself: before pushing larger changes, run `python scripts/smoke_krita.py` against a real Krita.
 
 ## PyPI
 

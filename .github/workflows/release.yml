@@ -3,7 +3,8 @@
 # release, and the wheel and sdist to PyPI (https://pypi.org/p/kritapilot).
 #
 # Jobs, as in PyPA's guide (https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/):
-#   build           next version, test, build everything once and keep it as the "dist" artifact
+#   tests           the whole CI matrix (Windows and Linux, Python 3.10 and 3.13, PyQt5 and PyQt6)
+#   build           next version, build everything once and keep it as the "dist" artifact (only after all tests pass)
 #   github-release  publish the artifact as a GitHub release (the plugin and the server update from there)
 #   pypi            upload the wheel and sdist with PyPI trusted publishing - no password or token is stored
 #
@@ -24,7 +25,14 @@ concurrency:
   cancel-in-progress: true  # a newer push supersedes a release still being built
 
 jobs:
+  tests:
+    name: Tests
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml  # every OS, Python and Qt version; nothing is published unless all pass
+
   build:
+    needs: tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -42,19 +50,13 @@ jobs:
 
       - name: Install
         run: |
-          sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
-          python -m pip install -e ".[test]" PyQt6 build twine
+          python -m pip install -e . build twine
 
       - name: Next version, build id and commit (stamped in this build only)
         id: version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/release_version.py --repo "${{ github.repository }}" --sha "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-
-      - name: Test
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q
 
       - name: Build plugin zip, wheel and sdist
         run: |
