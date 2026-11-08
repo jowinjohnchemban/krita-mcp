@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/jowinjohnchemban/kritapilot/actions/workflows/ci.yml/badge.svg)](https://github.com/jowinjohnchemban/kritapilot/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/jowinjohnchemban/kritapilot?sort=semver)](https://github.com/jowinjohnchemban/kritapilot/releases/latest)
+[![PyPI](https://img.shields.io/pypi/v/kritapilot?logo=pypi&logoColor=white)](https://pypi.org/p/kritapilot)
 [![Downloads](https://img.shields.io/github/downloads/jowinjohnchemban/kritapilot/total)](https://github.com/jowinjohnchemban/kritapilot/releases)
 [![Tested on Krita 5.3.4](https://img.shields.io/badge/tested%20on-Krita%205.3.4-3daee9?logo=krita&logoColor=white)](#status)
 [![Python](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjowinjohnchemban%2Fkritapilot%2Fmain%2Fpyproject.toml&query=%24.project%5B'requires-python'%5D&label=python&logo=python&logoColor=white&color=3776ab)](pyproject.toml)
@@ -121,10 +122,11 @@ plugin records where in `~/.krita-mcp/hang.log`.
 1. **Plugin.** Download `krita-mcp-bridge-*.zip` from
    [Releases](https://github.com/jowinjohnchemban/kritapilot/releases). In Krita choose
    *Tools ▸ Scripts ▸ Import Python Plugin from File…*, enable the plugin and restart Krita.
-2. **Server.** Install it from this repository (the `.whl` from the release works too):
+2. **Server.** Install it from [PyPI](https://pypi.org/p/kritapilot):
    ```bash
-   pip install "git+https://github.com/jowinjohnchemban/kritapilot"
+   pip install kritapilot
    ```
+   (Not `pip install krita-mcp`: that is a different project.)
 3. **Use it**, either way:
    - **Inside Krita, free:** open *Settings ▸ Dockers ▸ AI Chat*, keep the provider on **Auto** and type.
      Free models need no account; sign in to any provider in **Services…** for faster, stronger results.

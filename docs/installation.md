@@ -34,14 +34,15 @@ with **Settings ▸ Dockers ▸ AI Bridge (MCP)** (it also opens by itself the f
 Pick one:
 
 ```bash
-pip install "git+https://github.com/jowinjohnchemban/kritapilot"   # the latest source
+pip install kritapilot                                  # from PyPI
+pipx install kritapilot                                 # the same, in its own environment
+uvx kritapilot                                          # run without installing
 pip install kritapilot-<version>-py3-none-any.whl       # the wheel from a GitHub release
-uvx --from git+https://github.com/jowinjohnchemban/kritapilot kritapilot   # run without installing
-pip install .                                          # from a source checkout
+pip install .                                           # from a source checkout
 ```
 
-This provides the `kritapilot` command. Don't run `pip install krita-mcp`: that name on PyPI belongs to a
-different project. It talks MCP over stdio by default; `kritapilot --help` lists
+This provides the `kritapilot` command (and `krita-mcp`, its old name, for existing setups). Don't run
+`pip install krita-mcp`: that name on PyPI belongs to a different project. It talks MCP over stdio by default; `kritapilot --help` lists
 the options.
 
 ## 3. Connect an AI client

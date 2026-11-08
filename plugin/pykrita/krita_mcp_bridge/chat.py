@@ -230,10 +230,8 @@ def _ensure_service():
             _SERVICE["proc"] = subprocess.Popen(args, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                                 stderr=subprocess.DEVNULL, creationflags=flags)
         except OSError as e:
-            raise RuntimeError("could not start %r (%s). Install the server: pip install "
-                               "\"git+https://github.com/jowinjohnchemban/kritapilot\" (not 'pip install krita-mcp': "
-                               "that is a different project), or set the server command in the AI Bridge (MCP) "
-                               "panel." % (cmd, e)) from None
+            raise RuntimeError("could not start %r (%s). Install the server with: pip install kritapilot "
+                               "- or set the server command in the AI Bridge (MCP) panel." % (cmd, e)) from None
     for _ in range(40):
         time.sleep(0.25)
         try:
