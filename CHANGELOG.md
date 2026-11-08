@@ -4,6 +4,20 @@ Releases are published automatically from `main` with [SemVer](https://semver.or
 (see [releases](https://github.com/jowinjohnchemban/kritapilot/releases) and [PyPI](https://pypi.org/p/kritapilot)).
 The plugin and the server update themselves. This file lists what changed, newest first.
 
+## 1.0.6
+
+- **Game art and pixel art tools**:
+  - `ink_stroke`: variable-width line art - thick where the pressure is high, tapered ends, smooth curves.
+  - `outline_layer`: an outline around a sprite, sticker or text, outside (on a layer below) or inside.
+  - `quantize_layer`: repaint with a palette you give or the best N colours, with no dither, ordered
+    (retro) or Floyd-Steinberg dithering, and crisp transparency for sprites.
+  - `swap_colors` (palette swaps) and `layer_colors` (the colours a layer uses).
+  - `export_layers`: a PNG per layer, cropped, plus `manifest.json` with positions, sizes and order.
+  - `slice_sheet`: cut a sprite sheet or tileset into tiles, with a JSON list of them.
+- `batch` can read its operations from a JSON file in the workspace (`operations_file`), for long lists.
+- The AI Chat service stops when the Krita that started it closes or crashes (before, it could keep
+  running and block an upgrade on Windows).
+
 ## 1.0.5
 
 - **`kritapilot install`** puts the Krita plugin in place and turns it on - from PyPI or a GitHub checkout.

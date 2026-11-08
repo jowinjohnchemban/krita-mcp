@@ -65,7 +65,7 @@ READS = {"app.info", "app.actions", "document.info", "canvas.snapshot", "canvas.
          "filter.list", "filter.describe", "brush.presets", "history.list", "image.analyze", "image.read_pixels",
          "image.find_color", "file.list", "file.view", "vector.list", "resources.list", "palette.colors",
          "animation.info", "animation.keyframes", "animation.contact_sheet", "video.info", "krita.action_list",
-         "generator.describe", "gen.context", "krita.dismiss_recovery"}
+         "generator.describe", "gen.context", "krita.dismiss_recovery", "layer.palette"}
 
 ACCESS = {"mode": "full"}  # full | read_only | paused - set from the MCP docker
 ACTIVITY = collections.deque(maxlen=300)  # (time, method, ok, ms, detail) for the docker's log
@@ -1570,6 +1570,6 @@ def history_redo(p):
 
 from . import analysis, controls, extras, media  # noqa: E402  (importing registers their handlers)
 
-from . import genai  # noqa: E402
+from . import gameart, genai  # noqa: E402
 
-FEATURE_MODULES = (analysis, controls, extras, media, genai)
+FEATURE_MODULES = (analysis, controls, extras, media, gameart, genai)

@@ -1207,6 +1207,53 @@ class _ExclusiveServer(ThreadingHTTPServer):
     allow_reuse_address = False
 
 
+PARENT_ENV = "KRITAPILOT_PARENT_PID"  # the Krita that started this service: it stops when that Krita is gone
+
+
+def _wait_for_exit(pid):
+    """A function that returns once process `pid` has ended; None if it cannot be watched."""
+    import os
+    if os.name == "nt":
+        import ctypes
+        k = ctypes.windll.kernel32
+        k.OpenProcess.restype = ctypes.c_void_p
+        k.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        handle = k.OpenProcess(0x00100000, False, int(pid))  # SYNCHRONIZE; the handle pins this very process
+        if not handle:
+            return None
+        return lambda: k.WaitForSingleObject(handle, 0xFFFFFFFF)
+
+    def poll():
+        while True:
+            try:
+                os.kill(int(pid), 0)
+            except ProcessLookupError:
+                return
+            except PermissionError:
+                pass
+            time.sleep(2)
+    return poll
+
+
+def watch_parent(srv, pid=None):
+    """Stop the service when the Krita that started it closes or crashes (otherwise it would run on, holding its
+    port and its files)."""
+    pid = pid or env(PARENT_ENV, "")
+    if not str(pid).isdigit():
+        return None
+    wait = _wait_for_exit(pid)
+    if wait is None:
+        return None
+
+    def run():
+        wait()
+        trace("service", "Krita (process %s) has closed; the assistant service stops too" % pid)
+        srv.shutdown()
+    t = threading.Thread(target=run, name="watch-krita", daemon=True)
+    t.start()
+    return t
+
+
 def serve(port=None, host="127.0.0.1", ready=None):
     if port is None:  # 0 is valid: a free port chosen by the OS (tests)
         port = int(env("KRITAPILOT_AGENT_PORT", str(DEFAULT_PORT)))
@@ -1234,6 +1281,7 @@ def serve(port=None, host="127.0.0.1", ready=None):
         max_steps(), keep_images(), chat_image_size(), " ".join(
             "%s=%s" % (k, "***" if any(w in k for w in ("KEY", "TOKEN", "SECRET", "AUTH")) else v)
             for k, v in sorted(env_vars.items()))))
+    watch_parent(srv)
     try:
         srv.serve_forever()
     finally:

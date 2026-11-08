@@ -223,7 +223,8 @@ def _ensure_service():
     if proc is None or proc.poll() is not None:
         args = extension.server_args() + ["--agent", "--agent-port", str(AGENT_PORT)]
         cmd = args[0]
-        env = dict(os.environ, KRITAPILOT_PORT=str(extension.bridge_port()), KRITAPILOT_HOME=str(protocol.config_dir()))
+        env = dict(os.environ, KRITAPILOT_PORT=str(extension.bridge_port()), KRITAPILOT_HOME=str(protocol.config_dir()),
+                   KRITAPILOT_PARENT_PID=str(os.getpid()))  # the service stops when this Krita does
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         trace("service", "starting the assistant service: %s" % " ".join(args))
         try:

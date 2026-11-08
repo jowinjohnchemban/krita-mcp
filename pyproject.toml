@@ -12,7 +12,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "jowinjohnchemban" }]
 requires-python = ">=3.10"
 dependencies = ["mcp>=1.9", "uvicorn>=0.30"]
-keywords = ["krita", "krita-mcp", "krita-mcp-server", "krita-plugin", "krita-ai", "mcp", "mcp-server", "model-context-protocol", "ai", "ai-agents", "art", "painting",
+keywords = ["krita", "krita-mcp", "krita-mcp-server", "krita-plugin", "krita-ai", "mcp", "mcp-server", "model-context-protocol", "ai", "ai-agents", "art", "painting", "pixel-art", "game-assets",
             "digital-painting", "photo-editing", "animation", "generative-ai", "stable-diffusion", "comfyui",
             "inpainting", "claude", "openrouter", "llm"]
 classifiers = [

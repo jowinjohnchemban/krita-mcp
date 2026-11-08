@@ -26,7 +26,7 @@ when one runs out of credit or fails (see [the provider menu](#the-provider-menu
 The model box lists the models your account can use, loaded live from the provider (⟳ reloads it).
 **Auto (newest)** picks the newest suitable model when a chat starts, keeps it for ten minutes (looking it
 up again before every message would keep you waiting), and the chat shows which one it used. You can also
-type any model name. The AI gets the same 90
+type any model name. The AI gets the same 98
 tools as MCP clients: painting with real brushes, seeing and measuring the canvas, layers, photo editing,
 animation and video, generative AI and the asset libraries. It looks at its work and improves it before it
 answers.

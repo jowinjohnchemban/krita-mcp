@@ -38,18 +38,22 @@ and water, vector shapes and real brush strokes on separate layers, looked at it
 - **Any AI, including free ones.** Use it from Claude, ChatGPT, Gemini, Cursor or VS Code over MCP - or
   chat inside Krita with 40+ providers. **Auto** switches to the next provider when one runs out of
   credit, and free models with no account are built in.
-- **Real tools, not just a prompt box.** 90 tools cover Krita's brush engine, layers, selections, filters,
+- **Real tools, not just a prompt box.** 98 tools cover Krita's brush engine, layers, selections, filters,
   animation and video, plus image models (ComfyUI, AUTOMATIC1111, OpenAI, Gemini, ...) when you want them.
 - **Safe by design.** Loopback only, a secret token, one workspace folder, no code execution, keys never
   shown, read-only and pause switches in the panel.
 
 <br clear="right">
 
-## What the AI can do (90 tools + 7 workflow prompts)
+## What the AI can do (98 tools + 7 workflow prompts)
 
 - **Paint like an artist.** It uses Krita's real brush engine with any preset, pressure and eraser,
   plus crisp shapes and gradients, editable SVG vectors and text, procedural SeExpr textures,
   screentones, and colourising line art with Krita's Colourise Mask.
+- **Make game art and pixel art.** Tapered, pressure-style `ink_stroke` line art; `outline_layer` for
+  sprite and sticker outlines; `quantize_layer` to a palette (flat, retro ordered dither or smooth
+  Floyd-Steinberg) and `swap_colors` for palette swaps; `export_layers` writes a PNG per layer plus a
+  `manifest.json` with positions and order for game engines; `slice_sheet` cuts sprite sheets and tilesets.
 - **See and measure.** Snapshots (zoomed in, a single layer, any animation frame, or a labelled
   coordinate grid), plus `analyze_image` (palette, light, contrast, sharpness, layout), exact
   `read_pixels`, and `find_color`.

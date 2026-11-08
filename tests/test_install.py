@@ -112,3 +112,23 @@ def test_doctor_explains_what_is_missing(tmp_path, monkeypatch, capsys):
     assert e.value.code == 1
     out = capsys.readouterr().out
     assert "kritapilot install" in out and "No bridge token" in out and "Bridge does not answer" in out
+
+
+def test_the_ai_chat_service_stops_when_krita_does():
+    """The service watches the process that started it; an orphaned service would hold its port and files."""
+    import subprocess
+    import sys
+    import threading
+
+    from kritapilot import agent
+    krita = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    stopped = threading.Event()
+    srv = type("Srv", (), {"shutdown": lambda self: stopped.set()})()
+    try:
+        assert agent.watch_parent(srv, krita.pid) is not None
+        assert not stopped.wait(0.5)
+    finally:
+        krita.kill()
+        krita.wait()
+    assert stopped.wait(10)
+    assert agent.watch_parent(srv, "") is None

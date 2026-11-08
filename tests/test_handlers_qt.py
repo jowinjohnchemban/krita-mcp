@@ -765,3 +765,97 @@ def test_layers_can_be_named_by_their_path_through_groups(H):
     assert night.name() == "Sky" and night.parentNode().name() == "Night"
     with pytest.raises(H.BridgeError, match="No layer"):
         H.find_layer(H.active_doc(), "Dusk/Sky")
+
+
+# ---------------------------------------------------------------- game art
+def _layer(H, name):
+    return H.find_layer(H.active_doc(), name)
+
+
+def _alpha(node, x, y):
+    return bytes(node.pixelData(x, y, 1, 1))[3]
+
+
+def _sprite(H, w=20, h=20):
+    H.dispatch("document.new", {"width": w, "height": h, "background": "transparent"})
+    H.dispatch("layer.create", {"name": "sprite"})
+    H.dispatch("draw.shapes", {"layer": "sprite", "shapes": [
+        {"type": "rect", "x": 8, "y": 8, "width": 4, "height": 4, "fill": "#ff0000"}]})
+    return _layer(H, "sprite")
+
+
+def test_outline_goes_on_a_layer_below(H):
+    sprite = _sprite(H)
+    r = H.dispatch("layer.outline", {"layer": "sprite", "width": 1, "color": "#000000"})
+    ring = _layer(H, "sprite outline")
+    kids = sprite.parentNode().childNodes()
+    assert kids.index(ring) == kids.index(sprite) - 1
+    assert _alpha(ring, 7, 9) == 255 and bytes(ring.pixelData(7, 9, 1, 1))[:3] == b"\x00\x00\x00"
+    assert _alpha(ring, 7, 7) == 0  # width 1, round: no corners
+    assert _alpha(ring, 9, 9) == 0  # nothing under the sprite itself
+    assert r["outline_pixels"] == 16
+    H.dispatch("layer.outline", {"layer": "sprite", "position": "inside", "color": "#00ff00", "name": "inner"})
+    inner = _layer(H, "inner")
+    assert _alpha(inner, 8, 8) == 255 and _alpha(inner, 9, 9) == 0
+    with pytest.raises(H.BridgeError, match="nothing on it"):
+        H.dispatch("layer.outline", {"layer": "Background"})
+
+
+def test_quantize_swap_and_layer_colors(H):
+    _sprite(H)
+    H.dispatch("draw.shapes", {"layer": "sprite", "shapes": [
+        {"type": "rect", "x": 0, "y": 0, "width": 4, "height": 4, "fill": "#2050f0"}]})
+    r = H.dispatch("layer.quantize", {"layer": "sprite", "palette": ["#000000", "#ffffff", "#ff0000"]})
+    assert r["palette"] == ["#000000", "#ffffff", "#ff0000"]
+    sprite = _layer(H, "sprite")
+    assert bytes(sprite.pixelData(1, 1, 1, 1)) == bytes((0, 0, 0, 255))  # blue -> nearest is black
+    assert bytes(sprite.pixelData(9, 9, 1, 1)) == bytes((0, 0, 255, 255))  # red stays red (BGRA)
+    assert set(H.dispatch("layer.palette", {"layer": "sprite"})["colors"]) == {"#000000", "#ff0000"}
+    s = H.dispatch("layer.swap_colors", {"layer": "sprite", "pairs": [["#ff0000", "#00ff00"]]})
+    assert s["changed_pixels"] == 16 and bytes(sprite.pixelData(9, 9, 1, 1)) == bytes((0, 255, 0, 255))
+    auto = H.dispatch("layer.quantize", {"layer": "sprite", "colors": 2})
+    assert len(auto["palette"]) == 2
+
+
+def test_export_layers_writes_pngs_and_a_manifest(H):
+    import json
+    _sprite(H)
+    H.dispatch("layer.create", {"name": "hidden"})
+    H.dispatch("layer.update", {"layer": "hidden", "visible": False})
+    r = H.dispatch("layers.export", {"folder": "out/layers"})
+    m = json.loads(Path(r["manifest"]).read_text(encoding="utf-8"))
+    assert [l["name"] for l in m["layers"]] == ["sprite"]  # empty Background and hidden layer left out
+    s = m["layers"][0]
+    assert (s["x"], s["y"], s["width"], s["height"], s["file"]) == (8, 8, 4, 4, "sprite.png")
+    img = H.QImage(str(Path(r["folder"]) / "sprite.png"))
+    assert (img.width(), img.height()) == (4, 4)
+    with pytest.raises(H.BridgeError, match="outside the allowed workspace"):
+        H.dispatch("layers.export", {"folder": "../../elsewhere"})
+
+
+def test_slice_sheet_skips_empty_tiles(H):
+    import json
+    _sprite(H, 16, 12)  # the red square (8..11, 8..11) is all in the tile at row 2, column 2
+    r = H.dispatch("image.slice_sheet", {"tile_width": 4, "tile_height": 4, "folder": "tiles", "layer": "sprite"})
+    assert (r["columns"], r["rows"]) == (4, 3)
+    m = json.loads(Path(r["manifest"]).read_text(encoding="utf-8"))
+    assert [(t["row"], t["column"], t["x"], t["y"]) for t in m["tiles"]] == [(2, 2, 8, 8)]
+    assert r["skipped_empty"] == 11
+    r = H.dispatch("image.slice_sheet", {"columns": 2, "rows": 1, "skip_empty": False, "folder": "tiles2"})
+    assert r["saved"] == 2 and r["tile_width"] == 8
+
+
+def test_ink_stroke_tapers(H):
+    H.dispatch("document.new", {"width": 120, "height": 40, "background": "transparent"})
+    H.dispatch("layer.create", {"name": "ink"})
+    r = H.dispatch("draw.ink", {"layer": "ink", "points": [[10, 20], [60, 20], [110, 20]], "width": 16,
+                                "smoothing": 0})
+    ink = _layer(H, "ink")
+
+    def thickness(x):
+        return sum(1 for y in range(40) if _alpha(ink, x, y) > 128)
+    assert thickness(60) >= 14  # full width in the middle
+    assert thickness(105) < thickness(60) and thickness(14) < thickness(60)  # tapered ends
+    assert r["strokes"] == 1
+    with pytest.raises(H.BridgeError, match="each point"):
+        H.dispatch("draw.ink", {"layer": "ink", "points": [[1]]})

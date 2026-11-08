@@ -337,3 +337,248 @@ def transfer_luts(src, ref, strength=1.0):
         k = max(0.25, min(4.0, k))
         luts.append([_clamp(v + strength * ((mr + (v - ms) * k) - v)) for v in range(256)])
     return luts
+
+
+# ================================================================ game art: outlines, palettes
+def alpha_mask(raw, threshold=128):
+    """Alpha8 mask (255 = solid) of the pixels whose alpha is at least `threshold`."""
+    t = max(1, min(255, int(threshold)))
+    return raw[3::4].translate(bytes(255 if v >= t else 0 for v in range(256)))
+
+
+def dilate(mask, w, h, radius, shape="round"):
+    """Grow an Alpha8 mask by `radius` pixels. shape: diamond (4 neighbours each step), square (8), or round
+    (alternating, an octagon close to a circle; radius 1 = no corners, the classic sprite outline).
+    Whole rows at a time as big integers, so it stays fast without numpy."""
+    n = w * h
+    if radius <= 0 or n == 0:
+        return bytes(mask)
+    full = (1 << (8 * n)) - 1
+    not_first = int.from_bytes((b"\x00" + b"\xff" * (w - 1)) * h, "little")  # nothing wraps in from the left
+    not_last = int.from_bytes((b"\xff" * (w - 1) + b"\x00") * h, "little")
+    m = int.from_bytes(bytes(mask), "little")
+    row = 8 * w
+    for step in range(int(radius)):
+        square = shape == "square" or (shape == "round" and step % 2 == 1)
+        across = m | ((m >> 8) & not_last) | ((m << 8) & not_first & full)
+        if square:
+            m = across | (across >> row) | ((across << row) & full)
+        else:
+            m = across | (m >> row) | ((m << row) & full)
+    return m.to_bytes(n, "little")
+
+
+def erode(mask, w, h, radius, shape="round"):
+    return invert_mask(dilate(invert_mask(mask), w, h, radius, shape))
+
+
+def mask_and_not(a, b):
+    """Pixels in `a` but not in `b` (both Alpha8 masks of 0/255)."""
+    n = len(a)
+    return (int.from_bytes(bytes(a), "little") & ~int.from_bytes(bytes(b), "little")
+            & ((1 << (8 * n)) - 1)).to_bytes(n, "little")
+
+
+def paint_mask(mask, rgba):
+    """BGRA pixels: `rgba` where the mask is set, transparent elsewhere."""
+    r, g, b, a = rgba
+    out = bytearray(len(mask) * 4)
+    for offset, value in ((0, b), (1, g), (2, r), (3, a)):
+        out[offset::4] = bytes(mask).translate(bytes(value if v else 0 for v in range(256)))
+    return bytes(out)
+
+
+MAX_PALETTE = 256
+
+
+def _pixels(raw):
+    """Each pixel as one int: B | G << 8 | R << 16 | A << 24."""
+    import array
+    a = array.array("I")
+    a.frombytes(bytes(raw[:len(raw) // 4 * 4]))
+    if a.itemsize != 4:  # pragma: no cover - every platform Krita runs on has 4-byte unsigned int
+        raise BridgeError("unsupported platform")
+    import sys
+    if sys.byteorder != "little":  # pragma: no cover
+        a.byteswap()
+    return a
+
+
+def _rgb(v):
+    return (v >> 16) & 255, (v >> 8) & 255, v & 255
+
+
+def median_cut(raw, colors, min_alpha=128, sample=200000):
+    """The `colors` colours that best represent the picture (opaque pixels), as (r, g, b) tuples."""
+    px = _pixels(raw)
+    step = max(1, len(px) // sample)
+    counts = {}
+    for v in px[::step]:
+        if (v >> 24) >= min_alpha:
+            k = v & 0xFFFFFF
+            counts[k] = counts.get(k, 0) + 1
+    if not counts:
+        return []
+    boxes = [list(counts.items())]
+    colors = max(1, min(MAX_PALETTE, int(colors)))
+    while len(boxes) < colors:
+        best, axis, spread = None, 0, -1
+        for i, box in enumerate(boxes):
+            if len(box) < 2:
+                continue
+            for shift in (16, 8, 0):
+                vals = [(k >> shift) & 255 for k, _ in box]
+                s = max(vals) - min(vals)
+                if s > spread:
+                    best, axis, spread = i, shift, s
+        if best is None or spread <= 0:
+            break
+        box = sorted(boxes.pop(best), key=lambda kv: (kv[0] >> axis) & 255)
+        total, acc, cut = sum(c for _, c in box), 0, 1
+        for j, (_, c) in enumerate(box):
+            acc += c
+            if acc * 2 >= total:
+                cut = max(1, min(len(box) - 1, j + 1))
+                break
+        boxes += [box[:cut], box[cut:]]
+    out = []
+    for box in boxes:
+        total = float(sum(c for _, c in box))
+        out.append(tuple(int(round(sum(((k >> s) & 255) * c for k, c in box) / total)) for s in (16, 8, 0)))
+    return sorted(set(out), key=lambda c: (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]))
+
+
+def _nearest(palette):
+    cache = {}
+
+    def find(r, g, b):
+        key = ((r >> 2) << 12) | ((g >> 2) << 6) | (b >> 2)  # 6 bits a channel: at most 262144 searches
+        hit = cache.get(key)
+        if hit is None:
+            # weighted RGB distance: close to how different two colours look, and cheap
+            hit = min(palette, key=lambda c: 2 * (c[0] - r) ** 2 + 4 * (c[1] - g) ** 2 + 3 * (c[2] - b) ** 2)
+            cache[key] = hit
+        return hit
+    return find
+
+
+BAYER4 = (0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
+
+
+def quantize(raw, w, h, palette, dither="none", strength=48, alpha_threshold=None):
+    """Repaint every pixel with its nearest palette colour (r, g, b). dither: none, ordered (a 4x4 Bayer
+    pattern, the retro look) or floyd (Floyd-Steinberg error diffusion, smoothest). alpha_threshold: make each
+    pixel fully opaque or fully transparent (crisp pixel-art edges); None keeps the alpha."""
+    if not palette:
+        raise BridgeError("the palette is empty")
+    find = _nearest([tuple(int(v) for v in c[:3]) for c in palette])
+    px = _pixels(raw)
+    out = bytearray(len(px) * 4)
+    t = None if alpha_threshold is None else max(1, min(255, int(alpha_threshold)))
+
+    def alpha(a):
+        return a if t is None else (255 if a >= t else 0)
+
+    if dither == "floyd":
+        err = [[0.0, 0.0, 0.0] for _ in range(w + 2)]
+        for y in range(h):
+            nxt = [[0.0, 0.0, 0.0] for _ in range(w + 2)]
+            for x in range(w):
+                i = y * w + x
+                v = px[i]
+                a = alpha(v >> 24)
+                if a == 0:
+                    continue
+                e = err[x + 1]
+                r = min(255, max(0, int(((v >> 16) & 255) + e[0] + 0.5)))
+                g = min(255, max(0, int(((v >> 8) & 255) + e[1] + 0.5)))
+                b = min(255, max(0, int((v & 255) + e[2] + 0.5)))
+                c = find(r, g, b)
+                o = i * 4
+                out[o], out[o + 1], out[o + 2], out[o + 3] = c[2], c[1], c[0], a
+                for k, d in enumerate((r - c[0], g - c[1], b - c[2])):
+                    if d:
+                        err[x + 2][k] += d * 7 / 16
+                        nxt[x][k] += d * 3 / 16
+                        nxt[x + 1][k] += d * 5 / 16
+                        nxt[x + 2][k] += d / 16
+            err = nxt
+        return bytes(out)
+
+    ordered = dither == "ordered"
+    s = float(strength)
+    for y in range(h):
+        row = BAYER4[(y % 4) * 4:(y % 4) * 4 + 4]
+        for x in range(w):
+            i = y * w + x
+            v = px[i]
+            a = alpha(v >> 24)
+            if a == 0:
+                continue
+            r, g, b = (v >> 16) & 255, (v >> 8) & 255, v & 255
+            if ordered:
+                d = int((row[x % 4] / 16.0 - 0.5) * s)
+                r, g, b = min(255, max(0, r + d)), min(255, max(0, g + d)), min(255, max(0, b + d))
+            c = find(r, g, b)
+            o = i * 4
+            out[o], out[o + 1], out[o + 2], out[o + 3] = c[2], c[1], c[0], a
+    return bytes(out)
+
+
+def swap_colors(raw, pairs, tolerance=0):
+    """Replace colours: pairs of ((r, g, b, a) from, (r, g, b, a) to); a pixel within `tolerance` (per
+    channel) of a `from` colour gets the `to` colour, keeping its own alpha unless `to` sets one below 255.
+    Returns (new raw, how many pixels changed)."""
+    px = _pixels(raw)
+    tol = max(0, min(255, int(tolerance)))
+    memo = {}
+    changed = 0
+    out = bytearray(raw)
+    for i, v in enumerate(px):
+        if (v >> 24) == 0:
+            continue
+        hit = memo.get(v, False)
+        if hit is False:
+            hit = None
+            r, g, b = _rgb(v)
+            for src, dst in pairs:
+                if abs(r - src[0]) <= tol and abs(g - src[1]) <= tol and abs(b - src[2]) <= tol:
+                    hit = dst
+                    break
+            memo[v] = hit
+        if hit is not None:
+            o = i * 4
+            a = v >> 24
+            out[o], out[o + 1], out[o + 2] = hit[2], hit[1], hit[0]
+            if len(hit) > 3 and hit[3] < 255:
+                out[o + 3] = min(a, hit[3])
+            changed += 1
+    return bytes(out), changed
+
+
+def used_colors(raw, limit=MAX_PALETTE + 1, min_alpha=1):
+    """The distinct opaque colours in a picture as (r, g, b) - stops counting past `limit`."""
+    seen = set()
+    for v in _pixels(raw):
+        if (v >> 24) >= min_alpha:
+            seen.add(v & 0xFFFFFF)
+            if len(seen) >= limit:
+                break
+    return [_rgb(k) for k in seen]
+
+
+def tile_grid(width, height, tile_w, tile_h, margin=0, spacing=0):
+    """(x, y, row, column) of each whole tile of a sprite sheet, row by row."""
+    out = []
+    if tile_w <= 0 or tile_h <= 0:
+        raise BridgeError("tiles need a width and a height")
+    y, r = margin, 0
+    while y + tile_h <= height - margin:
+        x, c = margin, 0
+        while x + tile_w <= width - margin:
+            out.append((x, y, r, c))
+            x += tile_w + spacing
+            c += 1
+        y += tile_h + spacing
+        r += 1
+    return out

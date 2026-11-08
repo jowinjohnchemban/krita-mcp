@@ -79,3 +79,66 @@ def test_percentile_bounds_for_auto_levels():
     assert percentile_bounds(hist, 0.01) == (120, 121)  # one stray pixel each side is clipped away
     raw = bgra([[R, W]])
     assert histogram(raw, 2)[255] == 2 and histogram(raw, 1)[0] == 1
+
+
+# ---------------------------------------------------------------- game art
+from kritapilot_plugin import pixels as P  # noqa: E402
+
+
+def grid(mask, w):
+    return ["".join("#" if mask[y * w + x] else "." for x in range(w)) for y in range(len(mask) // w)]
+
+
+def test_dilate_shapes_and_no_wrap_across_rows():
+    m = bytearray(25)
+    m[12] = 255
+    assert grid(P.dilate(m, 5, 5, 1), 5) == [".....", "..#..", ".###.", "..#..", "....."]  # no corners
+    assert grid(P.dilate(m, 5, 5, 1, "square"), 5) == [".....", ".###.", ".###.", ".###.", "....."]
+    edge = bytearray(25)
+    edge[4] = 255  # the last pixel of the first row must not leak into the next row's first pixel
+    assert grid(P.dilate(edge, 5, 5, 1, "square"), 5)[:3] == ["...##", "...##", "....."]
+    assert P.erode(P.dilate(m, 5, 5, 1), 5, 5, 1) == bytes(m)
+
+
+def test_outline_ring_and_paint():
+    m = bytearray(9)
+    m[4] = 255
+    ring = P.mask_and_not(P.dilate(m, 3, 3, 1), m)
+    assert grid(ring, 3) == [".#.", "#.#", ".#."]
+    px = P.paint_mask(ring, (10, 20, 30, 255))
+    assert px[4:8] == bytes((30, 20, 10, 255)) and px[0:4] == bytes(4)
+    assert P.alpha_mask(bytes((0, 0, 0, 200, 0, 0, 0, 50)), 128) == b"\xff\x00"
+
+
+def test_quantize_to_a_palette_with_and_without_dither():
+    raw = bgra([[(20, 20, 20, 255), (240, 230, 250, 255), (0, 0, 0, 0), (130, 120, 140, 100)]])
+    out = P.quantize(raw, 4, 1, [(0, 0, 0), (255, 255, 255)])
+    assert out == bgra([[(0, 0, 0, 255), (255, 255, 255, 255), (0, 0, 0, 0), (255, 255, 255, 100)]])
+    crisp = P.quantize(raw, 4, 1, [(0, 0, 0), (255, 255, 255)], alpha_threshold=128)
+    assert crisp[12:16] == bytes(4)  # half-transparent pixel dropped
+    gray = bgra([[(128, 128, 128, 255)] * 16] * 4)
+    for d in ("ordered", "floyd"):  # a mid grey dithers into a mix of black and white
+        q = P.quantize(gray, 16, 4, [(0, 0, 0), (255, 255, 255)], d)
+        values = set(q[0::4])
+        assert values == {0, 255}, d
+
+
+def test_median_cut_finds_the_main_colours():
+    raw = bgra([[(250, 0, 0, 255)] * 50 + [(0, 0, 250, 255)] * 50 + [(0, 250, 0, 0)] * 10])
+    pal = P.median_cut(raw, 2)
+    assert sorted(pal) == [(0, 0, 250), (250, 0, 0)]  # the transparent green is not counted
+    assert P.median_cut(bgra([[(0, 0, 0, 0)]]), 4) == []
+
+
+def test_swap_colors_keeps_alpha_and_counts():
+    raw = bgra([[(255, 0, 0, 255), (250, 4, 0, 128), (0, 255, 0, 255), (255, 0, 0, 0)]])
+    out, n = P.swap_colors(raw, [((255, 0, 0, 255), (0, 0, 255, 255))], tolerance=5)
+    assert n == 2
+    assert out == bgra([[(0, 0, 255, 255), (0, 0, 255, 128), (0, 255, 0, 255), (255, 0, 0, 0)]])
+    assert sorted(P.used_colors(raw)) == [(0, 255, 0), (250, 4, 0), (255, 0, 0)]
+
+
+def test_tile_grid():
+    assert P.tile_grid(10, 4, 4, 4) == [(0, 0, 0, 0), (4, 0, 0, 1)]  # partial tiles are left out
+    assert P.tile_grid(11, 11, 4, 4, margin=1, spacing=1) == [(1, 1, 0, 0), (6, 1, 0, 1), (1, 6, 1, 0),
+                                                              (6, 6, 1, 1)]

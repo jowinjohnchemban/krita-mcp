@@ -40,10 +40,12 @@ Stability, Replicate, fal): generate_image (txt2img / img2img / inpaint the sele
 element into the scene), generate_video (Sora, Veo, HeyGen avatars, ...), ask_vision (second opinion from
 Claude, GPT or Gemini). Results always land on new layers, cut to the selection, one undo step each.
 Free services (Pollinations, AI Horde) work without an account once the user turns them on.
+Game and pixel art: ink_stroke (tapered line art), outline_layer, quantize_layer / swap_colors / layer_colors
+(palettes), export_layers (PNG per layer + manifest.json), slice_sheet (sprite sheets and tilesets).
 Skills: for bigger tasks, find_skills (a few words) and use_skill the one that fits - proven step-by-step
 workflows; they are loaded only when needed.
 Coordinates are pixels with the origin at the top-left. Colours are '#rrggbb' or '#rrggbbaa'.
-Layers can be referenced by id or (if unique) name.
+Layers can be referenced by id, by name (if unique) or by path ("Group/Layer").
 """
 
 mcp = _Server("krita", instructions=INSTRUCTIONS)
@@ -57,13 +59,13 @@ TOOLS = {}  # name -> coroutine function, for `batch`
 READ_ONLY = {
     "ai_backends", "analyze_image", "animation_contact_sheet", "animation_info", "ask_vision", "canvas_snapshot",
     "describe_filter", "document_info", "find_color", "find_skills", "generation_history", "history",
-    "krita_status", "list_brush_presets", "list_filters", "list_keyframes", "list_layers", "list_resources",
-    "list_vector_shapes", "list_workspace", "palette_colors", "read_pixels", "sample_color", "search_assets",
+    "krita_status", "layer_colors", "list_brush_presets", "list_filters", "list_keyframes", "list_layers",
+    "list_resources", "list_vector_shapes", "list_workspace", "palette_colors", "read_pixels", "sample_color", "search_assets",
     "use_skill", "user_tool_state", "video_info", "view_image"}
 DESTRUCTIVE = {
     "batch", "crop_image", "delete_layer", "document_close", "export_animation_frames", "export_image",
-    "export_selection_mask", "fill_selection", "flatten_image", "for_each_frame", "krita_action", "merge_down",
-    "remove_background", "remove_vector_shapes", "render_video", "save_document"}
+    "export_layers", "export_selection_mask", "fill_selection", "flatten_image", "for_each_frame", "krita_action",
+    "merge_down", "slice_sheet", "remove_background", "remove_vector_shapes", "render_video", "save_document"}
 OPEN_WORLD = {
     "ai_backends", "ask_vision", "create_artwork", "edit_image", "generate_image", "generate_video", "import_asset",
     "import_image_from_url", "outpaint", "remove_background", "search_assets", "select_by_description",
@@ -211,10 +213,25 @@ async def canvas_snapshot(max_size: int = 1024, x: Optional[int] = None, y: Opti
     (x, y, width, height in canvas pixels). max_size caps the longest side (64-4096).
     layer = show only that layer (transparent elsewhere).
     grid = draw labelled canvas-coordinate lines every `grid` pixels, to read off exact positions.
-    frame = look at another animation frame (the current frame is restored)."""
+    frame = look at another animation frame (the current frame is restored).
+    To keep a picture as a file, use export_image (it takes the same region)."""
     r = await _call("canvas.snapshot", max_size=max_size, x=x, y=y, width=width, height=height, layer=layer,
                     grid=grid, frame=frame)
     return Image(data=base64.b64decode(r["png_base64"]), format="png")
+
+
+async def workspace_file(path, exts=None):
+    """`path` resolved inside Krita's workspace folder (relative paths start there); anything outside is
+    refused, as the plugin does for its own files."""
+    from pathlib import Path
+    root = Path((await _call("app.info"))["workspace"]).resolve()
+    cand = Path(str(path)).expanduser()
+    cand = (cand if cand.is_absolute() else root / cand).resolve()
+    if cand != root and root not in cand.parents:
+        raise ToolError("%s is outside the workspace (%s)" % (path, root))
+    if exts and cand.suffix.lower() not in exts:
+        raise ToolError("%s: the file must be %s" % (path, " or ".join(exts)))
+    return cand
 
 
 @tool
@@ -380,6 +397,89 @@ async def brush_stroke(points: list[list[float]], preset: Optional[str] = None, 
 async def list_brush_presets(filter: Optional[str] = None, limit: int = 200) -> dict:
     """Names of Krita's brush presets (optionally containing `filter`, e.g. 'ink', 'pencil', 'airbrush')."""
     return await _call("brush.presets", filter=filter, limit=limit)
+
+# ---------------------------------------------------------------- game art
+@tool
+async def ink_stroke(points: Optional[list[list[float]]] = None, strokes: Optional[list[dict[str, Any]]] = None,
+                     width: float = 8, color: str = "#000000", opacity: float = 1.0, taper_start: float = 0.2,
+                     taper_end: float = 0.35, smoothing: int = 2, min_width: float = 0,
+                     layer: Optional[str] = None, antialias: bool = True) -> dict:
+    """Variable-width ink: line art, lettering, calligraphy. Thick where pressure is high, thin at tapered ends
+    (unlike draw_shapes' even lines), and crisp and exact (unlike brush_stroke's textured brushes).
+    points: [[x, y], ...] or [[x, y, pressure 0..1], ...] for one stroke; strokes: [{points, width?, color?,
+    opacity?, taper_start?, taper_end?, ...}, ...] for many at once (max 20000 points per call).
+    width = the widest width in px; taper_start/taper_end = how much of the length thins out (0..1);
+    smoothing 0..5 rounds the corners between points; min_width keeps the ends from vanishing."""
+    return await _call("draw.ink", points=points, strokes=strokes, width=width, color=color, opacity=opacity,
+                       taper_start=taper_start, taper_end=taper_end, smoothing=smoothing, min_width=min_width,
+                       layer=layer, antialias=antialias)
+
+
+@tool
+async def outline_layer(layer: Optional[str] = None, width: int = 1, color: str = "#000000",
+                        position: str = "outside", shape: str = "round", threshold: int = 128,
+                        new_layer: bool = True, name: Optional[str] = None) -> dict:
+    """An outline around what is on a layer - a sprite, a sticker, text. width 1..64 px.
+    position: outside (on a new layer below; the classic sprite/sticker outline) or inside the edge (above).
+    shape: round, square (thick corners) or diamond (width 1 = the pixel-art outline without corners).
+    threshold = the alpha (1..255) a pixel needs to count as solid. new_layer=false paints into the layer."""
+    return await _call("layer.outline", layer=layer, width=width, color=color, position=position, shape=shape,
+                       threshold=threshold, new_layer=new_layer, name=name)
+
+
+@tool
+async def quantize_layer(layer: Optional[str] = None, colors: int = 16, palette: Optional[list[str]] = None,
+                         dither: str = "none", strength: float = 48, alpha_threshold: Optional[int] = None,
+                         ignore_selection: bool = False) -> dict:
+    """Repaint a layer with a limited palette - pixel art, retro and print looks, consistent game sprites.
+    palette = the colours to use (e.g. a console's palette, or layer_colors of another sprite); otherwise the
+    best `colors` (2..256) found in the layer. dither: none (flat), ordered (retro pattern) or floyd (smooth).
+    strength = how strong the ordered pattern is. alpha_threshold = make every pixel fully opaque or fully
+    transparent (crisp sprite edges). Works inside the selection if there is one. Returns the palette used."""
+    return await _call("layer.quantize", layer=layer, colors=colors, palette=palette, dither=dither,
+                       strength=strength, alpha_threshold=alpha_threshold, ignore_selection=ignore_selection or None)
+
+
+@tool
+async def swap_colors(pairs: list[list[str]], layer: Optional[str] = None, tolerance: int = 0,
+                      ignore_selection: bool = False) -> dict:
+    """Palette swap: [["#ff0000", "#0000ff"], ...] replaces each first colour with the second - recolour a
+    sprite, make team colours or variants. tolerance 0..255 also catches near colours (anti-aliased edges).
+    Each pixel keeps its own transparency. Works inside the selection if there is one."""
+    return await _call("layer.swap_colors", pairs=pairs, layer=layer, tolerance=tolerance,
+                       ignore_selection=ignore_selection or None)
+
+
+@tool
+async def layer_colors(layer: Optional[str] = None, max_colors: int = 64) -> dict:
+    """The colours a layer uses: every one when there are at most max_colors (pixel art: exact = true), else its
+    main ones. Use it as a palette for quantize_layer or to plan a swap_colors."""
+    return await _call("layer.palette", layer=layer, max_colors=max_colors)
+
+
+@tool
+async def export_layers(folder: str = "layers", layers: Optional[list[str]] = None, trim: bool = True,
+                        merge_groups: bool = False, include_hidden: bool = False) -> dict:
+    """Save each layer as its own PNG in a workspace folder, cropped to what is on it (trim), plus manifest.json
+    with each layer's file, position (x, y), size, stacking order (z, 0 = bottom), opacity and blend mode - what a
+    game engine, an animation tool or a web page needs to rebuild the picture. layers = only these (ids, names
+    or "Group/Layer" paths); merge_groups = one picture per group; include_hidden = hidden layers too."""
+    return await _call("layers.export", folder=folder, layers=layers, trim=trim, merge_groups=merge_groups or None,
+                       include_hidden=include_hidden or None)
+
+
+@tool
+async def slice_sheet(tile_width: Optional[int] = None, tile_height: Optional[int] = None,
+                      columns: Optional[int] = None, rows: Optional[int] = None, margin: int = 0, spacing: int = 0,
+                      layer: Optional[str] = None, folder: str = "tiles", prefix: str = "tile",
+                      skip_empty: bool = True) -> dict:
+    """Cut a sprite sheet or tileset into tiles, each saved as a PNG in a workspace folder, with <prefix>.json
+    listing every tile's file, row, column and position. Give tile_width/tile_height (px), or columns/rows.
+    margin = border around the sheet, spacing = gap between tiles. layer = slice only that layer (default: the
+    whole picture). skip_empty leaves out fully transparent tiles."""
+    return await _call("image.slice_sheet", tile_width=tile_width, tile_height=tile_height, columns=columns,
+                       rows=rows, margin=margin, spacing=spacing, layer=layer, folder=folder, prefix=prefix,
+                       skip_empty=skip_empty)
 
 
 # --------------------------------------------------------------- selection
@@ -726,10 +826,21 @@ async def export_animation_frames(folder: str = "frames", start: Optional[int] =
 
 # -------------------------------------------------------------------- batch
 @tool
-async def batch(operations: list[dict[str, Any]], stop_on_error: bool = True) -> list:
+async def batch(operations: Optional[list[dict[str, Any]]] = None, stop_on_error: bool = True,
+                operations_file: Optional[str] = None) -> list:
     """Run several tool calls in one go, in order: [{"tool": "draw_shapes", "args": {...}}, ...] (max 200).
     Any tool except batch itself. Returns one result per operation; images (canvas_snapshot,
-    view_image) are returned after the summary. Much faster than one call per step."""
+    view_image) are returned after the summary. Much faster than one call per step.
+    operations_file = read the operations from a .json file in the workspace instead (a list, or
+    {"operations": [...]}) - for long stroke lists that are too big to send in one message."""
+    if operations_file:
+        import json as _json
+        src = await workspace_file(operations_file, (".json",))
+        try:
+            loaded = _json.loads(src.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            raise ToolError("could not read %s: %s" % (operations_file, e))
+        operations = loaded.get("operations") if isinstance(loaded, dict) else loaded
     if not isinstance(operations, list) or not 1 <= len(operations) <= 200:
         raise ToolError("operations must be a list of 1..200 {tool, args} objects")
     results, images = [], []

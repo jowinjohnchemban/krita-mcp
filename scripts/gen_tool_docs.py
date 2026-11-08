@@ -26,6 +26,8 @@ GROUPS = [
                 "duplicate_layer", "transform_layer", "import_image", "import_image_from_url"]),
     ("Painting and drawing", ["brush_stroke", "list_brush_presets", "draw_shapes", "add_svg",
                               "list_vector_shapes", "remove_vector_shapes", "colorize_lineart"]),
+    ("Game art and pixel art", ["ink_stroke", "outline_layer", "quantize_layer", "swap_colors", "layer_colors",
+                                "export_layers", "slice_sheet"]),
     ("Generative AI", ["ai_backends", "generate_image", "edit_image", "pick_variation", "generation_history",
                        "place_generation", "outpaint", "upscale_image",
                        "remove_background", "match_colors", "generate_video", "ask_vision"]),
