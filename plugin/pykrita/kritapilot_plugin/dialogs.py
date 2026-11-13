@@ -42,7 +42,9 @@ def describe(w):
     for bar in w.findChildren(QProgressBar):
         if bar.isVisible() and bar.format():
             texts.append(bar.text() or bar.format())
-    buttons = [b.text().replace("&", "") for b in w.findChildren(QAbstractButton) if b.isVisible() and b.text()]
+    # isHidden (hidden on purpose), not isVisible: a button of a dialog that is still laying itself out is not
+    # "visible" yet but is one the user will see - and the AI should know what it was offered
+    buttons = [b.text().replace("&", "") for b in w.findChildren(QAbstractButton) if not b.isHidden() and b.text()]
     return {"title": w.windowTitle(), "text": " ".join(texts)[:600], "buttons": buttons[:8],
             "progress": any(b.isVisible() for b in w.findChildren(QProgressBar))}
 
