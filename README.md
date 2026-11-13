@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/kritapilot?logo=python&logoColor=white)](https://pypi.org/p/kritapilot)
 [![MCP server](https://img.shields.io/badge/MCP-server-6b4fbb)](https://modelcontextprotocol.io)
 [![License](https://img.shields.io/github/license/jowinjohnchemban/kritapilot)](https://github.com/jowinjohnchemban/kritapilot/blob/main/LICENSE)
-[![M8ven Score](https://m8ven.ai/badge/mcp/jowinjohnchemban-krita-mcp-1hger8?v=8c07a8b544869b5b078ff9ebfb2fc7b2)](https://m8ven.ai/mcp/jowinjohnchemban-krita-mcp-1hger8?s=readme)
+[![M8ven Score](https://m8ven.ai/badge/mcp/jowinjohnchemban-kritapilot-1h81hn)](https://m8ven.ai/mcp/jowinjohnchemban-kritapilot-1h81hn?s=readme)
 
 **Let AI create and edit art, photos, animation and video inside a running [Krita](https://krita.org).**
 KritaPilot is a **Krita MCP server** for any MCP client - Claude, ChatGPT, Gemini, Cursor, VS Code Copilot,
