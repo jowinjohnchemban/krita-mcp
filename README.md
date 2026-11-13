@@ -268,7 +268,8 @@ Krita 6 (PyQt6) is covered by the unit tests.
 
 Bug reports, ideas, new skills and pull requests are welcome - see [CONTRIBUTING.md](https://github.com/jowinjohnchemban/kritapilot/blob/main/CONTRIBUTING.md).
 What changed recently is in the [changelog](https://github.com/jowinjohnchemban/kritapilot/blob/main/CHANGELOG.md). Security problems:
-[SECURITY.md](https://github.com/jowinjohnchemban/kritapilot/blob/main/SECURITY.md).
+[SECURITY.md](https://github.com/jowinjohnchemban/kritapilot/blob/main/SECURITY.md). What stays on your computer and what can leave it:
+[PRIVACY.md](https://github.com/jowinjohnchemban/kritapilot/blob/main/PRIVACY.md).
 
 ```bash
 pip install -e .[test] PyQt6
