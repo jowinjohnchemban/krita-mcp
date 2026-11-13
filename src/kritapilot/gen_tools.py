@@ -322,7 +322,10 @@ async def generate_video(prompt: str = "", backend: Optional[str] = None, model:
     camera = a cinematic camera move written into the prompt: dolly_in, dolly_out, push_in, pull_back,
     crash_zoom, pan_left/right, tilt_up/down, orbit_left/right, crane_up/down, handheld, fpv_drone, whip_pan,
     bullet_time, ken_burns, static. style = a look (cinematic, photo, anime, ... as in generate_image).
-    Generation can take several minutes. (No video model? camera_move animates the picture locally.)"""
+    Generation can take several minutes. (No video model? camera_move animates the picture locally.)
+    Side effects: sends the prompt (and, with use_canvas, the current picture) to the chosen cloud service, WRITES
+    the video file into the workspace (path, or an automatic name; an existing file of that name is replaced) and
+    by default opens it in Krita as a new document/animated layer."""
     try:
         prompt = presets.apply_camera(presets.apply_style(prompt, None, style)[0] if prompt and style else prompt,
                                       camera)

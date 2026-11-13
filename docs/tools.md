@@ -521,7 +521,10 @@ painted on the canvas talk), openai (Sora), gemini (Veo), replicate / fal (any v
 camera = a cinematic camera move written into the prompt: dolly_in, dolly_out, push_in, pull_back,  
 crash_zoom, pan_left/right, tilt_up/down, orbit_left/right, crane_up/down, handheld, fpv_drone, whip_pan,  
 bullet_time, ken_burns, static. style = a look (cinematic, photo, anime, ... as in generate_image).  
-Generation can take several minutes. (No video model? camera_move animates the picture locally.)
+Generation can take several minutes. (No video model? camera_move animates the picture locally.)  
+Side effects: sends the prompt (and, with use_canvas, the current picture) to the chosen cloud service, WRITES  
+the video file into the workspace (path, or an automatic name; an existing file of that name is replaced) and  
+by default opens it in Krita as a new document/animated layer.
 
 Parameters: `prompt`: str = `''`, `backend`: Optional = `None`, `model`: Optional = `None`, `use_canvas`: bool = `True`, `seconds`: Optional = `None`, `width`: Optional = `None`, `height`: Optional = `None`, `script`: Optional = `None`, `avatar_id`: Optional = `None`, `voice_id`: Optional = `None`, `character`: str = `'avatar'`, `negative_prompt`: Optional = `None`, `path`: Optional = `None`, `import_into_krita`: bool = `True`, `max_frames`: int = `240`, `extra`: Optional = `None`, `camera`: Optional = `None`, `style`: Optional = `None`
 

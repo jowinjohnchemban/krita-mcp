@@ -64,7 +64,8 @@ READ_ONLY = {
     "use_skill", "user_tool_state", "video_info", "view_image"}
 DESTRUCTIVE = {
     "batch", "crop_image", "delete_layer", "document_close", "export_animation_frames", "export_image",
-    "export_layers", "export_selection_mask", "fill_selection", "flatten_image", "for_each_frame", "krita_action",
+    "export_layers", "export_selection_mask", "fill_selection", "flatten_image", "for_each_frame", "generate_video",
+    "krita_action",
     "merge_down", "slice_sheet", "remove_background", "remove_vector_shapes", "render_video", "save_document"}
 OPEN_WORLD = {
     "ai_backends", "ask_vision", "create_artwork", "edit_image", "generate_image", "generate_video", "import_asset",
@@ -72,14 +73,27 @@ OPEN_WORLD = {
     "upscale_image"}
 
 
+# Calling again with the same arguments changes nothing more (it sets or writes the same result): every read-only
+# tool, plus these. Tools that add something each time (a layer, a stroke, a generated picture), step through
+# history (undo, redo) or build on the current pixels (filters, adjustments, transforms) are not idempotent.
+IDEMPOTENT = READ_ONLY | {
+    "animation_set", "arrange_layer", "delete_layer", "document_activate", "document_close", "export_animation_frames",
+    "export_image", "export_layers", "export_selection_mask", "fill_selection", "flatten_image", "notify_user",
+    "pick_variation", "remove_vector_shapes", "render_video", "save_document", "set_guides", "set_selection",
+    "slice_sheet", "update_layer", "user_tool_state", "view_control"}
+
+
 def annotations(name):
+    """All four hints are always set, to explicit booleans, on every tool (some hosts reject tools without them)."""
     from mcp.types import ToolAnnotations
     read_only = name in READ_ONLY
     values = {"title": name.replace("_", " ").capitalize(), "read_only": read_only,
-              "destructive": (not read_only) and name in DESTRUCTIVE, "open_world": name in OPEN_WORLD}
+              "destructive": (not read_only) and name in DESTRUCTIVE, "idempotent": name in IDEMPOTENT,
+              "open_world": name in OPEN_WORLD}
     snake = "read_only_hint" in ToolAnnotations.model_fields  # MCP SDK 2.x; 1.x uses camelCase
     keys = {"read_only": "read_only_hint" if snake else "readOnlyHint",
             "destructive": "destructive_hint" if snake else "destructiveHint",
+            "idempotent": "idempotent_hint" if snake else "idempotentHint",
             "open_world": "open_world_hint" if snake else "openWorldHint", "title": "title"}
     return ToolAnnotations(**{keys[k]: v for k, v in values.items()})
 
@@ -923,6 +937,17 @@ class _BearerAuth:
         await self.app(scope, receive, send)
 
 
+def _save_http_token(token):
+    """Keep a generated HTTP token in ~/.kritapilot/http_token (owner-only) for clients to read from there."""
+    from . import config
+    path = config.home() / "http_token"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(token)
+    return path
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     from . import cli
@@ -966,8 +991,11 @@ def main(argv=None):
     token = os.environ.get("KRITAPILOT_HTTP_TOKEN") or secrets.token_urlsafe(32)
     if args.host not in ("127.0.0.1", "::1", "localhost") and not os.environ.get("KRITAPILOT_HTTP_TOKEN"):
         sys.exit("Refusing to bind a non-loopback address without KRITAPILOT_HTTP_TOKEN set.")
-    print("KritaPilot HTTP endpoint: http://%s:%d/mcp\nAuthorization: Bearer %s" % (args.host, args.port, token),
-          file=sys.stderr)
+    # The token is never printed: a log or a terminal recording would keep it. A generated one is saved in a file
+    # only this user can read.
+    where = "the KRITAPILOT_HTTP_TOKEN you set" if os.environ.get("KRITAPILOT_HTTP_TOKEN") else str(_save_http_token(token))
+    print("KritaPilot HTTP endpoint: http://%s:%d/mcp\nAuthorization: Bearer <the token in %s>" % (
+        args.host, args.port, where), file=sys.stderr)
     uvicorn.run(_BearerAuth(mcp.streamable_http_app(), token), host=args.host, port=args.port, log_level="warning")
 
 

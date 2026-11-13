@@ -71,8 +71,11 @@ def test_every_tool_tells_clients_what_it_does():
 
     def hint(ann, name):
         return getattr(ann, name + "_hint", None) if hasattr(ann, "read_only_hint") else getattr(
-            ann, {"read_only": "readOnlyHint", "destructive": "destructiveHint", "open_world": "openWorldHint"}[name])
+            ann, {"read_only": "readOnlyHint", "destructive": "destructiveHint", "open_world": "openWorldHint",
+                          "idempotent": "idempotentHint"}[name])
     assert hint(listed["list_layers"], "read_only") and not hint(listed["list_layers"], "destructive")
+    assert hint(listed["list_layers"], "idempotent") and not hint(listed["brush_stroke"], "idempotent")
+    assert hint(listed["generate_video"], "destructive")  # writes a video file into the workspace
     assert hint(listed["delete_layer"], "destructive") and not hint(listed["delete_layer"], "read_only")
     assert not hint(listed["brush_stroke"], "destructive")  # adds paint; undoable
     assert hint(listed["generate_image"], "open_world") and not hint(listed["brush_stroke"], "open_world")

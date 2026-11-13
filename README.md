@@ -190,7 +190,7 @@ Environment variables:
 
 | Variable | Used by | Default | Meaning |
 |---|---|---|---|
-| `KRITAPILOT_HTTP_TOKEN` | server | random, printed at start | Bearer token HTTP clients must send (`Authorization: Bearer …`) |
+| `KRITAPILOT_HTTP_TOKEN` | server | random, saved in `~/.kritapilot/http_token` | Bearer token HTTP clients must send (`Authorization: Bearer …`); never printed |
 | `KRITAPILOT_PORT` | server + plugin | `5679` | Port of the Krita bridge (not the HTTP port above) |
 | `KRITAPILOT_HOST` | server | `127.0.0.1` | Host of the Krita bridge |
 | `KRITAPILOT_HOME` | server + plugin | `~/.kritapilot` | Folder holding the bridge token, saved keys, skills, `logs/` and `hang.log` |
