@@ -92,15 +92,22 @@ def error_message(text):
 
 def check_url(url):
     """Only web addresses: urllib would also open file:, ftp: and data: URLs, so a service URL that was mistyped
-    or tampered with must not be able to read local files. Returns the URL; anything else -> ProviderError."""
+    or tampered with must not be able to read local files. The address is rebuilt from its parts behind a fixed
+    http:// or https:// start (userinfo and fragment dropped). Anything else -> ProviderError."""
     if not isinstance(url, str):
         raise ProviderError("the service URL must be text")
     u = urllib.parse.urlsplit(url.strip())
-    if u.scheme not in ("http", "https") or not u.hostname:
+    if u.scheme == "https":
+        start = "https://"
+    elif u.scheme == "http":
+        start = "http://"
+    else:
         raise ProviderError("the service URL must start with http:// or https:// (got %r)" % _redact(url)[:80])
+    if not u.hostname:
+        raise ProviderError("the service URL has no host: %r" % _redact(url)[:80])
     if u.username or u.password:
         raise ProviderError("put the API key in the service settings, not in the URL")
-    return url.strip()
+    return start + u.netloc + u.path + ("?" + u.query if u.query else "")
 
 
 def request(method, url, body=None, headers=None, timeout=600, raw=False):
