@@ -487,3 +487,13 @@ def test_vision_through_a_compatible_service(mock, monkeypatch):
     text, meta = vision.ask(PNG, "how is the composition?", provider="groq")
     body = _body(mock.calls[-1])
     assert text == "balanced" and body["model"] == "llama-5-vision" and mock.calls[-1][2]["authorization"] == "Bearer g-key"
+
+
+def test_request_only_opens_web_addresses():
+    from kritapilot.providers import http
+    for bad in ("file:///etc/passwd", "ftp://example.com/x", "data:text/plain,hi", "http://", "//example.com",
+                "https://user:pw@example.com/v1", 42):
+        with pytest.raises(http.ProviderError):
+            http.request("GET", bad)
+    assert http.check_url(" https://example.com/v1 ") == "https://example.com/v1"
+    assert http.check_url("http://127.0.0.1:11434/v1") == "http://127.0.0.1:11434/v1"

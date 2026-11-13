@@ -90,8 +90,22 @@ def error_message(text):
     return " ".join(text.split())
 
 
+def check_url(url):
+    """Only web addresses: urllib would also open file:, ftp: and data: URLs, so a service URL that was mistyped
+    or tampered with must not be able to read local files. Returns the URL; anything else -> ProviderError."""
+    if not isinstance(url, str):
+        raise ProviderError("the service URL must be text")
+    u = urllib.parse.urlsplit(url.strip())
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise ProviderError("the service URL must start with http:// or https:// (got %r)" % _redact(url)[:80])
+    if u.username or u.password:
+        raise ProviderError("put the API key in the service settings, not in the URL")
+    return url.strip()
+
+
 def request(method, url, body=None, headers=None, timeout=600, raw=False):
     """Returns (bytes, headers). body: dict -> JSON, bytes -> as is. Errors -> ProviderError."""
+    url = check_url(url)
     hdrs = {"User-Agent": "kritapilot"}
     hdrs.update(headers or {})
     data = None
