@@ -22,7 +22,7 @@ import time
 COMMANDS = ("status", "tools", "call", "snapshot", "chat", "history", "install", "doctor")
 
 
-def _run(name, **args):
+def _run(name, /, **args):
     from .server import TOOLS, Image, ToolError
     if name not in TOOLS:
         raise SystemExit("no tool %r - see: kritapilot tools" % name)
@@ -68,6 +68,8 @@ def call(args):
         kwargs = json.loads(args.args) if args.args else {}
     except ValueError as e:
         raise SystemExit("the arguments must be JSON, like '{\"width\": 800}': %s" % e)
+    if not isinstance(kwargs, dict):
+        raise SystemExit("the arguments must be a JSON object, like '{\"width\": 800}'")
     data, images = _run(args.tool, **kwargs)
     print(json.dumps(data, indent=2, default=str))
     for n, img in enumerate(images, 1):
