@@ -34,6 +34,16 @@ def test_call_runs_any_tool_with_json_arguments(bridge, capsys):
         server.main(["call", "no_such_tool"])
 
 
+
+def test_call_passes_a_name_argument_to_the_tool(bridge, capsys):
+    # document_new, create_layer, ... take `name`; it must reach the tool, not clash with the tool's own name
+    calls, _ = bridge
+    run(["call", "document_new", '{"width": 64, "height": 32, "name": "Page 1"}'], capsys)
+    method, params = calls[-1]
+    assert method == "document.new" and params["name"] == "Page 1" and params["width"] == 64
+    with pytest.raises(SystemExit, match="JSON object"):
+        server.main(["call", "document_new", "[1]"])
+
 def test_snapshot_saves_a_png(bridge, capsys, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     out = run(["snapshot", "canvas.png"], capsys)
